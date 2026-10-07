@@ -1,0 +1,7 @@
+id: sh12
+role: train
+aoi: examples/aoi_whirinaki_sh12.geojson
+buffer_m: 200
+elevation: {region: northland, products: [dem, dsm]}       # survey: latest covering, recorded in site.json
+sources: [linz_roads, linz_tracks, linz_rail, linz_buildings, osm]
+notes: Whirinaki, SH12 culvert benchmark; no council inventory configured (Far North DC to survey)

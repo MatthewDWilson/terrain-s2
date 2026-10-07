@@ -1,0 +1,96 @@
+# Source registry for scripts/build_site.py. Verified 7 Oct 2026 unless marked otherwise
+# (Waimakariri: verified by a live layer query, after a cached page proved stale).
+# kind: arcgis (REST layer URL or ArcGIS Hub item id <32 hex>_<layer>), linz_wfs (needs LINZ_API_KEY),
+# osm (Overpass), file (a local vector file). Mapping keys: see src/terrain_s2/acquire/harmonise.py.
+sources:
+  waimakariri_culverts:
+    kind: arcgis
+    # 7 Oct 2026: Stormwater_Assets_In_Service publishes no layers (404 Service not found); the
+    # Before U Dig query service holds the same layer (Main_SW: network main, facility pipe, culvert)
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/BUD_Query/MapServer/10
+    fallback_urls:
+      - https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Stormwater_Assets_In_Service/MapServer/19
+    where: "CLASSIFICATION2 = 'Culvert'"          # the layer also holds network mains and facility pipes
+    layer: crossings
+    const: {type: culvert}
+    fields: {length_m: LENGTH_m}
+    scale: {diameter_m: [DIAMETER_mm, 0.001], height_m: [HEIGHT_mm, 0.001]}
+    id_field: ASSNBRI
+    scope: council-owned stormwater culverts only (no private driveway or farm culverts)
+  waimakariri_channels:
+    kind: arcgis
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/BUD_Query/MapServer/12   # Channel_SW
+    fallback_urls:
+      - https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Stormwater_Assets_In_Service/MapServer/18
+    layer: channels
+    const: {exists: y}
+    class_map: {field: CLASSIFICATION3, values: {Network Drain: drain, Receiving Waterway: stream, Water Race: race, Process Channel: other}}
+    id_field: ASSNBRI
+    scope: council scheme channels only (most roadside and private drains absent)
+  waimakariri_pipes:
+    kind: arcgis
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/BUD_Query/MapServer/10
+    where: "CLASSIFICATION2 <> 'Culvert'"
+    layer: pipes
+    id_field: ASSNBRI
+    enabled: false
+    note: piped network (mains, facility pipes); context only, enable when needed
+  waimakariri_structures:
+    kind: arcgis
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Stormwater_Assets_In_Service/MapServer/8
+    layer: structures
+    id_field: ASSNBRI
+    enabled: false
+    note: headwalls, vehicle bridges, weirs etc.; field values to be checked before mapping (R4)
+  auckland_channels:
+    kind: arcgis
+    url: 6c4196567eae4cd48f1c071911fe4105_0      # ArcGIS Hub item, Auckland Council Stormwater Channel
+    layer: channels
+    const: {class: drain, exists: y}
+    scope: constructed channels only (explicitly not stream water) - drain labels, no stream labels
+  canterbury_threewaters:
+    kind: arcgis
+    url: 268050a3ebee4fc3861b88122e5b6771_0      # ECan item; layer index for stormwater pipelines to confirm
+    layer: pipes
+    enabled: false
+    note: regional consolidated nodes and pipelines (monthly), no open channels; Waimakariri not included at release
+  kiwirail_culverts:
+    kind: arcgis
+    url: TODO
+    layer: crossings
+    const: {type: culvert}
+    enabled: false
+    note: KiwiRail Culverts exists (data.govt.nz KiwiRail harvest); service URL still to resolve
+  kiwirail_track:
+    kind: arcgis
+    url: TODO
+    layer: rail
+    enabled: false
+    note: KiwiRail Track Centreline exists (data.govt.nz KiwiRail harvest); service URL still to resolve
+  linz_roads:
+    kind: linz_wfs
+    layer_id: 50329                               # NZ Road Centrelines (Topo, 1:50k)
+    layer: roads
+    const: {class: road}
+    fields: {surface: surface, lanes: lane_count}
+    id_field: t50_fid
+  linz_tracks:
+    kind: linz_wfs
+    layer_id: 50364                               # NZ Track Centrelines (Topo, 1:50k)
+    layer: tracks
+    const: {class: track}
+    id_field: t50_fid
+  linz_rail:
+    kind: linz_wfs
+    layer_id: 50319                               # NZ Railway Centrelines (Topo, 1:50k)
+    layer: rail
+    fields: {status: status}
+    id_field: t50_fid
+  linz_buildings:
+    kind: linz_wfs
+    layer_id: 101290                              # NZ Building Outlines (from LINZ aerial imagery, >= 10 m2)
+    layer: buildings
+    fields: {use: use}
+    id_field: building_id
+  osm:
+    kind: osm                                     # roads, rail, waterways, culverts (tunnel=culvert), buildings

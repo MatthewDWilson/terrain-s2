@@ -1,0 +1,7 @@
+id: aoi2
+role: train
+aoi: examples/aoi2_whirinaki_upperfloodplain.geojson
+buffer_m: 200
+elevation: {region: northland, products: [dem, dsm]}
+sources: [linz_roads, linz_tracks, linz_rail, linz_buildings, osm]
+notes: Whirinaki upper floodplain, culvert #2 benchmark; manual culvert inventory in review files

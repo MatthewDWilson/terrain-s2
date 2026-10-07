@@ -1,0 +1,33 @@
+# EDDIE terrain Stage 2 prototype — GPU workstation environment (CUDA via conda-forge).
+#   conda env create -f environment-gpu.yml && conda activate terrain-s2-gpu
+#   pytest tests/test_gpu_parity.py            # confirms CPU/GPU feature agreement
+# Set cuda-version to what your driver supports (nvidia-smi, top right): 12.x or 13.x.
+# The CUDA runtime comes from conda-forge; only the NVIDIA driver is needed on the host.
+# When PyTorch arrives (Phase 2c), take it from conda-forge too, so CuPy and PyTorch share
+# one CUDA build through the cuda-version metapackage.
+name: terrain-s2-gpu
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - numpy>=2.0
+  - affine
+  - scipy>=1.13
+  - numba>=0.60
+  - pyflwdir>=0.5.10
+  - scikit-image>=0.24
+  - scikit-learn>=1.5           # rank_candidates.py
+  - pyyaml                      # site definitions (scripts/build_site.py)
+  - requests                    # data acquisition
+  - rasterio>=1.4
+  - geopandas>=1.0
+  - shapely>=2.0
+  - pyogrio
+  - matplotlib-base
+  - pytest
+  - cuda-version=12.*
+  - cupy>=13
+  - pip
+  - pip:
+      - whitebox-workflows>=2.0.6

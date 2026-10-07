@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terrain-s2"
+version = "0.0.1"
+description = "EDDIE terrain Stage 2 prototype: DEM-only detection of crossings, channels and embankments"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.0", "affine", "scipy>=1.13", "numba>=0.60", "pyflwdir>=0.5.10", "scikit-image>=0.24",
+  "rasterio>=1.4", "geopandas>=1.0", "shapely>=2.0", "pyogrio", "matplotlib",
+]
+
+[project.optional-dependencies]
+gpu = ["cupy>=13"]
+crosscheck = ["whitebox-workflows>=2.0.6"]
+ranking = ["scikit-learn>=1.5"]
+acquire = ["pyyaml", "requests"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+# Deprecations raised from our own code fail the tests; the one known third-party warning is
+# silenced narrowly (rasterio 1.5.1 composes transforms with `*`, pending deprecation in affine 3).
+filterwarnings = [
+  "error::DeprecationWarning:terrain_s2",
+  "error::PendingDeprecationWarning:terrain_s2",
+  "error::FutureWarning:terrain_s2",
+  "ignore:Use `@` matmul:PendingDeprecationWarning:rasterio",
+]

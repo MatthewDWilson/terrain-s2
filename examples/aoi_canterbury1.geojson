@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "aoi_canterbury1",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::2193" } },
+"xy_coordinate_resolution": 1e-15,
+"features": [
+{ "type": "Feature", "properties": { "id": 1 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 1570644.683565655024722, 5198616.559703243896365 ], [ 1572931.431301211006939, 5198616.559703243896365 ], [ 1572931.431301211006939, 5199982.489955987781286 ], [ 1570644.683565655024722, 5199982.489955987781286 ], [ 1570644.683565655024722, 5198616.559703243896365 ] ] ] } }
+]
+}
