@@ -108,7 +108,7 @@ def compare(a, b) -> dict:
 
 
 def markdown(rep: dict) -> str:
-    L = [f"# DEM comparison\n", f"- A: `{rep['a']}`", f"- B: `{rep['b']}`",
+    L = ["# DEM comparison\n", f"- A: `{rep['a']}`", f"- B: `{rep['b']}`",
          f"- resolution {rep['resolution']}, CRS {rep['crs']}"]
     if "error" in rep:
         return "\n".join(L + [f"\n**{rep['error']}**\n"])

@@ -163,6 +163,33 @@ and a round mound (must not be flagged). `make_divide_scene()` reproduces the SH
 a culvert on a DEM drainage divide, which only Test A can find, plus two controls. The tests in
 `tests/test_synthetic.py` encode these.
 
+## Stage 1 DEMs and the EDDIE module
+
+Stage 1 makes one DEM product per AOI and parameter set. It writes the GeoFabrics-compatible netCDF contract
+(integration plan 4.3), plus a COG copy at 1 m, a provenance JSON and the extents. There are two backends:
+`raster` (the LINZ 1 m DEM, no GeoFabrics) and `geofabrics` (point clouds through a pinned GeoFabrics 1.1.30).
+
+```powershell
+pip install --no-deps -e . ; pip install --no-deps -e .\eddie      # both distributions, in a conda env
+terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 8                  # raster backend
+terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 8 --backend geofabrics
+terrain dem --aoi ... --register            # through the product registry (TERRAIN_DB_URL, or SQLite)
+terrain compare <runA folder> <runB folder> --out report.md                           # regression harness
+```
+
+- **Settings.** The `TERRAIN_*` environment variables (`terrain_s2/settings.py`; template in
+  `docker/terrain.env.template`). Products go to `$TERRAIN_PRODUCT_DIR/<generator_key>/<grid_id>/`.
+- **Base install.** Light, for FReDT and Smart Ideas (`terrain_s2.client`, `terrain_s2.client.compat`). Extras:
+  `[detect]` for Stage 2, `[acquire]` for downloads, `[geofabrics]` for the terrain worker (PDAL comes from
+  conda-forge).
+- **EDDIE module `eddie_terrain`** (in `eddie/`). Tasks `ensure_dem`, `ensure_network` and `refresh_catalogue`
+  on queue `terrain`; endpoints `POST /terrain/dem`, `GET /terrain/products/<id>` and `GET /terrain/tasks/<id>`;
+  a PyWPS process `terrain.dem` for v5. It works on core v4.0.0 and v5-integration.
+- **Terrain worker.** `docker/terrain-worker.Dockerfile` with `environment-worker.yml`. Deploy it with the
+  overlay `compose/terrain-worker.yml` (no host ports).
+- **More.** Workstation steps (live data, PostGIS, image, stack test) are in `docs/stage1_workstation.md`.
+  Design notes are in DESIGN_NOTES section 10.
+
 ## Layout
 
 ```

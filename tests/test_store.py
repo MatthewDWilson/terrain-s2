@@ -2,6 +2,11 @@
 import numpy as np
 import pytest
 
+# Stage 1 needs the light base install (xarray, netCDF4, rioxarray, SQLAlchemy) beside the Stage 2 stack, and
+# GDAL's netCDF driver (conda-forge: libgdal-netcdf). Skipped where they are missing.
+for _m in ("xarray", "netCDF4", "rioxarray", "sqlalchemy"):
+    pytest.importorskip(_m)
+
 from terrain_s2.io import contract as C
 from terrain_s2.store import Store, sources_compatible
 

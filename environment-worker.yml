@@ -14,6 +14,7 @@ dependencies:
   - python=3.12
   # geospatial stack
   - gdal>=3.9
+  - libgdal-netcdf       # GDAL's netCDF driver is a separate package on conda-forge (netcdf:"<file>":z)
   - rasterio>=1.4
   - pyproj
   - shapely>=2.0
