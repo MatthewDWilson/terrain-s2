@@ -1,0 +1,9 @@
+# v5 (D9) addition to compose/terrain-worker.yml: the worker joins only the internal `data` network and the
+# egress-enabled `app` network. It needs outbound HTTPS to nz-elevation.s3-ap-southeast-2.amazonaws.com,
+# portal.opentopography.org, opentopography.s3.sdsc.edu, data.linz.govt.nz and overpass-api.de (OSM roads for
+# GeoFabrics roughness).
+services:
+  terrain_worker:
+    networks:
+      - data
+      - app

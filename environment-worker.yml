@@ -1,0 +1,60 @@
+# Terrain worker environment (integration plan 9.2): GeoFabrics 1.1.30 + Stage 2 + the EDDIE core's runtime
+# dependencies, all from conda-forge (GDAL, PROJ, PDAL from one build ecosystem).
+#   mamba env create -f environment-worker.yml
+# Then, without letting pip touch the conda packages:
+#   pip install --no-deps geofabrics==1.1.30 osmpythontools "eddie @ git+https://github.com/GeospatialResearch/Digital-Twins@<tag>"
+#   pip install --no-deps . ./eddie
+# docker/terrain-worker.Dockerfile does exactly this. Solve this file first in W9 (plan section 14 risk 1); if
+# it does not solve, fall back to two images (GeoFabrics; Stage 2) sharing the queue-name prefix.
+name: terrain-worker
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  # geospatial stack
+  - gdal>=3.9
+  - rasterio>=1.4
+  - pyproj
+  - shapely>=2.0
+  - geopandas>=1.0
+  - pyogrio
+  - xarray
+  - netcdf4
+  - rioxarray
+  # GeoFabrics 1.1.30 (pip, --no-deps) and its dependencies
+  - pdal
+  - python-pdal>=3.3
+  - dask
+  - distributed
+  - geoapis>=0.3.4
+  - boto3
+  - scipy
+  # Stage 2 [detect]
+  - numpy>=2.0
+  - affine
+  - numba>=0.60
+  - pyflwdir>=0.5.10
+  - scikit-image>=0.24
+  - matplotlib-base
+  - psutil
+  # library base and [acquire]
+  - sqlalchemy>=2.0
+  - psycopg2
+  - pyyaml
+  - requests
+  # EDDIE core runtime (core installed with pip --no-deps)
+  - celery
+  - redis-py
+  - flask
+  - flask-cors
+  - pywps
+  - python-dotenv
+  - pandas
+  - gevent
+  - gunicorn
+  # image build
+  - conda-pack
+  - pip
+  - pip:
+      - flask_swagger_ui
