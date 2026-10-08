@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eddie-terrain"
+dynamic = ["version"]
+description = "EDDIE terrain module: thin tasks, blueprint and tables over the terrain-s2 library"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.11"
+# The EDDIE core (`eddie`, GeospatialResearch/Digital-Twins) is installed by the deployment at its tag. It is
+# not declared here: `eddie` on PyPI is an unrelated project.
+dependencies = ["terrain-s2"]
+
+[project.optional-dependencies]
+worker = ["terrain-s2[detect,acquire,geofabrics]"]
+
+# v5 D6: entry-point discovery. v4 discovers the module by its `eddie_` prefix instead.
+[project.entry-points."eddie.plugins"]
+terrain = "eddie_terrain"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+root = ".."
+fallback_version = "0.0.0"

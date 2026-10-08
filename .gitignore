@@ -5,3 +5,6 @@ out/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+src/terrain_s2/_version.py
+build/
+dist/

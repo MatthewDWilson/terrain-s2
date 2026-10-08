@@ -1,31 +1,52 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=69", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "terrain-s2"
-version = "0.0.1"
-description = "EDDIE terrain Stage 2 prototype: DEM-only detection of crossings, channels and embankments"
+dynamic = ["version"]
+description = "EDDIE terrain library: Stage 1 DEMs (LINZ raster or GeoFabrics) and Stage 2 detection of crossings, channels and embankments"
+readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"
+# Base install (S2-12): light, so FReDT and Smart Ideas can use terrain_s2.client beside their pinned
+# geospatial stack (rasterio 1.3.8, numpy 1.x). Detection, acquisition and GeoFabrics are extras.
 dependencies = [
-  "numpy>=2.0", "affine", "scipy>=1.13", "numba>=0.60", "pyflwdir>=0.5.10", "scikit-image>=0.24",
-  "rasterio>=1.4", "geopandas>=1.0", "shapely>=2.0", "pyogrio", "matplotlib", "psutil",
+  "numpy", "pyproj", "shapely>=2.0", "geopandas>=0.14", "xarray", "netCDF4", "rioxarray",
+  "SQLAlchemy>=2.0", "pyyaml",
 ]
 
 [project.optional-dependencies]
+detect = [
+  "numpy>=2.0", "affine", "scipy>=1.13", "numba>=0.60", "pyflwdir>=0.5.10", "scikit-image>=0.24",
+  "rasterio>=1.4", "geopandas>=1.0", "pyogrio", "matplotlib", "psutil",
+]
+acquire = ["requests"]
+# Terrain worker only (GPL-3.0, compatible with AGPL). python-pdal needs the PDAL library: install it
+# from conda-forge (environment-worker.yml), not from PyPI.
+geofabrics = ["geofabrics==1.1.30", "geoapis>=0.3.4", "pdal", "dask", "distributed"]
 gpu = ["cupy>=13"]
 crosscheck = ["whitebox-workflows>=2.0.6"]
 ranking = ["scikit-learn>=1.5"]
-acquire = ["pyyaml", "requests"]
 dev = ["pytest", "pyflakes"]
+
+[project.scripts]
+terrain = "terrain_s2.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+terrain_s2 = ["stage1/templates/*.json", "stage1/profiles/*.yml"]
+
+[tool.setuptools_scm]
+# S2-14: the version comes from git tags (v5 D8). Without a tag it is 0.1.devN+g<commit>.
+version_file = "src/terrain_s2/_version.py"
+fallback_version = "0.0.0"
+
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+pythonpath = ["src", "eddie/src"]
+testpaths = ["tests", "eddie/tests"]
 # Deprecations raised from our own code fail the tests; the one known third-party warning is
 # silenced narrowly (rasterio 1.5.1 composes transforms with `*`, pending deprecation in affine 3).
 filterwarnings = [

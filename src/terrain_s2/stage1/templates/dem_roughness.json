@@ -1,0 +1,21 @@
+{
+ "_comment": "GeoFabrics 1.1.30 instructions for a Stage 1 geofabric: DEM plus roughness length zo (integration plan 6.3). Roughness needs point clouds. GeoFabrics' default roughness settings apply, including OSM roads; roughness keeps the vegetation classes of GeoFabrics' own multi-stage example. Values in braces are filled per request; null drops the key.",
+ "default": {
+  "output": {"crs": {"horizontal": "{h_crs}", "vertical": "{v_crs}"},
+             "grid_params": {"resolution": "{resolution}"}},
+  "processing": {"chunk_size": "{chunk_size}", "memory_limit": "{memory_limit}", "number_of_cores": "{cores}"},
+  "general": {"interpolation": {"no_data": "linear"}, "download_limit_gbytes": "{download_limit}"},
+  "data_paths": {"local_cache": "{product_dir}", "subfolder": ".", "downloads": "{downloads}",
+                 "extents": "{id}.geojson", "land": "{land_file}",
+                 "raw_dem": "{id}_raw_dem.nc", "result_dem": "{id}_dem.nc", "result_geofabric": "{id}.nc"},
+  "datasets": {"lidar": {"open_topography": "{datasets}"}},
+  "dataset_mapping": {"lidar": "{mapping}"}
+ },
+ "dem": {
+  "general": {"drop_offshore_lidar": true, "zero_positive_foreshore": false,
+              "lidar_classifications_to_keep": "{lidar_classes}", "z_labels": {"ocean": "valdco"}}
+ },
+ "roughness": {
+  "general": {"drop_offshore_lidar": true, "lidar_classifications_to_keep": [1, 2, 4, 6, 9]}
+ }
+}

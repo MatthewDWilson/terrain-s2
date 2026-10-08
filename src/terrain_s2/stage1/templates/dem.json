@@ -1,0 +1,18 @@
+{
+ "_comment": "GeoFabrics 1.1.30 instructions for a Stage 1 DEM (integration plan 6.3). Values in braces are filled per request by terrain_s2.stage1.gf; a value filled with null drops its key. Data, not code: edit, then run the regression harness (W6).",
+ "default": {
+  "output": {"crs": {"horizontal": "{h_crs}", "vertical": "{v_crs}"},
+             "grid_params": {"resolution": "{resolution}"}},
+  "processing": {"chunk_size": "{chunk_size}", "memory_limit": "{memory_limit}", "number_of_cores": "{cores}"},
+  "general": {"interpolation": {"no_data": "linear"}, "download_limit_gbytes": "{download_limit}"},
+  "data_paths": {"local_cache": "{product_dir}", "subfolder": ".", "downloads": "{downloads}",
+                 "extents": "{id}.geojson", "land": "{land_file}",
+                 "raw_dem": "{id}_raw_dem.nc", "result_dem": "{id}.nc"},
+  "datasets": {"lidar": {"open_topography": "{datasets}"}},
+  "dataset_mapping": {"lidar": "{mapping}"}
+ },
+ "dem": {
+  "general": {"drop_offshore_lidar": true, "zero_positive_foreshore": false,
+              "lidar_classifications_to_keep": "{lidar_classes}", "z_labels": {"ocean": "valdco"}}
+ }
+}

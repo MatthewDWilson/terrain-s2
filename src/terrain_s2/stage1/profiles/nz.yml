@@ -1,0 +1,31 @@
+# Stage 1 profile for New Zealand: CRS, elevation sources, LINZ layers, GeoFabrics overrides.
+# A profile is data; a new country or region gets a new file (location agnosticism, T1).
+name: nz
+crs:
+  horizontal: 2193          # NZTM 2000
+  vertical: 7839            # NZVD2016
+elevation:
+  # LINZ nz-elevation (public S3, COGs, static STAC). Collections: <region>/<survey>/<product>_1m/2193/.
+  stac_root: https://nz-elevation.s3-ap-southeast-2.amazonaws.com/
+  products: {dem: dem_1m, dsm: dsm_1m}
+  # The national mosaic (one item per 1:50k sheet, dated by its newest input) is fill only, never the
+  # chosen survey (DESIGN_NOTES section 9 item 8). Whether a matching national DSM exists is open.
+  national:
+    dem: new-zealand/new-zealand/dem_1m/2193/collection.json
+  # Survey slugs that take priority over newest-first, in order (a newer survey is not always better).
+  priority: []
+  # Survey slugs never used.
+  exclude: []
+  nodata: -9999
+land:
+  topo50_coastline: 51153   # Topo50 coastline polygons (MHW)
+  topo50_mangrove: 50296    # Topo50 mangrove polygons
+  clip_buffer_m: 100
+geofabrics:
+  # OpenTopography dataset name -> {horizontal: EPSG, vertical: EPSG}, only for surveys whose LAZ headers
+  # are known to be wrong (plan 6.3 step 3). Nothing is forced to 2193+7839 otherwise.
+  crs_overrides: {}
+  # OpenTopography datasets never used (e.g. federated, or superseded).
+  exclude: []
+  # Restrict discovery to OpenTopography-hosted point clouds (those geoapis can fetch from pc-bulk).
+  hosted_only: true
