@@ -242,7 +242,6 @@ def open_dem(path, decode: bool = True):
 
 def read_dem(path) -> DemProduct:
     """Read a contract netCDF (ours or GeoFabrics') back into a :class:`DemProduct` (loads the arrays)."""
-    from pyproj import CRS
     with open_dem(path) as ds:
         x, y = ds["x"].values, ds["y"].values
         if len(x) < 2 or len(y) < 2:

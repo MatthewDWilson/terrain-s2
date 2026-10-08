@@ -8,7 +8,7 @@ from terrain_s2 import key as K
 from terrain_s2.io import contract as C
 from terrain_s2.stage1 import aggregate, aoi as A
 
-from stage1_fakes import ROOT, FakeHttp, nz_profile, stac
+from stage1_fakes import FakeHttp, nz_profile, stac
 
 X0, Y1 = 1_641_800.0, 6_076_100.0          # near SH12 (Whirinaki), EPSG:2193
 
