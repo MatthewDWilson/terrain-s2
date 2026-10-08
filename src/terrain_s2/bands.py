@@ -15,7 +15,10 @@ FEATURES = {
 }
 
 HYDRO = {
-    "hand_m": ("m", "height above nearest drainage (HAND) on the breached DEM; the floodplain is HAND <= --max-hand"),
+    "rem_m": ("m", "relative elevation model: DEM minus a smooth surface interpolated (IDW, 20 m grid) from drainage "
+                   "elevations (wide channels and upstream area >= 0.1 km2); the floodplain is rem <= --max-hand"),
+    "hand_m": ("m", "height above nearest drainage (HAND) on the breached DEM (--height-model hand); the floodplain "
+                    "is HAND <= --max-hand"),
     "floodplain": ("0/1", "floodplain mask (HAND <= --max-hand), before the 50 m buffer"),
     "log10_upstream_area_m2": ("log10 m2", "upstream area from D8 flow on the breached DEM, within this window only "
                                            "(truncated where flow enters across the window edge)"),
@@ -48,8 +51,10 @@ def describe(names, table):
 CONDITIONED = {
     "z_conditioned_m": ("m", "DEM conditioned with the mapped network: channel cells at their 3 x 3 bed less the burn "
                              "depth, culvert links and gap repairs at the bed interpolated between their ends"),
-    "hand_m": ("m", "height above the mapped network (original DEM), along flow on the conditioned DEM; NaN where "
-                    "flow leaves the window without meeting the network"),
+    "rem_m": ("m", "relative elevation model above the streams: DEM minus a smooth surface interpolated (IDW) from the "
+                   "elevations of the identified streams and river polygons (not drains, not culvert links)"),
+    "hand_m": ("m", "height above the mapped network (original DEM), along flow on the conditioned DEM (--height-model "
+                    "hand); NaN where flow leaves the window without meeting the network"),
     "log10_upstream_area_m2": ("log10 m2", "upstream area on the conditioned DEM, seeded at the window edge from REC2 "
                                            "where a river enters (see upstream_inflow_m2)"),
     "upstream_inflow_m2": ("m2", "upstream area added at the cell where a REC2 river enters the window (0 elsewhere)"),

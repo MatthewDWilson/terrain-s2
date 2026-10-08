@@ -1030,6 +1030,45 @@ Synthetic tests: a blocked channel ponds to the embankment crest and spills ther
 and flow passes; REC2 inflow is carried downstream. To check on Matt's machine: whether the
 `inflow_no_candidate` outlets are where crossings are missing, and the HAND discontinuities.
 
+### 7l. REM replaces HAND (8 Oct 2026)
+
+Matt: HAND has gaps and discontinuities (one drainage elevation per cell, the nearest along flow).
+Replaced by a relative elevation model (`terrain_s2/rem.py`) as in OpenTopography's RiverREM (Larrieu
+2022): sample channel elevations, interpolate by IDW (k = 12 nearest, power 1), subtract from the DEM.
+Samples: one per 10 m block of drainage cells (25th percentile of their elevations, at their mean
+position); interpolation on a 20 m grid, upsampled bilinearly (Matt: a coarse intermediate raster is
+enough for a smooth surface). Used in both passes: the floodplain mask (drainage = wide channels and
+upstream area >= 0.1 km2; `--height-model rem`, the default; `hand` kept for comparison) and the
+conditioned pass (drainage = the mapped network). Bands `rem_m` in hydro.tif and conditioned.tif.
+
+**RiverREM is not a dependency:** it pins numpy < 2 (we need >= 2), GDAL 3.7-3.8 and osmnx < 2, works
+through files (GDAL rasterize, shapefiles), takes one river from OpenStreetMap, and is GPL-3.0 (compatible
+with our AGPL-3.0, but the pins are not). The method is ~60 lines; ours follows it, credited in the module.
+
+**Verified** (sandbox, CPU; HAND vs REM): network and crossings unchanged at canterbury1 and canterbury2
+(floodplain 1.0 either way: culverts found 3/3 and 4/4, connected 1 and 2; channel coverage and accuracy
+identical); SH12 floodplain 0.568 -> 0.560, channels 9.30 -> 9.29 km; AOI2 0.582 -> 0.560, 7.67 -> 7.73 km;
+crossing counts and tiers identical at all four; benchmarks pass (SH12 4/4, AOI2 2/2). Height jumps not
+explained by the DEM (> 0.25 m between neighbours): HAND 0.45-1.1 % of neighbour pairs, REM 0. Conditioned
+pass: defined on 84 % of the window with HAND, 100 % with REM. Faster: floodplain 11 -> 1 s, conditioned
+20 -> 9 s at canterbury1 (total 114 -> 92 s).
+
+**Caveats:** (1) edge bias: within ~60 m of the window edge the nearest samples are one-sided; inside the
+200 m buffer. (2) IDW is planimetric: across a stopbank or terrace it blends river and landside drain
+elevations (HAND follows flow); a river-only REM (wide channels only) is the variant for stopbank work.
+(3) LiDAR returns water surface in wet channels, so the REM is relative to water surface there.
+(4) the 10 m floodplain threshold now applies to the REM (AOI2 and SH12 floodplains ~1-4 % smaller).
+
+- **Conditioned REM on streams, not drains** (Matt, 8 Oct): the secondary output is a river-and-stream
+  REM: sampled on reaches classed `stream` (the identified ones, including small streams missing from mapped
+  data) plus river polygons. Drains and culvert links are not sampled (a drain added anywhere would change
+  the model; a link's original cells are the barrier crest), and a stopbank is judged against the river.
+  Conditioning, routing and residual ponds still use the whole network. Falls back to the network if no
+  stream is identified (`rem_basis` in network.json). canterbury1: 1,929 samples on 'streams and rivers',
+  REM median 0.54 m (0.43 sampled on the whole network), mean |difference| 0.28 m; no gaps. The first-pass
+  REM (floodplain) still uses wide channels and upstream area, since streams are not identified yet.
+  Depends on the stream/drain classification (0.86-0.90 by length at canterbury1/2).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

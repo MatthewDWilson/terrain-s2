@@ -55,3 +55,17 @@ def test_rec2_inflow_seeds_upstream_area_at_the_edge():
     c = conditioning.run(valley(False), T, 2193, [LineString([(50.5, 99.5), (50.5, 0.5)])], [], rec2=rec2)
     assert c.n_seeded == 1 and c.upa_inflow.sum() == pytest.approx(4e6)
     assert c.upa.reshape(100, 100)[5, 50] > 4e6                               # carried downstream
+
+
+def test_rem_on_streams_ignores_drains():
+    """Adding a drain must not change the REM sampled on the streams (Matt, 8 Oct 2026)."""
+    z = valley(False)
+    stream = LineString([(50.5, 97.5), (50.5, 0.5)])
+    drain = LineString([(80.5, 90.5), (80.5, 10.5)])
+    a = conditioning.run(z, T, 2193, [stream], [], height_model="rem", rem_lines=[stream])
+    b = conditioning.run(z, T, 2193, [stream, drain], [], height_model="rem", rem_lines=[stream])
+    c = conditioning.run(z, T, 2193, [stream, drain], [], height_model="rem")           # sampled on the network
+    assert a.rem_basis == "streams and rivers" and np.array_equal(a.hand, b.hand)
+    assert not np.allclose(c.hand, b.hand)                                              # the drain did change it
+    none = conditioning.run(z, T, 2193, [stream], [], height_model="rem", rem_lines=[])
+    assert none.rem_basis.startswith("network") and np.isfinite(none.hand).all()

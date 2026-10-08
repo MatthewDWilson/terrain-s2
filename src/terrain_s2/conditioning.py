@@ -14,7 +14,12 @@ network. This pass starts again from the DEM and imposes the result:
 3. the conditioned DEM is filled and routed (D8); upstream area is accumulated, seeded at the window
    edge from REC2 where a REC2 river enters the window (its upstream area, approximately CUM_AREA less
    the segment's own catchment, added at the mapped channel cell nearest to where it enters);
-4. HAND is measured from the original DEM to the mapped network along the conditioned flow;
+4. height above the streams: a relative elevation model (terrain_s2.rem; default) on the identified
+   streams (reaches classed stream, including the small ones missing from mapped data) and river
+   polygons, not the drains: adding or removing a drain must not change it, and a stopbank is then
+   judged against the river, not the landside drains (Matt, 8 Oct 2026). Culvert links are not
+   sampled either (their original DEM cells are the barrier crest). HAND (to the whole network, along
+   the conditioned flow) is the alternative;
 5. residual depressions (fill of the conditioned DEM minus the original DEM, so the burn itself never
    counts) are what the mapped network still fails to drain. Each pond's outlet is the cell where its
    water leaves (D8 on the filled conditioned DEM): where a pond a mapped channel flows into spills,
@@ -36,11 +41,13 @@ class Conditioned:
     drain: np.ndarray              # bool, the mapped network as rasterised
     upa: np.ndarray                # m2, with REC2 inflow where seeded
     upa_inflow: np.ndarray         # m2 added at each seeded cell (0 elsewhere)
-    hand: np.ndarray               # m, to the mapped network (NaN where flow never reaches it)
+    hand: np.ndarray               # m, height above the streams (REM), or above the network (HAND: NaN where flow misses it)
     residual: np.ndarray           # m, fill - conditioned DEM
     ponds: object                  # GeoDataFrame of residual ponds (polygons, attributes)
     outlets: object = None         # GeoDataFrame: one spill point per pond
     n_seeded: int = 0
+    rem_basis: str = ""            # what the REM was sampled on
+    rem_samples: int = 0
 
 
 def _line_cells(geom, T, shape):
@@ -220,7 +227,9 @@ def residual_ponds(residual, drain, T, crs, idxs_ds, upa, candidates=None, rd=No
 
 
 def run(z, T, crs, channel_lines, link_lines, river_mask=None, rec2=None, window_bounds=None,
-        candidates=None, rd=None, burn_m=0.25):
+        candidates=None, rd=None, burn_m=0.25, height_model="hand", rem_lines=None):
+    """``rem_lines``: the lines the REM is sampled on (the identified streams), with ``river_mask``;
+    None samples the whole network. If they give no samples, the network is used and ``rem_basis`` says so."""
     cs = abs(T.a)
     zc, drain = condition(z, T, channel_lines, link_lines, river_mask, burn_m)
     zf, d8 = hydro.fill(zc)
@@ -233,13 +242,31 @@ def run(z, T, crs, channel_lines, link_lines, river_mask=None, rec2=None, window
         inflow.flat[k] += a
     upa = flw.accuflux(w + inflow)
     upa = np.where(np.isfinite(z), upa, np.nan)
-    hand = flw.hand(drain=drain, elevtn=np.nan_to_num(z, nan=-9999.0).astype(np.float32))
-    reaches = flw.accuflux(drain.astype(np.float64), direction="down") > 0   # downstream path meets the network
-    hand = np.where(np.isfinite(z) & reaches, hand, np.nan)                  # else undefined (drains elsewhere)
+    rem_basis, n_rem = "", 0
+    if height_model == "rem":
+        from .rem import rem
+        basis = drain
+        rem_basis = "network"
+        if rem_lines is not None:
+            basis = np.zeros(z.shape, bool)
+            for g in rem_lines:
+                r, c = _line_cells(g, T, z.shape)
+                basis[r, c] = True
+            if river_mask is not None:
+                basis |= river_mask
+            basis &= np.isfinite(z)
+            rem_basis = "streams and rivers"
+            if not basis.any():
+                basis, rem_basis = drain, "network (no streams identified)"
+        hand, _, n_rem = rem(z, T, basis)
+    else:
+        hand = flw.hand(drain=drain, elevtn=np.nan_to_num(z, nan=-9999.0).astype(np.float32))
+        reaches = flw.accuflux(drain.astype(np.float64), direction="down") > 0   # downstream path meets the network
+        hand = np.where(np.isfinite(z) & reaches, hand, np.nan)                  # else undefined (drains elsewhere)
     residual = np.where(np.isfinite(z), np.maximum(zf - z, 0.0), np.nan)       # against the original DEM
     ponds, outlets = residual_ponds(residual, drain, T, crs, flw.idxs_ds, upa, candidates, rd, cs)
     return Conditioned(zc.astype(np.float32), drain, upa, inflow, hand.astype(np.float32),
-                       residual.astype(np.float32), ponds, outlets, len(seeds))
+                       residual.astype(np.float32), ponds, outlets, len(seeds), rem_basis, n_rem)
 
 
 def _bounds(T, shape):

@@ -68,7 +68,8 @@ def _conditioned_pass(a, w, hcrs, ch, culvert_edges, rep, riv, cr, rd):
             rec2 = gpd.read_file(ctx, layer="rivers_rec2").to_crs(hcrs)
     links = [r["geometry"] for r in culvert_edges] + (list(rep.geometry) if len(rep) else [])
     return conditioning.run(w.z, w.transform, hcrs, list(ch.geometry), links, river_mask=riv, rec2=rec2,
-                            window_bounds=w.bounds, candidates=cr if len(cr) else None, rd=rd, burn_m=a.burn_m)
+                            window_bounds=w.bounds, candidates=cr if len(cr) else None, rd=rd, burn_m=a.burn_m,
+                            height_model=a.height_model, rem_lines=list(ch.geometry[ch["class"] == "stream"]))
 
 
 def _cond_summary(cond, core):
@@ -77,10 +78,11 @@ def _cond_summary(cond, core):
     O = cond.outlets[cond.outlets.intersects(core)] if cond.outlets is not None and len(cond.outlets) else []
     return dict(rec2_inflows=cond.n_seeded, residual_ponds=int(len(P)), pond_outlets=int(len(O)),
                 ponds_by_status={k: int(v) for k, v in by.items()},
-                network_cells=int(cond.drain.sum()), hand_defined_frac=round(float(np.isfinite(cond.hand).mean()), 3))
+                network_cells=int(cond.drain.sum()), height_defined_frac=round(float(np.isfinite(cond.hand).mean()), 3),
+                rem_basis=cond.rem_basis, rem_samples=cond.rem_samples)
 
 
-def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, cond=None):
+def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, cond=None, height_model="rem"):
     """features.tif and hydro.tif on the window grid, cropped to the AOI (tiles then mosaic without
     overlap), float32, deflate; rasters.json gives each band's units and meaning."""
     import rasterio.windows
@@ -98,7 +100,7 @@ def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, 
         meta["features.tif"] = B.describe(list(f), B.FEATURES)
     h = {}
     if hand is not None:
-        h["hand_m"] = hand
+        h["rem_m" if height_model == "rem" else "hand_m"] = hand
         h["floodplain"] = np.where(valid, fp.astype(np.float32), np.nan)
     h["log10_upstream_area_m2"] = np.where(valid, np.log10(np.maximum(res.upa, 1.0)), np.nan)
     h["breach_depth_m"] = np.where(valid, w.z - res.breach.z_breached, np.nan)
@@ -113,7 +115,7 @@ def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, 
     dataio.write_stack(out / "hydro.tif", h, tr, w.crs)
     meta["hydro.tif"] = B.describe(list(h), B.HYDRO)
     if cond is not None:
-        c = {"z_conditioned_m": cond.z_conditioned, "hand_m": cond.hand,
+        c = {"z_conditioned_m": cond.z_conditioned, ("rem_m" if height_model == "rem" else "hand_m"): cond.hand,
              "log10_upstream_area_m2": np.where(valid, np.log10(np.maximum(cond.upa, 1.0)), np.nan),
              "upstream_inflow_m2": cond.upa_inflow.astype(np.float32),
              "residual_depression_m": cond.residual, "network": cond.drain.astype(np.float32)}
@@ -140,6 +142,9 @@ def main():
     ap.add_argument("--device", default="auto")
     ap.add_argument("--out", required=True)
     ap.add_argument("--profile", action="store_true", help="cProfile the run: <out>/profile.prof and profile_top.txt")
+    ap.add_argument("--height-model", choices=["rem", "hand"], default="rem",
+                    help="height above drainage for the floodplain and rasters: relative elevation model (IDW of channel "
+                         "elevations, continuous) or HAND (nearest drainage along flow); default rem")
     ap.add_argument("--no-conditioned", action="store_true",
                     help="skip the conditioned hydrology pass (conditioned.tif, residual_ponds)")
     ap.add_argument("--burn-m", type=float, default=0.25, help="channel burn below the local bed, conditioned pass (m)")
@@ -178,7 +183,8 @@ def main():
     if a.max_hand > 0:
         flw = res.flw                      # routed once in pipeline.run (was recomputed here: fill + D8 again)
         wide = (ndi.distance_transform_edt(strong) * cs) >= 4.0
-        fp, hand = floodplain.floodplain_mask(w.z, flw, res.upa, wide, cs, a.max_hand)
+        fp, hand = floodplain.floodplain_mask(w.z, flw, res.upa, wide, cs, a.max_hand, transform=w.transform,
+                                              height_model=a.height_model)
         fp_buf = ndi.binary_dilation(fp, iterations=int(round(50 / cs)))
         strong &= fp_buf
     T.mark("floodplain")
@@ -282,7 +288,7 @@ def main():
         T.mark("conditioned_hydrology")
     if a.rasters != "none":
         _write_rasters(out, a.rasters, w, aoi.total_bounds, res, net, sk, fp, hand if fp is not None else None, dsm, rd,
-                       cond)
+                       cond, a.height_model)
     T.mark("write")
     T.stop()
     info = dict(dem=a.dem, dsm=a.dsm, roads=a.roads, stream_model=a.stream_model, aoi=a.aoi,
