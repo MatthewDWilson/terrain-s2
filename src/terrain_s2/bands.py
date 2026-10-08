@@ -43,3 +43,17 @@ def describe(names, table):
         else:
             out[n] = dict(units="", description="")
     return out
+
+
+CONDITIONED = {
+    "z_conditioned_m": ("m", "DEM conditioned with the mapped network: channel cells at their 3 x 3 bed less the burn "
+                             "depth, culvert links and gap repairs at the bed interpolated between their ends"),
+    "hand_m": ("m", "height above the mapped network (original DEM), along flow on the conditioned DEM; NaN where "
+                    "flow leaves the window without meeting the network"),
+    "log10_upstream_area_m2": ("log10 m2", "upstream area on the conditioned DEM, seeded at the window edge from REC2 "
+                                           "where a river enters (see upstream_inflow_m2)"),
+    "upstream_inflow_m2": ("m2", "upstream area added at the cell where a REC2 river enters the window (0 elsewhere)"),
+    "residual_depression_m": ("m", "fill of the conditioned DEM minus the original DEM (>= 0): water the mapped "
+                                   "network does not drain (the burn itself is not counted)"),
+    "network": ("0/1", "the mapped network as rasterised for conditioning (drainage for HAND)"),
+}

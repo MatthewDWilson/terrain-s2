@@ -56,7 +56,31 @@ def _near_any(geoms, targets, d, strict=False):
     return out
 
 
-def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd):
+def _conditioned_pass(a, w, hcrs, ch, culvert_edges, rep, riv, cr, rd):
+    """Second hydrology pass on the DEM conditioned with the mapped network (terrain_s2.conditioning)."""
+    import geopandas as gpd
+    from terrain_s2 import conditioning
+    rec2 = None
+    ctx = Path(a.context) if a.context else Path(a.dem[0]).with_name("context.gpkg")
+    if ctx.exists():
+        import pyogrio
+        if "rivers_rec2" in {n for n, _ in pyogrio.list_layers(ctx)}:
+            rec2 = gpd.read_file(ctx, layer="rivers_rec2").to_crs(hcrs)
+    links = [r["geometry"] for r in culvert_edges] + (list(rep.geometry) if len(rep) else [])
+    return conditioning.run(w.z, w.transform, hcrs, list(ch.geometry), links, river_mask=riv, rec2=rec2,
+                            window_bounds=w.bounds, candidates=cr if len(cr) else None, rd=rd, burn_m=a.burn_m)
+
+
+def _cond_summary(cond, core):
+    P = cond.ponds[cond.ponds.intersects(core)] if len(cond.ponds) else cond.ponds
+    by = P.status.value_counts().to_dict() if len(P) else {}
+    O = cond.outlets[cond.outlets.intersects(core)] if cond.outlets is not None and len(cond.outlets) else []
+    return dict(rec2_inflows=cond.n_seeded, residual_ponds=int(len(P)), pond_outlets=int(len(O)),
+                ponds_by_status={k: int(v) for k, v in by.items()},
+                network_cells=int(cond.drain.sum()), hand_defined_frac=round(float(np.isfinite(cond.hand).mean()), 3))
+
+
+def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, cond=None):
     """features.tif and hydro.tif on the window grid, cropped to the AOI (tiles then mosaic without
     overlap), float32, deflate; rasters.json gives each band's units and meaning."""
     import rasterio.windows
@@ -88,6 +112,14 @@ def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd):
     h = {k: crop(v) for k, v in h.items()}
     dataio.write_stack(out / "hydro.tif", h, tr, w.crs)
     meta["hydro.tif"] = B.describe(list(h), B.HYDRO)
+    if cond is not None:
+        c = {"z_conditioned_m": cond.z_conditioned, "hand_m": cond.hand,
+             "log10_upstream_area_m2": np.where(valid, np.log10(np.maximum(cond.upa, 1.0)), np.nan),
+             "upstream_inflow_m2": cond.upa_inflow.astype(np.float32),
+             "residual_depression_m": cond.residual, "network": cond.drain.astype(np.float32)}
+        c = {k: crop(v) for k, v in c.items()}
+        dataio.write_stack(out / "conditioned.tif", c, tr, w.crs)
+        meta["conditioned.tif"] = B.describe(list(c), B.CONDITIONED)
     (out / "rasters.json").write_text(json.dumps(meta, indent=2))
 
 
@@ -108,6 +140,11 @@ def main():
     ap.add_argument("--device", default="auto")
     ap.add_argument("--out", required=True)
     ap.add_argument("--profile", action="store_true", help="cProfile the run: <out>/profile.prof and profile_top.txt")
+    ap.add_argument("--no-conditioned", action="store_true",
+                    help="skip the conditioned hydrology pass (conditioned.tif, residual_ponds)")
+    ap.add_argument("--burn-m", type=float, default=0.25, help="channel burn below the local bed, conditioned pass (m)")
+    ap.add_argument("--context", help="context.gpkg with rivers_rec2 to seed upstream area at the window edge "
+                                      "(default: context.gpkg beside the DEM, if present)")
     ap.add_argument("--rasters", choices=["all", "hydro", "none"], default="all",
                     help="write features.tif (DEM feature stack) and hydro.tif (HAND, upstream area, ...), cropped "
                          "to the AOI, with rasters.json describing the bands (all: both; hydro: hydro.tif only)")
@@ -234,8 +271,18 @@ def main():
         g = g[g.intersects(core)]
         if len(g):
             g.to_file(gpkg, layer=name, driver="GPKG")
+    cond = None
+    if not a.no_conditioned:
+        T.mark("write")
+        cond = _conditioned_pass(a, w, hcrs, ch, culvert_edges, rep, riv, cr, rd)
+        for name, g in (("residual_ponds", cond.ponds), ("pond_outlets", cond.outlets)):
+            g = g[g.intersects(core)] if len(g) else g
+            if len(g):
+                g.to_file(gpkg, layer=name, driver="GPKG")
+        T.mark("conditioned_hydrology")
     if a.rasters != "none":
-        _write_rasters(out, a.rasters, w, aoi.total_bounds, res, net, sk, fp, hand if fp is not None else None, dsm, rd)
+        _write_rasters(out, a.rasters, w, aoi.total_bounds, res, net, sk, fp, hand if fp is not None else None, dsm, rd,
+                       cond)
     T.mark("write")
     T.stop()
     info = dict(dem=a.dem, dsm=a.dsm, roads=a.roads, stream_model=a.stream_model, aoi=a.aoi,
@@ -245,7 +292,8 @@ def main():
                 repairs=int(rep.intersects(core).sum()) if len(rep) else 0,
                 reaches_removed_by_cleaning=int(n_removed), rivers=len(riv_g),
                 floodplain_frac=round(float(fp.mean()), 3) if fp is not None else None,
-                cells=int(w.z.size), device=res.device, perf=T.report())
+                cells=int(w.z.size), device=res.device,
+                conditioned=_cond_summary(cond, core) if cond is not None else None, perf=T.report())
     (out / "network.json").write_text(json.dumps(info, indent=2))
     if prof is not None:
         import io

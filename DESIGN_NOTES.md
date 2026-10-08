@@ -1002,6 +1002,34 @@ with width and slope smoothed only within a reach and Q from REC2 where it snaps
   ML-2 link decisions and network assembly; ML-3 dense multi-task U-Net (channels with clDice, crests,
   crossing heatmap); ML-4 bed elevation.
 
+### 7k. Conditioned hydrology pass (8 Oct 2026)
+
+`terrain_s2/conditioning.py`, run by `run_network.py` after the network is assembled (default on;
+`--no-conditioned`, `--burn-m 0.25`, `--context` for REC2, default the bundle's `context.gpkg`):
+1. starting from the *original* DEM (not the breached one, so only mapped links drain barriers), channel
+   cells (cleaned reaches, river polygons) go to their 3 x 3 bed less the burn; culvert links (accepted
+   Test A paths) and gap repairs go to the bed interpolated between their ends (an invert), only lowering;
+2. fill and D8 on the conditioned DEM; upstream area seeded where a REC2 river enters the window
+   (up end outside, down end inside; CUM_AREA - CATAREA added at the mapped channel cell nearest the
+   entry, within 30 m);
+3. HAND from the original DEM to the mapped network along the conditioned flow (NaN where flow
+   leaves without meeting the network);
+4. residual depressions = fill(conditioned) - original DEM (the burn never counts); ponds >= 25 m2 and
+   deeper than 5 cm, each with its outlet (the pond cell draining out of it with the largest upstream
+   area), mapped channel in or beside it, candidates on the rim, road distance, and a status:
+   `closed` (no mapped channel), `inflow_candidate_at_outlet` (a candidate within 15 m of the outlet:
+   found, not linked), `inflow_no_candidate` (drainage blocked with no candidate: a missed crossing,
+   or a wetland or closed basin).
+Outputs: `conditioned.tif` (z_conditioned_m, hand_m, log10_upstream_area_m2, upstream_inflow_m2,
+residual_depression_m, network) with `rasters.json`; `network.gpkg` layers `residual_ponds` and
+`pond_outlets`; `network.json` `conditioned` summary. Existing layers are unchanged (the pass runs after).
+
+Sandbox: canterbury1 +19 s (112 s total; 1.5 GB), 977 ponds: 813 closed, 65 with a candidate at the
+outlet, 99 with inflow and no candidate; HAND defined on 84 % of the window. SH12 +5 s. Benchmarks pass.
+Synthetic tests: a blocked channel ponds to the embankment crest and spills there; the link drains it
+and flow passes; REC2 inflow is carried downstream. To check on Matt's machine: whether the
+`inflow_no_candidate` outlets are where crossings are missing, and the HAND discontinuities.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

@@ -18,7 +18,7 @@ gpu = ["cupy>=13"]
 crosscheck = ["whitebox-workflows>=2.0.6"]
 ranking = ["scikit-learn>=1.5"]
 acquire = ["pyyaml", "requests"]
-dev = ["pytest"]
+dev = ["pytest", "pyflakes"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

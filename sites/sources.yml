@@ -234,7 +234,8 @@ sources:
     # CATAREA, StreamOrde (truncated name), nzsegment, NextDownID, upElev/downElev, segslpmean.
     url: https://services3.arcgis.com/fp1tibNcN9mbExhG/ArcGIS/rest/services/REC2_Layers/FeatureServer/0
     layer: rivers_rec2
-    fields: {upstream_area_m2: CUM_AREA, catchment_area_m2: CATAREA, strahler: StreamOrde, next_down: NextDownID}
+    fields: {upstream_area_m2: CUM_AREA, catchment_area_m2: CATAREA, strahler: StreamOrde, next_down: NextDownID,
+             up_x: upcoordX, up_y: upcoordY, down_x: downcoordX, down_y: downcoordY}
     id_field: [nzsegment, OBJECTID]
     scope: national river network from a coarse DEM; context only (upstream area, flows), not stream labels
   osm:
