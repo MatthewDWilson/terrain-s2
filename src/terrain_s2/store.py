@@ -26,6 +26,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.types import TypeDecorator, UserDefinedType
@@ -62,7 +63,10 @@ class Geometry(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
-        wkt = value if isinstance(value, str) else value.wkt
+        if not isinstance(value, str):
+            import shapely
+            value = shapely.force_2d(value).wkt
+        wkt = value
         return f"SRID={self.srid};{wkt}" if dialect.name == "postgresql" else wkt
 
     def process_result_value(self, value, dialect):
@@ -166,7 +170,8 @@ class Store:
         with self.engine.begin() as c:
             if c.dialect.name == "postgresql":
                 try:
-                    c.execute(sa.text("CREATE EXTENSION IF NOT EXISTS postgis"))
+                    with c.begin_nested():       # a failure must not abort the outer transaction
+                        c.execute(sa.text("CREATE EXTENSION IF NOT EXISTS postgis"))
                 except Exception:  # noqa: BLE001 - no rights: the extension must already exist
                     pass
             self.md.create_all(c, checkfirst=True)
@@ -257,43 +262,74 @@ class Store:
         return out
 
     def clip(self, parent: Product, aoi, grid_bounds, *, out_root=None) -> Product:
-        """Cut ``parent`` to ``grid_bounds`` (aligned to its grid), write it in the contract beside the parent
-        and register it as a child row."""
+        """Serve ``aoi`` from ``parent``: when the grids coincide, register the parent's files for this AOI;
+        otherwise cut the parent to ``grid_bounds`` (aligned to its grid), write the cut in the contract under
+        ``<products>/<key>/clips/<grid_id>/`` (a namespace :func:`terrain_s2.stage1.dem.build` never writes),
+        and register it as a child row. Writing is locked and the manifest written last, atomically."""
         import datetime as _dt
 
         from .io import contract as C
         from .key import digest
-        p = C.read_dem(parent.netcdf)
-        a, _, c, _, e, f = p.transform
-        x0, y0, x1, y1 = grid_bounds
-        c0, r0 = (x0 - c) / a, (f - y1) / -e
-        c1, r1 = (x1 - c) / a, (f - y0) / -e
-        if any(abs(v - round(v)) > 1e-6 for v in (c0, r0, c1, r1)):
-            raise ValueError(f"grid {grid_bounds} is not aligned to the parent's grid {p.transform}")
-        c0, r0, c1, r1 = (int(round(v)) for v in (c0, r0, c1, r1))
-        sl = (slice(r0, r1), slice(c0, c1))
-        cut = lambda v: None if v is None else v[sl]  # noqa: E731
-        prov = dict(p.provenance, clipped_from={"id": parent.id, "generator_key": parent.generator_key,
-                                                "netcdf": parent.netcdf}, grid_bounds=list(grid_bounds))
-        child = C.DemProduct(z=p.z[sl], transform=(a, 0.0, float(x0), 0.0, e, float(y1)), crs=p.crs,
-                             resolution=p.resolution, product=p.product, generator=p.generator,
-                             data_source=cut(p.data_source), lidar_source=cut(p.lidar_source),
-                             lidar_mapping={k: v for k, v in p.lidar_mapping.items() if k != "no LiDAR"},
-                             zo=cut(p.zo), modification_source=cut(p.modification_source), provenance=prov,
-                             attrs={k: v for k, v in p.attrs.items() if k in ("geofabrics_instructions", "history")})
-        gid = digest({"grid": list(grid_bounds), "crs": p.crs}, 12)
-        root = Path(out_root) if out_root else Path(parent.netcdf).parent.parent
-        out_dir = root / gid
-        name = Path(parent.netcdf).stem
-        paths = C.write_dem(out_dir / f"{name}.nc", child)
-        geom = C.valid_footprint(child.z, child.transform)
-        paths["extents"] = str(C.write_extents(out_dir / f"{name}_extents.geojson", geom, p.crs))
-        rec = dict(key=parent.generator_key, info=parent.generator_info, product=parent.product,
-                   resolution=parent.resolution, aoi_wkt=aoi.wkt, extent_wkt=geom.wkt if geom is not None else None,
-                   grid_bounds=list(grid_bounds), paths=paths,
-                   created=_dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"))
-        (out_dir / "product.json").write_text(json.dumps(dict(rec, parent_id=parent.id), indent=1, default=str))
+        from shapely.geometry import box
+        now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+        base = dict(key=parent.generator_key, info=parent.generator_info, product=parent.product,
+                    resolution=parent.resolution, aoi_wkt=aoi.wkt, created=now)
+        if parent.grid is not None and parent.grid.equals(box(*grid_bounds)):
+            return self.register(dict(base, extent_wkt=parent.extent.wkt if parent.extent is not None else None,
+                                      grid_bounds=list(grid_bounds), paths=parent.paths), parent_id=parent.id)
+        crs = parent.generator_info.get("crs")
+        gid = digest({"grid": list(grid_bounds), "crs": crs, "parent": parent.generator_key}, 12)
+        root = Path(out_root) if out_root else _key_root(parent)
+        out_dir = root / "clips" / gid
+        manifest = out_dir / "product.json"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        from .stage1.dem import _Lock
+        with _Lock(out_dir / ".lock", 3600, lambda *a: None):
+            if not manifest.exists():
+                p = C.read_dem(parent.netcdf)
+                a, _, c, _, e, f = p.transform
+                x0, y0, x1, y1 = grid_bounds
+                c0, r0 = (x0 - c) / a, (f - y1) / -e
+                c1, r1 = (x1 - c) / a, (f - y0) / -e
+                if any(abs(v - round(v)) > 1e-6 for v in (c0, r0, c1, r1)):
+                    raise ValueError(f"grid {grid_bounds} is not aligned to the parent's grid {p.transform}")
+                c0, r0, c1, r1 = (int(round(v)) for v in (c0, r0, c1, r1))
+                sl = (slice(r0, r1), slice(c0, c1))
+                cut = lambda v: None if v is None else v[sl]  # noqa: E731
+                prov = dict(p.provenance, clipped_from={"id": parent.id, "generator_key": parent.generator_key,
+                                                        "netcdf": parent.netcdf}, grid_bounds=list(grid_bounds))
+                child = C.DemProduct(z=p.z[sl], transform=(a, 0.0, float(x0), 0.0, e, float(y1)), crs=p.crs,
+                                     resolution=p.resolution, product=p.product, generator=p.generator,
+                                     data_source=cut(p.data_source), lidar_source=cut(p.lidar_source),
+                                     lidar_mapping={k: v for k, v in p.lidar_mapping.items() if k != "no LiDAR"},
+                                     zo=cut(p.zo), modification_source=cut(p.modification_source), provenance=prov,
+                                     attrs={k: v for k, v in p.attrs.items()
+                                            if k in ("geofabrics_instructions", "history")})
+                name = Path(parent.netcdf).stem
+                paths = C.write_dem(out_dir / f"{name}.nc", child)
+                geom = C.valid_footprint(child.z, child.transform)
+                paths["extents"] = str(C.write_extents(out_dir / f"{name}_extents.geojson", geom, p.crs))
+                valid = np.isfinite(child.z)
+                rec = dict(base, backend=parent.generator_info.get("request", {}).get("backend"), crs=p.crs,
+                           product_dir=str(out_dir), paths=paths, grid_bounds=list(grid_bounds),
+                           extent_wkt=geom.wkt if geom is not None else None,
+                           gap_fraction=float(1 - valid.mean()) if valid.size else 1.0,
+                           extra={"clipped_from": parent.id})
+                tmp = manifest.with_name("product.json.part")
+                tmp.write_text(json.dumps(rec, indent=1, default=str))
+                tmp.replace(manifest)
+        rec = json.loads(manifest.read_text())
+        rec["aoi_wkt"] = aoi.wkt
         return self.register(rec, parent_id=parent.id)
+
+
+def _key_root(parent: Product) -> Path:
+    """``<products>/<generator_key>`` above a product's netCDF (the product may itself be a clip)."""
+    p = Path(parent.netcdf).parent
+    for q in [p, *p.parents]:
+        if q.name == parent.generator_key:
+            return q
+    return p.parent
 
 
 def _equal(a, b, tol: float) -> bool:

@@ -178,6 +178,13 @@ def build(*, settings, profile: dict, aoi_geom, bounds, out_dir, name: str, key:
     ins = instructions(settings=settings, profile=profile, out_dir=out_dir, name=name, datasets=datasets,
                        mapping=mapping, land_file=land_file, cache_dir=cache_dir, overrides=overrides)
     (out_dir / "instructions.json").write_text(json.dumps(ins, indent=1))
+    # GeoFabrics skips a stage whose output file exists; outputs left by an interrupted build (no manifest, or
+    # the caller would have reused the product) must not be taken as finished.
+    dp = ins["default"]["data_paths"]
+    for k in ("raw_dem", "result_dem", "result_geofabric"):
+        if k in dp:
+            f = Path(dp[k]) if Path(dp[k]).is_absolute() else Path(dp["local_cache"]) / dp["subfolder"] / dp[k]
+            f.unlink(missing_ok=True)
     (runner or run_geofabrics)(ins)
     t_gf = time.perf_counter() - t0
     nc = result_path(ins, settings.product)

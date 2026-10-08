@@ -42,7 +42,8 @@ def build(plan: SourcePlan, src, *, settings, profile: dict, aoi_geom, bounds, o
     out_dir = Path(out_dir)
     land_rec = {"land_source": settings.land_source}
     if settings.land_source != "coverage":
-        lp, land_rec = land.build(settings.land_source, aoi_geom, rd.crs, out_dir / f"{name}_land.geojson",
+        from shapely.geometry import box
+        lp, land_rec = land.build(settings.land_source, box(*bounds), rd.crs, out_dir / f"{name}_land.geojson",
                                   profile=profile, http=http, store=store, linz_key=settings.linz_api_key,
                                   land_file=settings.land_file)
         if lp is None:

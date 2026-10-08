@@ -1,5 +1,5 @@
 """Land polygon for Stage 1 (plan 6.4; Document 2 S1.4). Every source writes exactly one polygon file,
-clipped to the AOI buffered by 100 m, because GeoFabrics accepts only one land file.
+clipped to the product grid buffered by 100 m, because GeoFabrics accepts only one land file.
 
 ============================  =======================================================================
 ``land_source``               Polygon
@@ -24,7 +24,8 @@ def build(source: str, aoi_geom, crs, out_path, *, profile: dict, coverage=None,
           linz_key: str | None = None, land_file: str | None = None):
     """Write the land polygon for ``source`` and return ``(path or None, record)``.
 
-    ``aoi_geom`` is in the working CRS ``crs``. ``coverage`` (a shapely geometry in ``crs``) is required for
+    ``aoi_geom`` (working CRS ``crs``) is the area to cover: callers pass the product's grid box, so the polygon
+    reaches 100 m beyond every cell, including a 200 m Stage 2 buffer. ``coverage`` (a shapely geometry in ``crs``) is required for
     ``coverage``. Returns ``None`` as the path when the polygon is empty (the caller decides whether that is
     an error); the record lists what was used, with snapshot hashes.
     """

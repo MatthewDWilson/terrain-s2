@@ -139,3 +139,48 @@ def test_geometry_column_round_trip(tmp_path):
     p = reg.register(rec)
     assert p.aoi.equals(box(0, 0, 10, 10)) and p.grid.bounds == (0, 0, 16, 16)
     assert reg.get(p.id).generator_info == {"config_key": "c", "request": {}}
+
+
+def test_clips_never_touch_built_products(env):
+    """Review findings: a clip lives under clips/ and a same-grid request reuses the parent's files, so later
+    builds of either AOI still work (no overwritten folder, complete manifests)."""
+    from terrain_s2.stage1.dem import ensure, make
+    tmp, reg, kw = env
+    big = ensure(BIG, _settings(tmp), **kw)
+    small2 = _box(X0 + 24, Y1 - 136, X0 + 64, Y1 - 24)
+    c2 = ensure(small2, _settings(tmp, spatial_reuse=True), **kw)
+    assert "/clips/" in c2.netcdf
+    mk = {k: v for k, v in kw.items() if k != "registry"}
+    assert make(small2, _settings(tmp), **mk).paths["netcdf"] != c2.netcdf     # its own build, unharmed
+    near = _box(X0 + 9, Y1 - 151, X0 + 151, Y1 - 9)                             # snaps to the same 8 m grid
+    same = ensure(near, _settings(tmp, spatial_reuse=True), **kw)
+    assert same.netcdf == big.netcdf and same.parent_id == big.id
+    r = make(BIG, _settings(tmp), **mk)
+    assert r.reused and r.paths["netcdf"] == big.netcdf
+    assert C.read_dem(big.netcdf).provenance.get("clipped_from") is None
+
+
+def test_leftover_lock_does_not_block(env):
+    from terrain_s2.stage1.dem import make, prepare
+    tmp, _, kw = env
+    mk = {k: v for k, v in kw.items() if k != "registry"}
+    prep = prepare(BIG, _settings(tmp), **mk)
+    prep.out_dir.mkdir(parents=True)
+    (prep.out_dir / ".lock").write_text("12345 killed build")                # left by a killed worker
+    r = make(BIG, _settings(tmp), lock_timeout_s=5, **mk)
+    assert not r.reused and r.paths["netcdf"]
+
+
+def test_land_file_content_and_z_aoi(env):
+    from terrain_s2.stage1.dem import prepare
+    tmp, _, kw = env
+    mk = {k: v for k, v in kw.items() if k != "registry"}
+    f = _land(tmp)
+    k1 = prepare(BIG, _settings(tmp, land_source="file", land_file=str(f)), **mk).key
+    import geopandas as gpd
+    from shapely.geometry import box
+    gpd.GeoDataFrame(geometry=[box(X0, Y1 - 200, X0 + 120, Y1)], crs=2193).to_file(f)
+    assert prepare(BIG, _settings(tmp, land_source="file", land_file=str(f)), **mk).key != k1
+    from shapely import from_wkt
+    z = from_wkt(f"POLYGON Z(({X0 + 8} {Y1 - 152} 5, {X0 + 152} {Y1 - 152} 5, {X0 + 152} {Y1 - 8} 5, {X0 + 8} {Y1 - 152} 5))")
+    assert not prepare(z, _settings(tmp), **mk).geom.has_z

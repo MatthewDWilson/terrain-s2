@@ -37,7 +37,7 @@ terrain = "terrain_s2.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-terrain_s2 = ["stage1/templates/*.json", "stage1/profiles/*.yml"]
+terrain_s2 = ["stage1/templates/*.json", "stage1/profiles/*.yml", "_commit.txt"]
 
 [tool.setuptools_scm]
 # S2-14: the version comes from git tags (v5 D8). Without a tag it is 0.1.devN+g<commit>.

@@ -30,6 +30,12 @@ dependencies:
   - geoapis>=0.3.4
   - boto3
   - scipy
+  # imported by osmpythontools (pip, --no-deps), which GeoFabrics imports at module level
+  - beautifulsoup4
+  - lxml
+  - geojson
+  - ujson
+  - python-dateutil
   # Stage 2 [detect]
   - numpy>=2.0
   - affine
@@ -51,6 +57,8 @@ dependencies:
   - pywps
   - python-dotenv
   - pandas
+  - geoalchemy2        # eddie.digitaltwin.tables (the core declares the old 'geoalchemy')
+  - aiohttp
   - gevent
   - gunicorn
   # image build

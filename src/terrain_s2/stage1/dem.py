@@ -148,6 +148,10 @@ def prepare(aoi, settings=None, *, aoi_crs=None, http=None, store=None, source=N
         from . import gf
         source_version = {"datasets": [d.record() for d in datasets], "mapping": mapping}
         configuration = gf.configuration(s, overrides)
+    from ..key import digest, file_sha256
+    configuration["profile"] = digest(profile, 64)           # CRS, sources, overrides, exclusions
+    if s.land_source == "file":
+        configuration["land_file_sha256"] = file_sha256(s.land_file)
     key, info = generator_key(stage1_components(
         product=s.product, profile=profile["name"], backend=backend, resolution=res, land_source=s.land_source,
         buffer_m=s.buffer_m, source_version=source_version, configuration=configuration))
@@ -231,46 +235,70 @@ def _gf_land(prep: Prepared, log):
         except Exception as e:  # noqa: BLE001 - no tile index: GeoFabrics treats the AOI as land
             log(f"coverage land: tile indexes unavailable ({e}); the AOI is used as land")
             return None, {"land_source": "coverage", "note": f"tile indexes unavailable: {e}"}
-    return land.build(s.land_source, prep.geom, prep.hcrs, out, profile=prep.profile, coverage=coverage,
+    from shapely.geometry import box
+    return land.build(s.land_source, box(*prep.bounds), prep.hcrs, out, profile=prep.profile, coverage=coverage,
                       http=prep.http, store=prep.store, linz_key=s.linz_api_key, land_file=s.land_file)
 
 
 class _Lock:
-    """One builder per product folder: an exclusive lock file. Others wait for it to go (then reuse the
-    product); a lock older than ``timeout_s`` is taken over."""
+    """One builder per product folder: an OS lock on ``.lock`` (``fcntl.flock`` on POSIX, ``msvcrt.locking`` on
+    Windows). The kernel releases it when the holder exits or is killed, so a crashed build never blocks later
+    requests; waiters poll, and return early if the product appears. The lock file is left in place (deleting a
+    locked file races with waiters). Works across containers sharing a local volume; not on NFS without locking.
+    """
 
-    def __init__(self, path, timeout_s, log):
-        self.path, self.timeout_s, self.log = Path(path), timeout_s, log
+    def __init__(self, path, timeout_s, log, poll_s: float = 2.0):
+        self.path, self.timeout_s, self.log, self.poll_s = Path(path), timeout_s, log, poll_s
         self.waited = self.acquired = False
+        self._f = None
+
+    def _try(self) -> bool:
+        try:
+            import fcntl
+            fcntl.flock(self._f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except ImportError:
+            import msvcrt
+            try:
+                self._f.seek(0)
+                msvcrt.locking(self._f.fileno(), msvcrt.LK_NBLCK, 1)
+                return True
+            except OSError:
+                return False
+        except OSError:
+            return False
 
     def __enter__(self):
         t0 = time.time()
+        self._f = open(self.path, "a+")
         while True:
-            try:
-                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, f"{os.getpid()} {_dt.datetime.now(_dt.timezone.utc).isoformat()}".encode())
-                os.close(fd)
+            if self._try():
                 self.acquired = True
+                self._f.seek(0)
+                self._f.truncate()
+                self._f.write(f"{os.getpid()} {_dt.datetime.now(_dt.timezone.utc).isoformat()}")
+                self._f.flush()
                 return self
-            except FileExistsError:
-                try:
-                    age = time.time() - self.path.stat().st_mtime
-                except FileNotFoundError:
-                    continue
-                if age > self.timeout_s:
-                    self.log(f"taking over stale lock {self.path} ({age:.0f} s old)")
-                    self.path.unlink(missing_ok=True)
-                    continue
-                if not self.waited:
-                    self.log(f"waiting for another build of {self.path.parent}")
-                self.waited = True
-                if time.time() - t0 > self.timeout_s:
-                    raise TimeoutError(f"{self.path} held for over {self.timeout_s} s")
-                time.sleep(2.0)
-                if (self.path.parent / MANIFEST).exists():
-                    return self
+            if not self.waited:
+                self.log(f"waiting for another build of {self.path.parent}")
+            self.waited = True
+            if (self.path.parent / MANIFEST).exists():
+                return self
+            if time.time() - t0 > self.timeout_s:
+                self._f.close()
+                raise TimeoutError(f"{self.path} held for over {self.timeout_s} s")
+            time.sleep(self.poll_s)
 
     def __exit__(self, *exc):
-        if self.acquired:
-            self.path.unlink(missing_ok=True)
+        try:
+            if self.acquired:
+                try:
+                    import fcntl
+                    fcntl.flock(self._f.fileno(), fcntl.LOCK_UN)
+                except ImportError:
+                    import msvcrt
+                    self._f.seek(0)
+                    msvcrt.locking(self._f.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            self._f.close()
         return False

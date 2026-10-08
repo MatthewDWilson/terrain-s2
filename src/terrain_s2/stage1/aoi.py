@@ -36,6 +36,7 @@ def to_working(aoi, working_crs, aoi_crs=None):
         else:
             geom = aoi
         geom = gpd.GeoSeries([geom], crs=aoi_crs or 4326).to_crs(working_crs).iloc[0]
+    geom = shapely.force_2d(geom)                  # a Z AOI (KML, some GeoJSON) would not fit 2D columns
     if geom.is_empty or not geom.is_valid or geom.area <= 0:
         geom = geom.buffer(0)
     if geom.is_empty or geom.area <= 0:

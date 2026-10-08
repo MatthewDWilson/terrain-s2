@@ -17,8 +17,10 @@ services:
       dockerfile: docker/terrain-worker.Dockerfile
       args:
         EDDIE_REF: ${EDDIE_REF:-v4.0.0}
-        TERRAIN_VERSION: ${TERRAIN_VERSION:-0.0.0+compose}
-    image: eddie-terrain-worker:${TERRAIN_VERSION:-latest}
+        # required: they are recorded in every generator key (git describe --tags --always; git rev-parse HEAD)
+        TERRAIN_VERSION: ${TERRAIN_VERSION:?set TERRAIN_VERSION to the terrain-s2 git describe}
+        TERRAIN_COMMIT: ${TERRAIN_COMMIT:?set TERRAIN_COMMIT to the terrain-s2 commit}
+    image: eddie-terrain-worker:${TERRAIN_VERSION}
     restart: always
     env_file:
       - .env

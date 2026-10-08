@@ -8,3 +8,4 @@ __pycache__/
 src/terrain_s2/_version.py
 build/
 dist/
+src/terrain_s2/_commit.txt

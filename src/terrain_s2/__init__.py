@@ -35,12 +35,13 @@ __version__ = _version()
 
 
 def git_commit() -> str | None:
-    """The git commit of a source checkout, or None (installed wheels record it in the version)."""
+    """The git commit: from a source checkout, else from ``_commit.txt`` (written at image build), else None."""
     import subprocess
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
     if not (root / ".git").exists():
-        return None
+        f = Path(__file__).with_name("_commit.txt")
+        return (f.read_text().strip() or None) if f.exists() else None
     try:
         return subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True,
                               timeout=10, check=True).stdout.strip() or None
