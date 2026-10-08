@@ -1069,6 +1069,61 @@ elevations (HAND follows flow); a river-only REM (wide channels only) is the var
   REM (floodplain) still uses wide channels and upstream area, since streams are not identified yet.
   Depends on the stream/drain classification (0.86-0.90 by length at canterbury1/2).
 
+### 7m. Second-pass outputs move after ML (9 Oct 2026)
+
+Matt: the remaining REM problem is misclassified streams, and class confidence is no filter (some
+high-confidence streams are clearly wrong or do not exist). Fixing them is the ML chain's job, so the
+second-pass secondary outputs (stream REM, conditioned hydrology) move after ML in the processing order.
+The integration plan (section 7) already lets the second pass take the honest or burned DEM from S2-6.
+
+## 9. Integration plan review (Stage 2 agent, 9 Oct 2026)
+
+Review of `docs/EDDIE Terrain — Revised Stage 1 and Stage 2 Integration Plan_with_diagrams.md`, section 7,
+against the repository at `508a5e0`. Items to settle before or alongside W1:
+
+1. **Working in one repository.** Cowork and the Stage 2 agent both commit to `terrain-s2`. File ownership:
+   Cowork owns `stage1/`, `io/`, `key.py`, `store.py`, `client.py`, `cli.py`, `eddie/`, `docker/`, `compose/`;
+   the Stage 2 agent owns the existing modules and `run.py`, `condition.py`, `structures.py`, `tiles.py`,
+   `acquire/elevation.py`. Shared files (`pyproject.toml`, `sources.yml`, `acquire/registry.py`, `README.md`,
+   `DESIGN_NOTES.md`) change by one owner at a time. Stage 2 deliveries become git patches on the latest
+   pushed commit (`git am`), not zips of whole files, so neither agent overwrites the other's work.
+2. **Baseline commit.** "Outputs identical to 04d3107" (S2-1, section 7): since then the conditioned pass
+   (6c9488a) and REM (508a5e0) were added; REM moved the SH12 and AOI2 floodplains by 1-4 %. Use 508a5e0.
+3. **Two meanings of "conditioned".** `conditioning.py` (§7k) writes `z_conditioned_m`: every mapped channel
+   lowered 0.25 m and every Test A link cut through its barrier. That is a routing device, not a product,
+   and it contradicts P-7 and the 8.2 codes. Once S2-6 exists the second pass reads its honest or burned DEM
+   and `z_conditioned_m` is dropped; `conditioning.py` becomes `hydro_pass.py` to keep `condition.py` (S2-6)
+   unambiguous.
+4. **Code 3 in the honest DEM** (8.2, "channel obstruction breached"). Test B breaches cut through roads and
+   rail, which are structures. In the honest DEM, code 3 must apply only where no road, rail, track or
+   embankment is within the breach corridor (vegetation, debris, DEM artefacts); otherwise it is a culvert
+   and code 2 rules apply.
+5. **Structure ids** (8.1, S2-8). With `source_version` in the id, a new survey checksum changes every id,
+   which breaks review labels keyed by id. Proposed: `id` = hash of the rounded crest location and the LINZ
+   tile; `source_version` stays an attribute. Same location, same id, across inputs and model versions.
+6. **Tile ownership edge rule** (S2-8). "Half-open core bounds" must follow `grid.tile_id`: a point on a
+   shared edge belongs to the tile to the right (east) and below (south).
+7. **ML fields reserved** (8.1, 8.3). `tier` comes from the rules in `products._tier`; ML-1 replaces it with a
+   score. Reserve `p_structure`, `p_class` and `model_version` in the structures layer, and let conditioning
+   take `min_confidence` (tiers map to fixed values now) so the configuration survives ML.
+8. **Shared elevation data** (S2-9, S2-10). Reading windows from S3 per bundle is fine for development, not for
+   training over thousands of tiles and two stages. The shared reader should keep a local mirror of whole LINZ
+   COG tiles, keyed by item id and `file:checksum`, under `TERRAIN_DATA_DIR` (a national DEM and DSM mirror is
+   of the order of 1 TB). Newest-first needs a profile override list (a newer survey is not always better), and
+   the national mosaic (1:50k sheets, dated by its newest input; §7e) is fill only, never the chosen survey.
+   Whether the mosaic has a matching DSM for fill is to be checked.
+9. **Acceptance wording.** "Every council culvert in the canterbury1 and canterbury2 bundles appears with
+   recorded = true" (S2-7): per tile ownership, culverts in the 200 m buffer belong to the neighbouring tile;
+   the test should count culverts whose crest is in the core.
+10. **Vertical CRS.** Stage 2 rasters carry EPSG:2193 only; the contract uses the compound 2193+7839. Write the
+    compound CRS on Stage 2 rasters too.
+
+**Order proposed:** Cowork does W1 first (layout, extras, setuptools-scm). In parallel the Stage 2 agent does
+S2-1 (`run.py`), then S2-9 and S2-10 (the shared reader and cache root), before Cowork reaches W3, so the
+raster backend is built on the shared reader rather than beside it. ML-0 starts on `run.py` and the
+partition; S2-7 and S2-8 come before ML-0 runs at scale, since the structures layer is the label and
+prediction schema. The rest of section 7 follows in the plan's order.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
