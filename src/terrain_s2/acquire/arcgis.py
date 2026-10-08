@@ -13,10 +13,12 @@ def resolve_layer(http, ref: str) -> str:
         return ref.rstrip("/")
     item, _, layer = ref.partition("_")
     meta = http.json(f"https://www.arcgis.com/sharing/rest/content/items/{item}", {"f": "json"})
-    url = meta.get("url")
+    url = (meta.get("url") or "").rstrip("/")
     if not url:
         raise ValueError(f"ArcGIS item {item} has no service URL")
-    return f"{url.rstrip('/')}/{layer or 0}"
+    if re.search(r"/(MapServer|FeatureServer)/\d+$", url):   # a single-layer item: its URL is the layer
+        return url
+    return f"{url}/{layer or 0}"
 
 
 class ArcGISError(IOError):
@@ -35,6 +37,100 @@ def query_url(url, params):
     """The full GET URL of a query, for pasting into a browser when diagnosing a source."""
     import requests
     return requests.Request("GET", f"{url}/query", params=params).prepare().url
+
+
+def first_working(http, spec: dict) -> tuple[str, int]:
+    """The first of ``url`` and ``fallback_urls`` whose layer metadata answers without an error,
+    as (resolved layer URL, position: 0 for ``url``, 1.. for the fallbacks).
+
+    Services move (Waimakariri, 7 Oct 2026: a whole service withdrawn), so a source may list
+    alternatives. Raises if none answers, naming every URL tried."""
+    tried = []
+    for i, ref in enumerate([spec["url"], *spec.get("fallback_urls", [])]):
+        try:
+            url = resolve_layer(http, ref)
+            _check(http.json(url, {"f": "json"}), url)
+            return url, i
+        except Exception as e:  # noqa: BLE001 - try the next one
+            tried.append(f"{ref}: {e}")
+    raise ArcGISError("no working URL; tried " + " | ".join(tried))
+
+
+def mapped_fields(spec: dict) -> list[str]:
+    """Source fields a sources.yml entry relies on: fields, scale, class_map, id_field and names in ``where``."""
+    out = list((spec.get("fields") or {}).values()) + [f for f, _ in (spec.get("scale") or {}).values()]
+    if spec.get("class_map"):
+        out.append(spec["class_map"]["field"])
+    ids = spec.get("id_field") or []
+    out += [ids] if isinstance(ids, str) else list(ids)
+    out += re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|<>|!=|<|>|\bIN\b|\bLIKE\b)", spec.get("where", ""), re.I)
+    return list(dict.fromkeys(out))
+
+
+def missing_fields(meta: dict, spec: dict) -> list[str]:
+    """Mapped fields absent from the layer's field list (case-insensitive, as ArcGIS treats them).
+    A council schema change otherwise passes silently: ids fall back to row numbers, sizes to NaN."""
+    have = {f["name"].lower() for f in meta.get("fields") or []}
+    if not have:
+        return []
+    ids = spec.get("id_field") or []
+    ids = [ids] if isinstance(ids, str) else list(ids)
+    miss = [f for f in mapped_fields(dict(spec, id_field=[])) if f.lower() not in have]
+    if ids and not any(f.lower() in have for f in ids):        # alternatives: missing only if none is present
+        miss.append(" | ".join(ids))
+    return miss
+
+
+def field_values(http, ref: str, window_2193, where: str = "1=1", fields=None, max_distinct: int = 25):
+    """Value counts of attribute fields for the features in the window (attributes only, no geometry).
+
+    ``fields=None`` reports every string field with at most ``max_distinct`` values in the window,
+    which is what is needed to find how a layer labels its features (e.g. which field says 'Culvert')."""
+    from collections import Counter
+    url = resolve_layer(http, ref)
+    meta = _check(http.json(url, {"f": "json"}), url)
+    page = int(meta.get("maxRecordCount") or 1000)
+    x0, y0, x1, y1 = window_2193
+    p = dict(where=where, geometry=f"{x0},{y0},{x1},{y1}", geometryType="esriGeometryEnvelope", inSR=2193,
+             spatialRel="esriSpatialRelIntersects", outFields=",".join(fields) if fields else "*",
+             returnGeometry="false", f="json")
+    rows, off = [], 0
+    while True:
+        d = _check(http.json(f"{url}/query", dict(p, resultOffset=off, resultRecordCount=page)), url)
+        got = [f.get("attributes", {}) for f in d.get("features") or []]
+        rows += got
+        if not got or not d.get("exceededTransferLimit"):
+            break
+        off += len(got)
+    if fields is None:
+        strings = {f["name"] for f in meta.get("fields") or [] if f.get("type") == "esriFieldTypeString"}
+        fields = [k for k in (rows[0] if rows else {}) if k in strings]
+    out = {}
+    for f in fields:
+        c = Counter(r.get(f) for r in rows)
+        if len(c) <= max_distinct:
+            out[f] = c.most_common()
+    return len(rows), out
+
+
+def numeric_summary(http, ref: str, window_2193, where: str = "1=1"):
+    """count / min / median / max of every numeric field in the window (e.g. to infer size units)."""
+    import statistics
+    url = resolve_layer(http, ref)
+    meta = _check(http.json(url, {"f": "json"}), url)
+    numeric = [f["name"] for f in meta.get("fields") or [] if f.get("type") in
+               ("esriFieldTypeDouble", "esriFieldTypeSingle", "esriFieldTypeInteger", "esriFieldTypeSmallInteger")]
+    if not numeric:
+        return {}
+    x0, y0, x1, y1 = window_2193
+    p = dict(where=where, geometry=f"{x0},{y0},{x1},{y1}", geometryType="esriGeometryEnvelope", inSR=2193,
+             spatialRel="esriSpatialRelIntersects", outFields=",".join(numeric), returnGeometry="false", f="json")
+    rows = [f.get("attributes", {}) for f in _check(http.json(f"{url}/query", p), url).get("features") or []]
+    out = {}
+    for f in numeric:
+        v = [r[f] for r in rows if isinstance(r.get(f), (int, float))]
+        out[f] = (len(v), min(v), statistics.median(v), max(v)) if v else (0, None, None, None)
+    return out
 
 
 def count(http, ref: str, window_2193, where: str = "1=1"):

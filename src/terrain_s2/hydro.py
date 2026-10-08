@@ -299,20 +299,23 @@ def depressions(z: np.ndarray, cellsize: float, min_depth: float = 0.02) -> Depr
 
 
 @njit(cache=True)
-def pond_stats(z, valid, seed, level, cellsize, max_cells):
+def pond_stats_buf(z, valid, seed, level, cellsize, max_cells, mark, stamp, q):
     """Pond retained behind one barrier: cells connected to ``seed`` with z < level.
 
     Returns (area_m2, volume_m3, depth_m, truncated). ``level`` should be
     min(barrier crest, fill level at the seed) so the pond cannot leak past a
     lower rim, and nested bumps inside a larger pond get their own small pond.
+
+    ``mark`` (int32, one per cell, zeros) and ``q`` (int64, ``max_cells``) are reused across calls:
+    a cell is visited in this call when mark == ``stamp`` (unique per call, > 0). This replaces a
+    hash set per call; visiting order, and so the result, is unchanged. Large ponds made the
+    hash set the main cost of Test B on big windows (2 M-cell ponds visited once per breach).
     """
     nr, nc = z.shape
     if z.flat[seed] >= level:
         return 0.0, 0.0, 0.0, False
-    seen = {}
-    q = np.empty(max_cells, np.int64)
     q[0] = seed
-    seen[seed] = True
+    mark[seed] = stamp
     n, head = 1, 0
     vol = 0.0
     zmin = z.flat[seed]
@@ -329,15 +332,22 @@ def pond_stats(z, valid, seed, level, cellsize, max_cells):
             if rr < 0 or cc < 0 or rr >= nr or cc >= nc or not valid[rr, cc]:
                 continue
             j = rr * nc + cc
-            if z[rr, cc] < level and j not in seen:
+            if z[rr, cc] < level and mark[j] != stamp:
                 if n >= max_cells:
                     truncated = True
                     continue
-                seen[j] = True
+                mark[j] = stamp
                 q[n] = j
                 n += 1
     a = cellsize * cellsize
     return n * a, vol * a, level - zmin, truncated
+
+
+def pond_stats(z, valid, seed, level, cellsize, max_cells):
+    """One-off pond_stats (allocates its own buffers); loops should use pond_stats_buf."""
+    mark = np.zeros(z.size, np.int32)
+    q = np.empty(max_cells, np.int64)
+    return pond_stats_buf(z, valid, seed, level, cellsize, max_cells, mark, 1, q)
 
 
 def flow_accumulation(z_conditioned: np.ndarray, transform) -> tuple[np.ndarray, pyflwdir.FlwdirRaster]:

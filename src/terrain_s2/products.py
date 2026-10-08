@@ -132,17 +132,24 @@ def crossings(net, z, T, dsm=None, roads=None):
                          gap_m=b["length"]))
     C = pd.DataFrame(rows, columns=["x", "y", "source", "dem_h_b", "veg_frac", "gap_m"])
     if roads is not None and len(roads):
+        from shapely import STRtree, union_all
         lines = branch_lines(net["skeleton"], T)
-        R = roads.union_all()
+        rg = np.asarray(roads.geometry.values, object)
+        tree = STRtree(rg)
+        bed = ndi.minimum_filter(np.nan_to_num(z, nan=np.inf), size=3)   # once (was per intersection)
         extra = []
         for geom, _ in lines:                               # road-drain intersections
-            inter = geom.intersection(R)
+            near = tree.query(geom, predicate="intersects")
+            if not len(near):
+                continue
+            # the union of the roads this line meets: the same points as with the union of all roads
+            inter = geom.intersection(union_all(rg[np.sort(near)]))
             for p in getattr(inter, "geoms", [inter]):
                 if p.is_empty or p.geom_type != "Point":
                     continue
-                h = _bed_bump_at(geom, p, z, T)
+                h = _bed_bump_at(geom, p, z, T, bed=bed)
                 extra.append(dict(x=p.x, y=p.y, source="road_x_drain", dem_h_b=h, veg_frac=np.nan, gap_m=np.nan))
-        extra += _road_terminating_pairs(lines, roads, z, T)
+        extra += _road_terminating_pairs(lines, roads, z, T, tree=tree)
         if extra:
             C = pd.concat([C, pd.DataFrame(extra)], ignore_index=True)
     return C
@@ -158,16 +165,19 @@ def finalise_crossings(C, use_roads):
     return C
 
 
-def _bed_bump_at(line, p, z, T, half=15.0, crest=6.0):
+def _bed_bump_at(line, p, z, T, half=15.0, crest=6.0, bed=None):
     """Bed rise at point p along a drain line: max bed within +-crest m above the higher of the
-    reference beds beyond (h_b along the drain); NaN if the line is too short either side."""
+    reference beds beyond (h_b along the drain); NaN if the line is too short either side.
+    ``bed``: the 3 x 3 minimum of z (NaN as +inf), computed once by the caller for many points."""
     s0 = line.project(p)
     ss = np.arange(max(0, s0 - half), min(line.length, s0 + half) + 0.5, 1.0)
     if len(ss) < 5 or s0 - ss[0] < 4 or ss[-1] - s0 < 4:
         return float("nan")
     pts = np.array([line.interpolate(s).coords[0] for s in ss])
     cc, rr = drains._to_cr(T, pts[:, 0], pts[:, 1])
-    bed = ndi.minimum_filter(np.nan_to_num(z, nan=np.inf), size=3)[rr.astype(int), cc.astype(int)]
+    if bed is None:
+        bed = ndi.minimum_filter(np.nan_to_num(z, nan=np.inf), size=3)
+    bed = bed[rr.astype(int), cc.astype(int)]
     mid = np.abs(ss - s0) <= crest
     lo, hi = bed[(ss < s0) & ~mid], bed[(ss > s0) & ~mid]
     if len(lo) == 0 or len(hi) == 0:
@@ -175,11 +185,15 @@ def _bed_bump_at(line, p, z, T, half=15.0, crest=6.0):
     return float(bed[mid].max() - max(lo.min(), hi.min()))
 
 
-def _road_terminating_pairs(lines, roads, z, T, near=15.0, across=40.0):
+def _road_terminating_pairs(lines, roads, z, T, near=15.0, across=40.0, tree=None):
     """A drain end within ``near`` m of a road, pointing at it, with another drain end within
-    ``across`` m on the far side: a road culvert hypothesis even if the DEM shows no gap."""
+    ``across`` m on the far side: a road culvert hypothesis even if the DEM shows no gap.
+    Road tests use a spatial index and end pairs a k-d tree (both were all-pairs loops); pairs are
+    visited in the same (i, j) order as before, so the output is unchanged."""
+    from scipy.spatial import cKDTree
+    from shapely import STRtree
     from shapely.geometry import LineString, Point
-    R = roads.union_all()
+    tree = tree or STRtree(np.asarray(roads.geometry.values, object))
     ends = []
     for geom, _ in lines:
         cs = np.array(geom.coords)
@@ -188,22 +202,24 @@ def _road_terminating_pairs(lines, roads, z, T, near=15.0, across=40.0):
             n = np.hypot(*d)
             if n == 0:
                 continue
-            if R.distance(Point(a)) <= near:
+            if len(tree.query(Point(a), predicate="dwithin", distance=near)):
                 ends.append((a, d / n))
     out = []
-    for i in range(len(ends)):
-        for j in range(i + 1, len(ends)):
-            a, da = ends[i]
-            b, db = ends[j]
-            v = b - a
-            L = np.hypot(*v)
-            if not (2 < L <= across):
-                continue
-            u = v / L
-            if da @ u >= 0.7 and db @ (-u) >= 0.7 and LineString([a, b]).intersects(R):
-                rise, _ = drains.gap_bed_rise(z, T, tuple(a), tuple(b))
-                out.append(dict(x=(a[0] + b[0]) / 2, y=(a[1] + b[1]) / 2, source="road_end_pair",
-                                dem_h_b=rise, veg_frac=np.nan, gap_m=L))
+    if len(ends) < 2:
+        return out
+    pairs = sorted(cKDTree(np.array([e[0] for e in ends])).query_pairs(across + 1e-9))
+    for i, j in pairs:
+        a, da = ends[i]
+        b, db = ends[j]
+        v = b - a
+        L = np.hypot(*v)
+        if not (2 < L <= across):
+            continue
+        u = v / L
+        if da @ u >= 0.7 and db @ (-u) >= 0.7 and len(tree.query(LineString([a, b]), predicate="intersects")):
+            rise, _ = drains.gap_bed_rise(z, T, tuple(a), tuple(b))
+            out.append(dict(x=(a[0] + b[0]) / 2, y=(a[1] + b[1]) / 2, source="road_end_pair",
+                            dem_h_b=rise, veg_frac=np.nan, gap_m=L))
     return out
 
 

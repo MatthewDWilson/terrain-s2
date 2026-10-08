@@ -13,7 +13,8 @@ from __future__ import annotations
 
 SCHEMA = {
     "channels": ["class", "exists", "source", "source_id", "positional_accuracy", "retrieved"],
-    "crossings": ["type", "diameter_m", "width_m", "height_m", "length_m", "cells", "source", "source_id", "retrieved"],
+    "crossings": ["type", "diameter_m", "width_m", "height_m", "length_m", "length_from_geometry", "cells", "source",
+                  "source_id", "retrieved"],
     "stopbanks": ["type", "crest_height_m", "source", "source_id", "retrieved"],
     "roads": ["class", "surface", "lanes", "source", "source_id", "retrieved"],
     "rail": ["status", "source", "source_id", "retrieved"],
@@ -38,15 +39,28 @@ def harmonise(g, spec: dict, source: str, retrieved: str):
     if cm:
         target = cm.get("target", "class" if layer != "crossings" else "type")
         out[target] = g[cm["field"]].map(cm["values"]).fillna(cm.get("other", "other")) if cm["field"] in g else None
+    if layer == "crossings" and "length_m" in out:              # council lengths are often blank
+        geom_len = g.geometry.length.where(g.geometry.geom_type.isin(["LineString", "MultiLineString"]))
+        out["length_from_geometry"] = out["length_m"].isna() & geom_len.notna()
+        out["length_m"] = out["length_m"].fillna(geom_len.round(2))
     if layer == "buildings" and "area_m2" not in out:
         out["area_m2"] = g.geometry.area.values
     out["source"] = source
     out["retrieved"] = retrieved
+    ids = spec.get("id_field") or []
+    ids = [ids] if isinstance(ids, str) else list(ids)          # alternatives, first present wins
+    idf = next((f for f in ids if f in g), None)
     if "source_id" not in out:
-        idf = spec.get("id_field")
-        out["source_id"] = g[idf].astype(str) if idf and idf in g else g.index.astype(str)
+        out["source_id"] = g[idf].astype(str) if idf else g.index.astype(str)
     for c in SCHEMA.get(layer, []):
         if c not in out:
             out[c] = None
     import geopandas as gpd
-    return gpd.GeoDataFrame(out[SCHEMA.get(layer, list(out.columns))], geometry=g.geometry.values, crs=g.crs)
+    res = gpd.GeoDataFrame(out[SCHEMA.get(layer, list(out.columns))], geometry=g.geometry.values, crs=g.crs)
+    wanted = [*(spec.get("fields") or {}).values(), *(f for f, _ in (spec.get("scale") or {}).values()),
+              *([spec["class_map"]["field"]] if spec.get("class_map") else []), ]
+    missing = [f for f in dict.fromkeys(wanted) if f not in g]
+    if ids and idf is None:
+        missing.append(" | ".join(ids))
+    res.attrs["missing_fields"] = missing                                         # reported by build_site
+    return res

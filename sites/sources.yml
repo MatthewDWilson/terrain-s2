@@ -5,43 +5,72 @@
 sources:
   waimakariri_culverts:
     kind: arcgis
-    # 7 Oct 2026: Stormwater_Assets_In_Service publishes no layers (404 Service not found); the
-    # Before U Dig query service holds the same layer (Main_SW: network main, facility pipe, culvert)
-    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/BUD_Query/MapServer/10
+    # 8 Oct 2026: the open-data portal's "Stormwater Culvert Facility Pipe and Network Main" item
+    # (openmaps-waimakariri.hub.arcgis.com, item 9ab2c4f660dd4dc4a6b3a1ab3efea019_14) is served from
+    # Assets_Stormwater/MapServer/14; Matt's Stormwater_Pipes.shp is a download of it. Layer 13 is the same data
+    # styled by criticality. The Before U Dig layer (BUD_Query/10) holds no culverts (DESIGN_NOTES §7b).
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Assets_Stormwater/MapServer/14
     fallback_urls:
-      - https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Stormwater_Assets_In_Service/MapServer/19
-    where: "CLASSIFICATION2 = 'Culvert'"          # the layer also holds network mains and facility pipes
+      - https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Assets_Stormwater/MapServer/13
+    # CLASSIFICATION2 is 'Pipe' for every row; the type is in CLASSIFICATION3 ('Network Main', 'Culvert',
+    # 'Facility Pipe'): 980 culverts district-wide in the export.
+    where: "CLASSIFICATION3 = 'Culvert'"
     layer: crossings
     const: {type: culvert}
     fields: {length_m: LENGTH_m}
     scale: {diameter_m: [DIAMETER_mm, 0.001], height_m: [HEIGHT_mm, 0.001]}
-    id_field: ASSNBRI
-    scope: council-owned stormwater culverts only (no private driveway or farm culverts)
+    # ASSET_ID is the new asset system's key; Legacy_ID holds the old SW numbers (kept in the _raw layer)
+    id_field: [ASSET_ID, ASSNBRI]
+    scope: >-
+      council asset register: council and some private culverts (e.g. SW005886 under SH1, 'Private');
+      most private driveway and farm culverts absent
   waimakariri_channels:
     kind: arcgis
-    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/BUD_Query/MapServer/12   # Channel_SW
+    # 8 Oct 2026: Assets_Stormwater/3 (Stormwater Channel) matches BUD_Query/12 in canterbury1 (45 features, same
+    # CLASSIFICATION3 values) and has the same schema and ids as the culverts; BUD_Query is the fallback.
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Assets_Stormwater/MapServer/3
     fallback_urls:
-      - https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Stormwater_Assets_In_Service/MapServer/18
+      - https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/BUD_Query/MapServer/12
     layer: channels
     const: {exists: y}
     class_map: {field: CLASSIFICATION3, values: {Network Drain: drain, Receiving Waterway: stream, Water Race: race, Process Channel: other}}
-    id_field: ASSNBRI
-    scope: council scheme channels only (most roadside and private drains absent)
+    id_field: [ASSET_ID, ASSNBRI]
+    scope: council scheme channels (33 council, 12 private in canterbury1); most roadside and private drains absent
   waimakariri_pipes:
     kind: arcgis
-    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/BUD_Query/MapServer/10
-    where: "CLASSIFICATION2 <> 'Culvert'"
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Assets_Stormwater/MapServer/14
+    where: "CLASSIFICATION3 <> 'Culvert'"
     layer: pipes
-    id_field: ASSNBRI
+    id_field: [ASSET_ID, ASSNBRI]
     enabled: false
     note: piped network (mains, facility pipes); context only, enable when needed
   waimakariri_structures:
     kind: arcgis
-    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Stormwater_Assets_In_Service/MapServer/8
+    # the old service is withdrawn; Assets_Stormwater 20/21/22 are "Stormwater Structure" point/line/polygon (to check)
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/3Waters/Assets_Stormwater/MapServer/20
     layer: structures
-    id_field: ASSNBRI
+    id_field: [ASSET_ID, ASSNBRI]
     enabled: false
     note: headwalls, vehicle bridges, weirs etc.; field values to be checked before mapping (R4)
+  es_drainage:
+    kind: arcgis
+    # Environment Southland "ES Drainage Network" (Public/General/MapServer/27), polylines, EPSG:2193;
+    # fields (8 Oct, from the layer page): Name, District, Catchment, OperationalArea, SmartId, maintenance
+    # schedule fields. No stream/drain class field: class left empty until the values are checked.
+    url: https://maps.es.govt.nz/server/rest/services/Public/General/MapServer/27
+    layer: channels
+    const: {exists: y}
+    id_field: [SmartId, GlobalID, OBJECTID]
+    scope: regional council drainage scheme network (Southland); probe before use
+  es_stopbanks:
+    kind: arcgis
+    # Environment Southland "ES Flood Protection Network" (Public/General/MapServer/28), polylines;
+    # fields: ReachID, Scheme, River, Bank, ReachPurpose, UrbanRural, Catchment, OperationalArea.
+    url: https://maps.es.govt.nz/server/rest/services/Public/General/MapServer/28
+    layer: stopbanks
+    const: {type: stopbank}
+    id_field: [ReachID, OBJECTID]
+    scope: regional flood protection reaches (Southland); ReachPurpose values to check (may include non-stopbank reaches)
   auckland_channels:
     kind: arcgis
     url: 6c4196567eae4cd48f1c071911fe4105_0      # ArcGIS Hub item, Auckland Council Stormwater Channel
@@ -56,11 +85,17 @@ sources:
     note: regional consolidated nodes and pipelines (monthly), no open channels; Waimakariri not included at release
   kiwirail_culverts:
     kind: arcgis
-    url: TODO
+    # 8 Oct 2026 (Matt): national KiwiRail culvert points, ArcGIS Online, EPSG:3857 (the query asks for 2193/4326).
+    # Fields: ASSETNUM, KRSTARTOFF (metreage), MATERIAL, FORM, WIDTH, DEPTH, HEIGHT, DIAMETER, LENGTH,
+    # NUMBARRELS, TLA_NAME. Units from the canterbury1 probe (8 Oct, 5 culverts, all concrete pipes):
+    # DIAMETER 450-1300, so mm; DEPTH 1.9-4.2, so m (probably cover or fill depth: kept in the _raw layer);
+    # KRSTARTOFF 21.77-21.96 is the line metreage in km. WIDTH, HEIGHT, LENGTH, NUMBARRELS empty there.
+    url: https://services6.arcgis.com/eqX2HMCD3H8MUs6Q/arcgis/rest/services/Culverts_KiwiRail_/FeatureServer/0
     layer: crossings
     const: {type: culvert}
-    enabled: false
-    note: KiwiRail Culverts exists (data.govt.nz KiwiRail harvest); service URL still to resolve
+    scale: {diameter_m: [DIAMETER, 0.001]}
+    id_field: ASSETNUM
+    scope: culverts under the rail network (points, one per structure)
   kiwirail_track:
     kind: arcgis
     url: TODO
@@ -92,5 +127,115 @@ sources:
     layer: buildings
     fields: {use: use}
     id_field: building_id
+  linz_bridges:
+    kind: linz_wfs
+    layer_id: 50244                               # NZ Bridge Centrelines (Topo, 1:50k)
+    # bridges carrying roads, rail, tracks and pipelines over water or other obstacles: positive examples
+    # for the bridge class (1:50k positions; small bridges are often missing). Kept as their own label layer,
+    # not crossings, so this national layer does not put every tile in the crossings pool.
+    layer: bridges
+    const: {type: bridge}
+    id_field: t50_fid
+  linz_embankments:
+    kind: linz_wfs
+    layer_id: 50266                               # NZ Embankment Centrelines (Topo, 1:50k)
+    # "an artificial bank of earth and or stone built above the natural surface": barrier context and weak
+    # positives for raised features (1:50k selection, not complete)
+    layer: embankments
+    id_field: t50_fid
+  linz_dams:
+    kind: linz_wfs
+    layer_id: 50260                               # NZ Dam Centrelines (Topo, 1:50k)
+    layer: dams
+    id_field: t50_fid
+  ecan_stopbanks:
+    kind: arcgis
+    # Environment Canterbury, Flood Protection and Drainage Bylaw stopbanks. Layer 4 is the 2019 amendment,
+    # layer 17 the 2013 original (probed 8 Oct 2026: 4 stopbanks in the canterbury1 window, TYPE 'Stopbanks',
+    # SCHEME 'WEC', LENGTH_M; 540 features in 115 LINZ tiles). Layer 4 not yet probed: same schema expected.
+    url: https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/4
+    fallback_urls:
+      - https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/17
+    layer: stopbanks
+    const: {type: stopbank}
+    id_field: [OBJECTID]
+    scope: ECan scheme stopbanks (regional council works); private and district stopbanks absent
+  ecan_drains:
+    kind: arcgis
+    # same service: Drains and watercourses, layer 3 (2019 amendment) or 16 (2013). Fields not probed yet.
+    url: https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/3
+    fallback_urls:
+      - https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/16
+    layer: channels
+    const: {exists: y}
+    id_field: [OBJECTID]
+    enabled: false
+    scope: ECan drainage scheme drains and watercourses; class field to check (probe --values)
+  boprc_defence_against_water:
+    kind: arcgis
+    # Bay of Plenty Regional Council "Defence Against Water". Probed 8 Oct 2026: the public layer holds only
+    # 6 features, all stopbanks, returned without geometry. Not usable as published; ask BOPRC for the full layer.
+    url: https://gis.boprc.govt.nz/server2/rest/services/BayOfPlentyMaps/PlansandRules/MapServer/1
+    layer: stopbanks
+    id_field: [Asset_ID, OBJECTID]
+    enabled: false
+    scope: not usable as published (6 features, no geometry)
+  hbrc_stopbanks:
+    kind: arcgis
+    # Hawke's Bay Regional Council AssetManagement Asset Lines (MapServer/5, the open-data item
+    # a8ddc32a1669447e8abf5fc04e1f9dc3_5). Probed 8 Oct 2026, 4,290 lines: Stopbank 601, Drain 572,
+    # Culvert 176, River Channel 125, Bridge - Road 3, plus fences, trails, access, groynes. One source per
+    # output layer, filtered on AssetType; Asset_Owner (HBRC, district councils, Waka Kotahi, private) kept raw.
+    url: https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/5
+    where: "AssetType IN ('Stopbank', 'Deflection Bank', 'Unengineered Bund')"
+    layer: stopbanks
+    const: {type: stopbank}
+    id_field: [OBJECTID]
+    scope: HBRC-maintained flood protection banks
+  hbrc_culverts:
+    kind: arcgis
+    url: https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/5
+    where: "AssetType = 'Culvert'"
+    layer: crossings
+    const: {type: culvert}
+    id_field: [OBJECTID]
+    scope: culverts maintained by HBRC (lines); district council and private culverts mostly absent
+  hbrc_channels:
+    kind: arcgis
+    url: https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/5
+    where: "AssetType IN ('Drain', 'River Channel', 'Channel')"
+    layer: channels
+    const: {exists: y}
+    class_map: {field: AssetType, values: {Drain: drain, River Channel: stream, Channel: other}}
+    id_field: [OBJECTID]
+    scope: HBRC scheme drains and river channels
+  hbrc_bridges:
+    kind: arcgis
+    url: https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/5
+    where: "AssetType = 'Bridge - Road'"
+    layer: bridges
+    const: {type: bridge}
+    id_field: [OBJECTID]
+    scope: road bridges maintained by HBRC (3 at 8 Oct 2026)
+  hbrc_drains:
+    kind: arcgis
+    url: 9f0c4d8675c941159609cab92079fb79_3        # HBRC Drains (open data item); 739 features in 76 tiles
+    layer: channels
+    const: {exists: y}
+    id_field: [OBJECTID]
+    enabled: false
+    scope: HBRC drainage scheme drains; compare with hbrc_channels (Asset Lines) before enabling, likely overlap
+  rec2_rivers:
+    kind: arcgis
+    # NIWA (Earth Sciences NZ) River Environment Classification v2.5 river lines, national (593,218 segments in
+    # 7,517 of the 7,657 LiDAR tiles). Derived from coarse elevation: channels are missing or misplaced, so NOT
+    # for stream identification (Matt, 8 Oct 2026). Use for upstream area (CUM_AREA, m2) and flow statistics,
+    # carried to our network only where a segment snaps to it (as GeoFabrics does). Probed fields: CUM_AREA,
+    # CATAREA, StreamOrde (truncated name), nzsegment, NextDownID, upElev/downElev, segslpmean.
+    url: https://services3.arcgis.com/fp1tibNcN9mbExhG/ArcGIS/rest/services/REC2_Layers/FeatureServer/0
+    layer: rivers_rec2
+    fields: {upstream_area_m2: CUM_AREA, catchment_area_m2: CATAREA, strahler: StreamOrde, next_down: NextDownID}
+    id_field: [nzsegment, OBJECTID]
+    scope: national river network from a coarse DEM; context only (upstream area, flows), not stream labels
   osm:
     kind: osm                                     # roads, rail, waterways, culverts (tunnel=culvert), buildings

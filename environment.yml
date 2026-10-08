@@ -23,6 +23,7 @@ dependencies:
   - scikit-image>=0.24
   - scikit-learn>=1.5           # rank_candidates.py
   - pyyaml                      # site definitions (scripts/build_site.py)
+  - psutil                      # peak memory in run_network.py perf
   - requests                    # data acquisition
   - rasterio>=1.4
   - geopandas>=1.0

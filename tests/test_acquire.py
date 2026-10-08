@@ -244,3 +244,122 @@ def test_osm_buildings_are_polygons():
     parts, _ = osm.query(http, WINDOW)
     b = parts["building"]
     assert len(b) == 1 and b.geometry.iloc[0].geom_type == "Polygon" and b.geometry.iloc[0].area == pytest.approx(300, rel=1e-3)
+
+
+def test_arcgis_fallback_url_when_primary_is_gone():
+    gone = "https://council/arcgis/rest/services/Old/MapServer/19"
+    live = "https://council/arcgis/rest/services/BUD/MapServer/10"
+    http = FakeHttp([(lambda u, p, d: u == gone, {"error": {"code": 404, "message": "Service not found"}}),
+                     (lambda u, p, d: u == live and p.get("f") == "json", {"name": "Main_SW"})])
+    assert arcgis.first_working(http, {"url": live, "fallback_urls": [gone]}) == (live, 0)
+    assert arcgis.first_working(http, {"url": gone, "fallback_urls": [live]}) == (live, 1)
+    with pytest.raises(arcgis.ArcGISError, match="no working URL.*Service not found"):
+        arcgis.first_working(http, {"url": gone})
+
+
+def test_arcgis_field_values_pages_and_picks_text_fields():
+    layer = "https://council/arcgis/rest/services/BUD/MapServer/10"
+    meta = {"maxRecordCount": 2, "fields": [{"name": "OBJECTID", "type": "esriFieldTypeOID"},
+                                            {"name": "CLASSIFICATION2", "type": "esriFieldTypeString"},
+                                            {"name": "ASSNBRI", "type": "esriFieldTypeString"}]}
+    rows = [{"OBJECTID": i, "CLASSIFICATION2": c, "ASSNBRI": f"SW{i}"} for i, c in enumerate(["Pipe", "Pipe", "Culvert"])]
+
+    def page(u, p, d):
+        off = int(p["resultOffset"])
+        return {"features": [{"attributes": r} for r in rows[off:off + 2]], "exceededTransferLimit": off + 2 < len(rows)}
+    http = FakeHttp([(lambda u, p, d: u == layer and "where" not in p, meta),
+                     (lambda u, p, d: u == layer + "/query" and p.get("returnGeometry") == "false", page)])
+    n, vals = arcgis.field_values(http, layer, WINDOW, max_distinct=2)
+    assert n == 3 and vals == {"CLASSIFICATION2": [("Pipe", 2), ("Culvert", 1)]}     # ASSNBRI: 3 distinct > 2
+
+
+def test_hub_item_whose_url_is_already_a_layer():
+    item = "9ab2c4f660dd4dc4a6b3a1ab3efea019"
+    layer = "https://council/arcgis/rest/services/3Waters/Assets_Stormwater/MapServer/14"
+    svc = "https://council/arcgis/rest/services/3Waters/Assets_Stormwater/MapServer"
+    http = FakeHttp([(lambda u, p, d: u.endswith(item), {"url": layer}),
+                     (lambda u, p, d: u.endswith("abcdefabcdefabcdefabcdefabcdefab"), {"url": svc + "/"})])
+    assert arcgis.resolve_layer(http, f"{item}_14") == layer                      # not .../14/14
+    assert arcgis.resolve_layer(http, "abcdefabcdefabcdefabcdefabcdefab_3") == svc + "/3"
+
+
+def test_missing_fields_are_reported():
+    spec = {"where": "CLASSIFICATION3 = 'Culvert' AND OWNERSHIP IN ('Council')", "id_field": "ASSNBRI",
+            "fields": {"length_m": "LENGTH_m"}, "scale": {"diameter_m": ["DIAMETER_mm", 0.001]}}
+    assert arcgis.mapped_fields(spec) == ["LENGTH_m", "DIAMETER_mm", "ASSNBRI", "CLASSIFICATION3", "OWNERSHIP"]
+    meta = {"fields": [{"name": n} for n in ("OBJECTID", "ASSET_ID", "classification3", "OWNERSHIP", "LENGTH_m")]}
+    assert arcgis.missing_fields(meta, spec) == ["DIAMETER_mm", "ASSNBRI"]
+    import geopandas as gpd
+    from shapely.geometry import Point
+    g = gpd.GeoDataFrame({"ASSET_ID": ["1"], "LENGTH_m": [12.0]}, geometry=[Point(0, 0)], crs=2193)
+    h = harmonise(g, dict(spec, layer="crossings"), "src", "now")
+    assert h.attrs["missing_fields"] == ["DIAMETER_mm", "ASSNBRI"] and h.source_id.tolist() == ["0"]
+
+
+def test_load_site_rejects_the_source_registry(tmp_path):
+    from terrain_s2.acquire.site import load_site
+    f = tmp_path / "sources.yml"
+    f.write_text("sources:\n  a: {kind: osm}\n")
+    with pytest.raises(ValueError, match="not a site definition"):
+        load_site(f, tmp_path)
+
+
+def test_id_field_alternatives():
+    import geopandas as gpd
+    from shapely.geometry import Point
+    spec = {"layer": "crossings", "id_field": ["ASSET_ID", "ASSNBRI"]}
+    old = gpd.GeoDataFrame({"ASSNBRI": ["SW1"]}, geometry=[Point(0, 0)], crs=2193)
+    assert harmonise(old, spec, "s", "t").source_id.tolist() == ["SW1"]
+    assert harmonise(old, spec, "s", "t").attrs["missing_fields"] == []
+    none = gpd.GeoDataFrame({"X": [1]}, geometry=[Point(0, 0)], crs=2193)
+    assert harmonise(none, spec, "s", "t").attrs["missing_fields"] == ["ASSET_ID | ASSNBRI"]
+    assert arcgis.missing_fields({"fields": [{"name": "ASSET_ID"}]}, spec) == []
+    assert arcgis.missing_fields({"fields": [{"name": "OBJECTID"}]}, spec) == ["ASSET_ID | ASSNBRI"]
+
+
+def test_linz_wfs_long_line_whose_bbox_only_overlaps_is_not_an_axis_error():
+    # an L-shaped railway: its bounding box covers the window, the line passes 5 km away (canterbury2, 8 Oct)
+    rail = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"t50_fid": 7}, "geometry": {"type": "LineString",
+         "coordinates": [[1_560_000, 5_190_000], [1_560_000, 5_210_000], [1_580_000, 5_210_000]]}}]}
+    g, m = linz_wfs.get_layer(FakeHttp([(lambda u, p, d: True, rail)]), 50319, WINDOW, key="K")
+    assert len(g) == 0 and m["count"] == 0 and m["bbox_only"] == 1
+
+
+def test_context_clipped_to_window_labels_kept_whole(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import LineString
+    from terrain_s2.acquire import build
+    long_road = gpd.GeoDataFrame({"source_id": ["r"]}, geometry=[LineString([(1_569_000, 5_200_050), (1_571_000, 5_200_050)])], crs=2193)
+    channel = gpd.GeoDataFrame({"source_id": ["c"]}, geometry=[LineString([(1_570_100, 5_199_000), (1_570_100, 5_200_050)])], crs=2193)
+    build._write_layers(tmp_path, {"roads": [long_road], "channels": [channel]}, WINDOW)
+    assert gpd.read_file(tmp_path / "roads.gpkg").length.sum() == pytest.approx(200)            # window is 200 m wide
+    assert gpd.read_file(tmp_path / "context.gpkg", layer="roads").length.sum() == pytest.approx(200)
+    assert gpd.read_file(tmp_path / "labels.gpkg", layer="channels").length.sum() == pytest.approx(1050)
+
+
+def test_crossing_length_from_geometry_when_blank():
+    import geopandas as gpd
+    from shapely.geometry import LineString, Point
+    g = gpd.GeoDataFrame({"LENGTH_m": [None, 12.0, None]},
+                         geometry=[LineString([(0, 0), (9, 0)]), LineString([(0, 0), (5, 0)]), Point(0, 0)], crs=2193)
+    h = harmonise(g, {"layer": "crossings", "fields": {"length_m": "LENGTH_m"}}, "s", "t")
+    assert h.length_m.tolist()[:2] == [9.0, 12.0] and np.isnan(h.length_m.iloc[2])
+    assert h.length_from_geometry.tolist() == [True, False, False]
+
+
+def test_implied_crossings_where_channels_cross_roads_and_rail():
+    import geopandas as gpd
+    from shapely.geometry import LineString, Point
+    from terrain_s2.acquire.build import implied_crossings
+    L = lambda *xy: LineString(xy)  # noqa: E731
+    ch = gpd.GeoDataFrame({"source": ["es"], "source_id": ["d1"], "class": [None]},
+                          geometry=[L((0, -100), (0, 100))], crs=2193)
+    roads = gpd.GeoDataFrame({"source": ["linz_roads"] * 2, "source_id": ["r1", "r2"]},
+                             geometry=[L((-50, 0), (50, 0)), L((-50, 2), (50, 2))], crs=2193)  # dual carriageway
+    rail = gpd.GeoDataFrame({"source": ["linz_rail"], "source_id": ["k1"]}, geometry=[L((-50, 60), (50, 60))], crs=2193)
+    rec = gpd.GeoDataFrame({"source": ["council"], "source_id": ["c1"]}, geometry=[Point(1, 59)], crs=2193)
+    g = implied_crossings({"channels": [ch], "roads": [roads], "rail": [rail], "crossings": [rec]})
+    assert sorted(g.barrier.tolist()) == ["rail", "road"]                   # the two carriageways merge (5 m)
+    assert g.set_index("barrier").recorded.to_dict() == {"road": False, "rail": True}
+    assert implied_crossings({"channels": [ch]}).empty

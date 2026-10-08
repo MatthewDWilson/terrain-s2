@@ -26,7 +26,7 @@ from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
 
 from .config import CandidateParams
-from .hydro import BreachResult, Depressions, NODATA, pond_stats
+from .hydro import BreachResult, Depressions, NODATA, pond_stats_buf
 
 
 @dataclass
@@ -124,6 +124,8 @@ def candidates(ctx: Context, p: CandidateParams | None = None):
 
     records = []
     br = ctx.breach
+    pond_mark = np.zeros(z.size, np.int32)                    # reused by every pond flood fill
+    pond_q = np.empty(p.pond_max_cells, np.int64)
     for k in range(len(br.seed)):
         cells, znew = br.path(k)
         if cells.size < 2:
@@ -191,8 +193,8 @@ def candidates(ctx: Context, p: CandidateParams | None = None):
         # which would give nested bumps inside a big pond the big pond's size)
         seed = int(cells[0])
         level = min(z_crest, float(zflat[seed] + ctx.dep.depth.ravel()[seed]))
-        dep_area, dep_vol, dep_depth, trunc = pond_stats(
-            ctx.z_valid_filled, ctx.valid, seed, level, cs, p.pond_max_cells)
+        dep_area, dep_vol, dep_depth, trunc = pond_stats_buf(
+            ctx.z_valid_filled, ctx.valid, seed, level, cs, p.pond_max_cells, pond_mark, k + 1, pond_q)
         upa_dn = float(ctx.upa.ravel()[span[-1]])
         # tests
         geom_ok = (h_b >= p.min_barrier_height_m) and (L_b < p.max_barrier_length_m) and raised and elongated
@@ -425,7 +427,10 @@ def test_a(ctx: Context, p: CandidateParams | None = None):
     nr, ncols = z.shape
     cs = abs(ctx.transform.a)
     white = ctx.feats[f"tophat_white{p.raised_tophat_scale_m:g}"]
-    wf = np.nan_to_num(white).ravel()
+    white0 = np.nan_to_num(white)          # once: inside the loop this copied the whole grid per path
+    approach = ctx.net.skeleton & ~ctx.net.toe if ctx.net.toe is not None else ctx.net.skeleton   # once, likewise
+    wf = white0.ravel()
+    upa = ctx.upa.ravel()
     win = int(round(p.elongation_window_m / cs))
     out = []
     for pi, path in enumerate(ctx.net.paths):
@@ -463,14 +468,12 @@ def test_a(ctx: Context, p: CandidateParams | None = None):
         xs_, ys_ = _xy(ctx.transform, [path[s], path[e]], ncols)
         pdir = math.atan2(ys_[1] - ys_[0], xs_[1] - xs_[0])
         w50 = _half_height_width(zs, d, ic, base, h_b, cs)
-        elong, angle, run = _axis_elongation(np.nan_to_num(white), (rc, cc), pdir, w50, raised_h, p, cs)
+        elong, angle, run = _axis_elongation(white0, (rc, cc), pdir, w50, raised_h, p, cs)
         cross = _angle_between_axes(pdir, angle)
         crest_width = float(np.sum(zf[span] >= z_crest - 0.15)) * cs
-        upa = ctx.upa.ravel()
         # kind: at a crossing at least one channel approaches the barrier transversely; if both
         # run along it, the path only hops a bank between parallel channels (design §5.3 stopbank)
         rad = int(round(10.0 / cs))
-        approach = ctx.net.skeleton & ~ctx.net.toe if ctx.net.toe is not None else ctx.net.skeleton
 
         def ch_angle(cell):
             rc_ = divmod(int(cell), ncols)

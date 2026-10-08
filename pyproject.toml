@@ -10,7 +10,7 @@ license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=2.0", "affine", "scipy>=1.13", "numba>=0.60", "pyflwdir>=0.5.10", "scikit-image>=0.24",
-  "rasterio>=1.4", "geopandas>=1.0", "shapely>=2.0", "pyogrio", "matplotlib",
+  "rasterio>=1.4", "geopandas>=1.0", "shapely>=2.0", "pyogrio", "matplotlib", "psutil",
 ]
 
 [project.optional-dependencies]

@@ -25,6 +25,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from scipy import ndimage as ndi  # noqa: E402
 
+from terrain_s2.perf import StageTimer  # noqa: E402
 from terrain_s2 import channels, dataio, drains, floodplain, hydro, network, pipeline, products  # noqa: E402
 from terrain_s2.backend import get_backend  # noqa: E402
 from terrain_s2.config import Params  # noqa: E402
@@ -38,6 +39,56 @@ def _burn(sk, geom, T):
         r_, c_ = line(int(rr[i]), int(cc[i]), int(rr[i + 1]), int(cc[i + 1]))
         ok = (r_ >= 0) & (r_ < sk.shape[0]) & (c_ >= 0) & (c_ < sk.shape[1])
         sk[r_[ok], c_[ok]] = True
+
+
+def _near_any(geoms, targets, d, strict=False):
+    """Boolean per geometry: within ``d`` of any target (< d if ``strict``), by spatial index rather
+    than all pairs (the pairwise loops grew with the square of the area: ~64 x for a full LINZ tile)."""
+    from shapely import STRtree, distance
+    out = np.zeros(len(geoms), bool)
+    if not len(geoms) or not len(targets):
+        return out
+    gi, ti = STRtree(targets).query(geoms, predicate="dwithin", distance=d)
+    if strict and len(gi):
+        keep = distance(np.asarray(geoms, object)[gi], np.asarray(targets, object)[ti]) < d
+        gi = gi[keep]
+    out[gi] = True
+    return out
+
+
+def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd):
+    """features.tif and hydro.tif on the window grid, cropped to the AOI (tiles then mosaic without
+    overlap), float32, deflate; rasters.json gives each band's units and meaning."""
+    import rasterio.windows
+    from terrain_s2 import bands as B
+    win = rasterio.windows.from_bounds(*core_bounds, transform=w.transform).round_offsets().round_lengths()
+    r0, c0 = max(int(win.row_off), 0), max(int(win.col_off), 0)
+    r1, c1 = min(r0 + int(win.height), w.z.shape[0]), min(c0 + int(win.width), w.z.shape[1])
+    tr = rasterio.windows.transform(rasterio.windows.Window(c0, r0, c1 - c0, r1 - r0), w.transform)
+    crop = lambda a: np.asarray(a)[r0:r1, c0:c1]  # noqa: E731
+    valid = np.isfinite(w.z)
+    meta = {}
+    if which == "all":
+        f = {k: crop(v) for k, v in res.feats.items()}
+        dataio.write_stack(out / "features.tif", f, tr, w.crs)
+        meta["features.tif"] = B.describe(list(f), B.FEATURES)
+    h = {}
+    if hand is not None:
+        h["hand_m"] = hand
+        h["floodplain"] = np.where(valid, fp.astype(np.float32), np.nan)
+    h["log10_upstream_area_m2"] = np.where(valid, np.log10(np.maximum(res.upa, 1.0)), np.nan)
+    h["breach_depth_m"] = np.where(valid, w.z - res.breach.z_breached, np.nan)
+    h["depression_depth_m"] = np.where(valid, res.dep.depth, np.nan)
+    h["channel_mask"] = net["mask"].astype(np.float32)
+    h["channel_centreline"] = sk.astype(np.float32)
+    if dsm is not None:
+        h["dsm_minus_dem_m"] = dsm - w.z
+    if rd is not None:
+        h["road_distance_m"] = rd
+    h = {k: crop(v) for k, v in h.items()}
+    dataio.write_stack(out / "hydro.tif", h, tr, w.crs)
+    meta["hydro.tif"] = B.describe(list(h), B.HYDRO)
+    (out / "rasters.json").write_text(json.dumps(meta, indent=2))
 
 
 def main():
@@ -56,30 +107,46 @@ def main():
     ap.add_argument("--assume-crs")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--profile", action="store_true", help="cProfile the run: <out>/profile.prof and profile_top.txt")
+    ap.add_argument("--rasters", choices=["all", "hydro", "none"], default="all",
+                    help="write features.tif (DEM feature stack) and hydro.tif (HAND, upstream area, ...), cropped "
+                         "to the AOI, with rasters.json describing the bands (all: both; hydro: hydro.tif only)")
     a = ap.parse_args()
+    prof = None
+    if a.profile:
+        import cProfile
+        prof = cProfile.Profile()
+        prof.enable()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
+    T = StageTimer(sample=not a.profile)
     hcrs = dataio.processing_crs(a.dem[0], a.assume_crs)
     aoi = dataio.read_aoi(a.aoi, hcrs, a.aoi_crs)
     b = tuple(aoi.total_bounds)
     w = dataio.read_window(a.dem, b, a.buffer, assume_crs=a.assume_crs)
     dsm = dataio.read_window(a.dsm, b, a.buffer, assume_crs=a.assume_crs).z if a.dsm else None
+    T.mark("read")
     P = Params(); P.candidates.hard_gates = False; cs = abs(w.transform.a)
     roads = gpd.read_file(a.roads).to_crs(hcrs) if a.roads else None
     if roads is not None:
         roads = roads[roads.intersects(box(*w.bounds))]
     # Tests A and B (ungated) and the shared features
+    T.mark("read_roads")
     res = pipeline.run(w.z, w.transform, P, get_backend(a.device), dsm=dsm)
+    T.mark("pipeline")
+    T.add(res.timings, "pipeline.")
     strong = channels.channel_mask(res.feats, cs, P.channels, w.z, res.upa, filter_fragments=False)
     # floodplain (HAND, DEM only): restrict the network and crossings to it (plus a buffer)
     fp = fp_buf = None
     if a.max_hand > 0:
-        _, flw = hydro.flow_accumulation(res.breach.z_breached, w.transform)
+        flw = res.flw                      # routed once in pipeline.run (was recomputed here: fill + D8 again)
         wide = (ndi.distance_transform_edt(strong) * cs) >= 4.0
         fp, hand = floodplain.floodplain_mask(w.z, flw, res.upa, wide, cs, a.max_hand)
         fp_buf = ndi.binary_dilation(fp, iterations=int(round(50 / cs)))
         strong &= fp_buf
+    T.mark("floodplain")
     net = drains.build_drain_network(strong, res.feats, w.z, w.transform, dsm)
+    T.mark("drain_network")
     if fp_buf is not None:
         net["skeleton"] &= fp_buf
     # culvert edges: accepted Test A paths become part of the network, so channel type and flow
@@ -92,21 +159,25 @@ def main():
     rpolys, riv = network.river_polygons(net["mask"], w.transform)
     if riv.any():
         sk = network.river_centrelines(riv, sk, w.transform)
+    T.mark("culverts_rivers")
     nodes, edges, reaches = network.build_reaches(sk, w.transform)
+    T.mark("reaches")
     rd = rdir = None
     if roads is not None and len(roads):
         rd, rdir = products._road_rasters(roads, sk.shape, w.transform)
     Fr = network.reach_features(reaches, net["mask"], res.feats, w.z, w.transform, rd, rdir, riv)
+    T.mark("reach_features")
     # cleaning: drop isolated pieces < 50 m and dangling reaches < 15 m (keep culvert links)
     if not a.no_clean:
-        through = [i for i, R in enumerate(reaches)
-                   if any(LineString(R.coords).distance(r["geometry"].centroid) < 2 for r in culvert_edges)]
+        through = list(np.flatnonzero(_near_any([LineString(R.coords) for R in reaches],
+                                                [r["geometry"].centroid for r in culvert_edges], 2.0, strict=True)))
         kept = network.clean_reaches(reaches, keep=through, incision=Fr.incision_m.values)
         n_removed = len(reaches) - len(kept)
         reaches = [reaches[i] for i in kept]
         Fr = Fr.iloc[kept].reset_index(drop=True)
     else:
         n_removed = 0
+    T.mark("cleaning")
     if a.stream_model:
         import joblib
         p0 = joblib.load(a.stream_model).predict_proba(network.design_matrix(Fr))[:, 1]
@@ -118,21 +189,24 @@ def main():
     ch["p_stream"] = p
     ch["class"] = np.where(p >= 0.5, "stream", "drain")
     ch["class_confidence"] = np.maximum(p, 1 - p)
-    ch["through_culvert"] = [any(LineString(R.coords).distance(r["geometry"].centroid) < 2 for r in culvert_edges)
-                             for R in reaches]
+    ch["through_culvert"] = _near_any([LineString(R.coords) for R in reaches], [r["geometry"].centroid for r in culvert_edges],
+                                      2.0, strict=True)
     ch = ch[ch.length > 0]
+    T.mark("classify_reaches")
     C = products.crossings(net, w.z, w.transform, dsm, roads)
+    T.mark("crossings")
     C = products.merge_test_candidates(C, res.candidates)
     C = products.add_context(C, w.z, dsm, w.transform, ch, roads)
     # crossings on Test A paths accepted into the network as culvert links count as network evidence
     links = [r["geometry"] for r in culvert_edges]
     from shapely.geometry import Point
-    C["network_link"] = [any(g.distance(Point(x, y)) <= 8 for g in links) for x, y in zip(C.x, C.y)] if links else False
+    C["network_link"] = _near_any([Point(x, y) for x, y in zip(C.x, C.y)], links, 8.0) if links else False
     C = products.finalise_crossings(C, roads is not None)
+    T.mark("crossing_context")
     cr = gpd.GeoDataFrame(C, geometry=gpd.points_from_xy(C.x, C.y), crs=hcrs)
     # crossings must sit on the cleaned network (or come from Test A / Test B evidence)
     if len(cr) and len(ch):
-        on_net = cr.geometry.apply(lambda p: ch.distance(p).min() <= 10)
+        on_net = _near_any(list(cr.geometry), list(ch.geometry), 10.0)
         tests = cr.sources.astype(str).str.contains("testA|testB")
         cr = cr[on_net | tests]
     if fp_buf is not None and len(cr):
@@ -140,6 +214,7 @@ def main():
         # can stand more than max_hand above the drainage while both its channels are on the floodplain
         cc_, rr_ = drains._to_cr(w.transform, cr.x.values, cr.y.values)
         cr = cr[fp_buf[rr_.astype(int), cc_.astype(int)]]
+    T.mark("crossing_filters")
     rep = gpd.GeoDataFrame([g for g in net["gaps"] if g["kind"] == "continuity"],
                            geometry=[LineString([(g["x0"], g["y0"]), (g["x1"], g["y1"])])
                                      for g in net["gaps"] if g["kind"] == "continuity"], crs=hcrs)
@@ -159,14 +234,28 @@ def main():
         g = g[g.intersects(core)]
         if len(g):
             g.to_file(gpkg, layer=name, driver="GPKG")
+    if a.rasters != "none":
+        _write_rasters(out, a.rasters, w, aoi.total_bounds, res, net, sk, fp, hand if fp is not None else None, dsm, rd)
+    T.mark("write")
+    T.stop()
     info = dict(dem=a.dem, dsm=a.dsm, roads=a.roads, stream_model=a.stream_model, aoi=a.aoi,
                 seconds=round(time.perf_counter() - t0, 1),
                 channels_km=round(float(ch[ch.intersects(core)].length.sum() / 1000), 2),
                 crossings={k: int(v) for k, v in cr[cr.intersects(core)].tier.value_counts().items()},
                 repairs=int(rep.intersects(core).sum()) if len(rep) else 0,
                 reaches_removed_by_cleaning=int(n_removed), rivers=len(riv_g),
-                floodplain_frac=round(float(fp.mean()), 3) if fp is not None else None)
+                floodplain_frac=round(float(fp.mean()), 3) if fp is not None else None,
+                cells=int(w.z.size), device=res.device, perf=T.report())
     (out / "network.json").write_text(json.dumps(info, indent=2))
+    if prof is not None:
+        import io
+        import pstats
+        prof.disable()
+        prof.dump_stats(out / "profile.prof")
+        buf = io.StringIO()
+        pstats.Stats(prof, stream=buf).sort_stats("cumulative").print_stats(40)
+        pstats.Stats(prof, stream=buf).sort_stats("tottime").print_stats(30)
+        (out / "profile_top.txt").write_text(buf.getvalue())
     print(json.dumps(info))
 
 

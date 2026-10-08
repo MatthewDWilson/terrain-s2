@@ -3,5 +3,5 @@ role: test
 aoi: examples/aoi_canterbury1.geojson
 buffer_m: 200
 elevation: {region: canterbury, products: [dem, dsm], survey: canterbury_2020-2023}
-sources: [waimakariri_culverts, waimakariri_channels, linz_roads, linz_tracks, linz_rail, linz_buildings, osm]
+sources: auto     # from sources_coverage.geojson; until 8 Oct 2026: [kiwirail_culverts, waimakariri_culverts, waimakariri_channels, linz_roads, linz_tracks, linz_rail, linz_buildings, osm]
 notes: Waimakariri District; Matt's review labels (rounds 1-2) held out as the test set

@@ -700,6 +700,308 @@ Waimakariri not included at release); KiwiRail culverts, track centreline and br
 data.govt.nz; service URLs to resolve); LINZ Topo50 roads 50329, railways 50319, tracks 50364. Not
 yet checked: Christchurch, Waikato LASS, Kāpiti, New Plymouth, Gisborne.
 
+### 7b. Waimakariri culverts in the Before U Dig service (8 Oct 2026)
+
+- **Probe, canterbury1 window.** `3Waters/BUD_Query/MapServer/10` (Main_SW) is live: 84 features, all
+  `CLASSIFICATION2 = 'Pipe'`, `CLASSIFICATION3 = 'Network Main'`. No culverts under any field.
+- **The filter was on the wrong field.** Matt's export of the old `Stormwater_Assets_In_Service` pipes layer
+  (`Stormwater_Pipes.shp`, 9,655 rows) has the type in CLASSIFICATION3 (shapefile `CLASSIFI_2`): 8,611 Network
+  Main, 980 Culvert, 64 Facility Pipe; CLASSIFICATION2 is 'Pipe' throughout. `sources.yml` now filters on
+  `CLASSIFICATION3 = 'Culvert'` (and `<> 'Culvert'` for `waimakariri_pipes`).
+- **Culverts appear to be missing from Main_SW.** The export has 86 rows in the window: the same 84 mains plus
+  two culverts, SW005887 (Revells Road, council, 29.9 m) and SW005886 (SH1 Northern Motorway, ownership
+  'Private', 36.3 m), both 224 mm concrete, 1974. These match the manual reference count of 2.
+- **Not in Before U Dig.** `--find "ASSNBRI IN ('SW005886','SW005887')"` (8 Oct, Matt): no layer of
+  `BUD_Query` holds either asset, although the Main_SW layer description lists culverts. Likely a fixed
+  definition expression on the Before U Dig layers (culverts are not buried services); the probe now prints it.
+- **Found: the open-data layer.** Matt's export is the portal's "Stormwater Culvert Facility Pipe and Network
+  Main" dataset (openmaps-waimakariri.hub.arcgis.com, item `9ab2c4f660dd4dc4a6b3a1ab3efea019_14`), served from
+  `3Waters/Assets_Stormwater/MapServer/14` (13 is the same data styled by criticality). `Assets_Stormwater`
+  appears to replace the withdrawn `Stormwater_Assets_In_Service`. `waimakariri_culverts` and `waimakariri_pipes`
+  now use layer 14; `waimakariri_structures` points at layer 20 (Stormwater Structure - Point; unchecked).
+- **`--find --scope folder` missed it.** It searched the `3Waters` folder but reported no match, so a layer
+  that refused the filter was skipped silently. It now reports services and layers searched and lists refusals.
+- **Hub items whose URL is the layer.** `resolve_layer` appended the layer index to an item URL that already
+  ended in it (`.../MapServer/14/14`); fixed, with a test.
+- **The live layer has a newer schema than the export** (8 Oct probe): `ASSET_ID` (e.g. "291404") and
+  `AssetType` ("Stormwater-Pipe-Culvert"), coded values with `_DISPLAY` companions (`SERVICE_STATUS` "IN").
+  `ASSNBRI` is absent, which is why every `Assets_*` layer "failed to execute" the `--find ASSNBRI IN (...)`
+  query. The layer answers normally: canterbury1 has 4 culverts in the window (export: 2), canterbury2 7. The
+  `BUD_Query` channels still use the old schema (`ASSNBRI`, "In Service"), so the two services may not be
+  equally current; `Assets_Stormwater/MapServer/3` (Stormwater Channel) is the new-schema candidate for channels.
+- **Silent schema drift guarded.** `harmonise` used to fall back to row numbers for a missing id field and NaN
+  for missing sizes. The probe now checks the fields `sources.yml` relies on against the layer (and `--fields`
+  lists them); `build_site` warns in both dry and real runs; `site.json` records the warning.
+- **`sites/*.yml` matched `sources.yml`** (KeyError 'bounds' after the last site): the build skips the registry,
+  and `load_site` names a file that is not a site definition.
+- **Rows keyed on `ASSET_ID`** (new asset system); `Legacy_ID` carries the old SW numbers and stays in the
+  `_raw` layer. `id_field` may list alternatives (`[ASSET_ID, ASSNBRI]`), so the old-schema fallback still keys
+  rows. Channels moved to `Assets_Stormwater/3` (same 45 features and classes as `BUD_Query/12`, which is now the
+  fallback), so culverts and channels share one service, schema and id system.
+- **canterbury1 culverts, live (8 Oct):** 4 = the export's two (Legacy SW005887, SW005886) plus SW037568 and
+  SW037640 (375 mm and 300 mm, 250 Revells Road), added since the export. One of the four is private (SH1).
+- **M1 gate reference from the export** (window = AOI + buffer): canterbury1 2 culverts (SW005886 private,
+  SW005887 council); canterbury2 7 in the window, 4 within the AOI (the manual count of 4, 3 distinct).
+- **Probe options added:** `--values` (value counts of text fields in the window), `--layers` (service layer
+  list), `--find WHERE` with `--scope service|folder`, `--url` and `--where` overrides, `--search` (ArcGIS
+  Online items), and the layer's definition expression in the header. Fallback URLs (`fallback_urls`, `arcgis.first_working`) restored:
+  the 7 Oct change had not reached the repository.
+- **Benchmarks** accept the file names in Matt's clip folders; both pass in the sandbox on the uploaded clips
+  (61 passed, 1 skipped: GPU).
+
+### 7c. M1 gate and R1 on the assembled bundles (8 Oct 2026)
+
+**Build** (Matt, all four sites, 20–50 s each): 0 errors except linz_rail at canterbury2.
+- *Rasters:* every bundle DEM and DSM matches the manual clip cell for cell (same grid, shape and
+  origin; |difference| ≤ 0.001 m in about 0.5 % of cells, LERC rounding).
+- *Council labels:* canterbury1 4 culverts, 45 channels; canterbury2 7 culverts, 44 channels. Inside
+  the AOI, council-owned channel length is 6.60 km and 9.17 km: the manual references (6.6, 9.2).
+  Most culverts have no diameter in the new asset system; lengths are filled from the geometry
+  when blank (`length_from_geometry`).
+- *linz_rail, canterbury2:* WFS selects by bounding box, so the 346 km Main North Line came back for
+  a window it never enters, and the axis-order guard misread that. The guard now raises only when the
+  features' extent misses the window; otherwise the result is empty (`bbox_only` in `site.json`).
+- *Whole features:* roads, rail and other context came back whole (SH12 roads 39.6 km for a 1.4 km
+  window). Context layers and `roads.gpkg` are now clipped to the window; labels keep whole features.
+- *KiwiRail culverts* added (national points; `ASSETNUM`); size units to confirm before mapping.
+
+**R1 on the bundles** (sandbox, CPU). A = manual clips + manual roads (the R1 inputs); B = bundle
+rasters + bundle roads clipped to the AOI; C = bundle rasters + roads clipped to the window.
+
+| site | A vs B | B vs C (roads beyond the AOI) |
+|---|---|---|
+| canterbury1, canterbury2 | identical (reaches, classes, crossings, tiers) | identical |
+| AOI2 | identical | one extra high crossing (road_end_pair at the AOI's north edge) |
+| SH12 | 4 of 231 reaches and one crossing differ (medium → low, moved 5 m), from the ≤ 1 mm DEM differences | the bridge point moves 3 m |
+
+Benchmarks on the bundles: SH12 4/4, AOI2 2/2 (65 passed, 1 skipped). So the automated bundles
+reproduce R1; C (window roads) is the new default.
+
+**Scoring against the bundle labels** (`scripts/score_site.py`, new; run C):
+- *Culverts in the AOI:* canterbury1 3/3 found within 10 m (high 2, medium 1), including SW037640,
+  added to the register after R1 (a blind find); canterbury2 4/4 (high 2, low 2). Culverts in the
+  200 m buffer are outside the network and not scored.
+- *Channels along the labels* (2 m samples, nearest reach within 5 m): stream/drain accuracy by length
+  0.90 / 0.86 (canterbury1 / 2); council-owned 0.88 / 0.86; coverage 54 % / 82 % (council 68 % / 88 %).
+  The method differs from §4k (0.91 / 0.89, reach-side), so the figures are not directly comparable;
+  low coverage is mostly council lines drawn off the channel bed (M2: snap labels to the bed).
+
+### 7d. Connectivity scoring, the national partition, Environment Southland (8 Oct 2026)
+
+**Found is not enough.** Matt: the canterbury1 culvert under SH1 (OBJECTID 8081, asset 291725,
+Legacy SW005886, 36 m) is missing from the prediction, and it is a critical feature. `score_site.py`
+had counted it found, because a Test A candidate lay 3.5 m from one end of the culvert line. Culverts
+are now scored at the crest (the midpoint of the line), and separately for *connected*: a predicted
+reach within 3 m of the crest, i.e. the network passes through. In the AOI: canterbury1 found 3/3,
+connected 1/3 (291725 nearest reach 13.3 m; 311935 6.8 m); canterbury2 found 4/4, connected 2/4.
+Connectivity through culverts is the target measure for R3/R4: this class of model has reached the
+point where fixing one case by parameters breaks others (Matt).
+
+**Partition** (`terrain_s2.grid`, `scripts/partition.py`). LINZ names its elevation tiles on the
+map-sheet grid (1:50k sheets 24 x 36 km, 1:10k tiles 4.8 x 7.2 km), so the grid is the partition:
+- origin E 1,012,000, N 6,234,000, rows AS, AT, ... (no I or O); fitted to the tile names served to the
+  four sites (all five tiles reproduced), and checked against cached footprints with `--check`;
+- processing tile: 1:5k (2.4 x 3.6 km, 8.6 km2, about the size of the test sites), each inside exactly
+  one LINZ 1:10k COG tile, so a tile reads one COG (plus neighbours for its buffer);
+- the national index comes from the collection records alone (they list tile names), one request per
+  collection, no item records;
+- `split` is assigned per 1:50k sheet (hash of the id; 80/10/10), so neighbouring tiles never straddle
+  train and test.
+Other regions get a `RegularGrid` or their published tiling through a region profile (T1).
+
+**Environment Southland** (layer pages read 8 Oct, to be confirmed live): `es_drainage` (MapServer/27,
+ES Drainage Network: Name, District, Catchment, SmartId; no stream/drain class) and `es_stopbanks`
+(MapServer/28, ES Flood Protection Network: ReachID, Scheme, River, Bank, ReachPurpose). Culverts are
+not in either layer; `--layers` lists the rest of the service. The probe no longer needs a site: the
+window is a tile (`--tile`), a box (`--bbox`) or the layer's extent.
+
+- **KiwiRail sizes** (canterbury1 probe, 5 concrete pipes): `DIAMETER` 450–1300, so mm (mapped to
+  `diameter_m`); `DEPTH` 1.9–4.2 m, probably cover or fill depth (kept raw; useful later as embankment
+  height); `KRSTARTOFF` is line metreage in km.
+- **Implied crossings** (`labels.gpkg`, layer `crossings_implied`): where a labelled channel crosses a road
+  or railway, a structure must exist, recorded or not. Environment Southland publishes drainage lines that
+  cross highways with no culvert layer (Matt: live, but the culverts are implicit); council registers miss
+  private and some road culverts. `recorded` marks a labelled crossing within 15 m. canterbury1: 9 (7 in
+  the AOI), none recorded (council channels stop at culvert ends, so recorded culverts do not intersect
+  roads); canterbury2: 19 (8 in the AOI), 2 recorded. In the AOI: found 4/7 and 6/8, connected 2/7 and 2/8.
+  Positions are only as good as Topo50 centrelines (1:50k) and council lines, so the 3 m connectivity
+  test is strict for these; snapping to the DEM road crest is an M2 task.
+
+### 7e. Partition built; source registry (8 Oct 2026)
+
+**Partition, first national run** (Matt): `--check` 3,550 cached footprints, 0 disagree. 213 collections
+(108 DEM, 105 DSM), 8,102 LINZ tiles. The first run gave 42,400 processing tiles and 366,336 km2 (more
+than NZ), 42,164 of them in region "new-zealand": LINZ's national mosaic (`new-zealand/new-zealand/dem_1m`),
+tiled by 1:50k sheet (sea included) and dated by its latest input, won every tile. It no longer chooses
+surveys; tiles record `in_national` (useful to fill buffers where a survey ends; Matt: neighbouring tiles
+are needed for the buffer, and surveys share the sheet grid, so only survey edges need care).
+
+**Source registry** (`acquire/registry.py`): two files. `sources.yml` stays the hand-edited definition
+(mapping, notes, optional `coverage: auto | nz | global | [bbox]`). `sources_coverage.geojson` is generated
+by `scripts/index_sources.py`: for ArcGIS layers, a feature count per 1:50k sheet in the service extent
+(limited to sheets with LiDAR via `--partition`), the coverage being the sheets with features; LINZ WFS
+is national, OSM global. Sites default to `sources: auto` (optional `layers:`, `exclude:`), which gets
+every enabled source whose coverage meets the window; zero-feature results are then normal and not
+warned. All four sites moved to `auto` (their former lists kept as comments; the resolved set is
+recorded in `site.json`). `scripts/tile_pool.py` joins the partition with the index: layer `pool`, the
+tiles whose sheet has label features (crossings, channels, stopbanks), with the sources per type.
+Re-run index and pool as sources are added.
+
+### 7f. LINZ tile as the processing unit; tile-level coverage (8 Oct 2026)
+
+**Partition rerun** (Matt): 7,678 LINZ tiles, 30,712 1:5k tiles (265,352 km2), 16 regions; national
+mosaic on 424 sheets. **Processing unit changed to the LINZ 1:10k tile** (Matt: keep the full LINZ tile,
+buffer into neighbours): 4.8 x 7.2 km, one COG, provenance per tile; `--scale 10000` is now the default
+(5k / 1k remain for training chips). Each tile records `n_neighbours_lidar`, `n_neighbours_same_survey`
+(0-8) and `survey_edge`, since the buffer crosses a survey edge where neighbours differ. With a 200 m
+buffer a tile is 5.2 x 7.6 km, ~39.5 M cells at 1 m, ~8 x canterbury1 (141 s on Matt's CPU): about 20 min
+per tile on CPU if it scales linearly; memory to be measured on one tile first.
+
+**Coverage was per sheet, too coarse.** The pool claimed `kiwirail_culverts` for tiles far from the rail
+(e.g. BV20_5000_0305: 76 KiwiRail culverts in its 24 x 36 km sheet, none near the tile). The index now
+counts per 1:10k tile inside the sheets that have features; pool membership and `label_features` are per
+tile. Sources with `url: TODO` (kiwirail_track) are recorded as unresolved, not queried.
+
+**Held-out sheets.** BW24, the sheet of canterbury1 and canterbury2, hashed to train; any training
+tile in it would neighbour the test sites. Sheets holding a test or validation site now take that role.
+
+**Tiles as sites.** `build_site.py --tile <id> --partition <gpkg>` builds a bundle for a partition tile
+(bounds, region, latest survey, split as role, `sources: auto`).
+
+### 7g. Quadrant test units; first profile (8 Oct 2026)
+
+**Full-tile run** (Matt, BW24_10000_0402, CPU): still running after 40 min; CPU 50-60 %, memory ~82 GB
+(machine shared with Docker VMs, so not a clean figure). Production target: 192 GB, RTX 6000 Pro, 32 cores.
+
+**Quadrants for testing** (Matt): `partition.py --unit quadrant` splits each LINZ tile into four 2.4 x 3.6 km
+units named `BW24_10000_0402_NW/_NE/_SW/_SE` (they coincide with 1:5k tiles). `grid.tile_bounds` and
+`build_site.py --tile` accept them. Production stays on whole tiles (`--unit tile`).
+
+**Profile, canterbury1** (4.75 M cells, sandbox, 1 core): 117 s, peak RSS 1.34 GB (~280 bytes per cell,
+so a buffered LINZ tile of 39.5 M cells should need ~11 GB; 82 GB is not explained by the arrays). Stages:
+features 33 s (of which the 3 median filters, scipy `rank_filter`, 28 s), Test A 19, Test B 16,
+floodplain 15 (HAND 10 s; flow accumulation recomputed), channel network 9, fills 8 (priority-flood
+run 3 times). `run_network.py` now records stage timings and peak memory in `network.json` (`perf`), and
+`--profile` writes a cProfile.
+
+**Quadratic terms removed** (outputs identical on canterbury1: every layer, geometry and attribute):
+- Test A copied the whole white top-hat grid (`np.nan_to_num`) once per path: O(paths x cells), 9 s at
+  canterbury1, ~64 x at a full tile. Now once per run (Test A 18.6 -> 6.7 s).
+- four all-pairs distance loops in `run_network.py` (reaches x culvert links, candidates x links,
+  candidates x reaches): now spatial-index queries.
+canterbury1 117 -> 97 s; the full-tile gain should be much larger, since these terms grew with area squared.
+
+### 7h. First quadrant run; rasters; more sources (8 Oct 2026)
+
+**BW24_10000_0402_SE** (Matt, CPU, 16 logical cores; 2800 x 4000 cells with buffer): 406 s. Test B 153 s,
+features 69, floodplain 44, Test A 40, crossings 25, channel network 23, hydrology ~26. Test B is linear in
+the number of breaches (sandbox: 1,525 breaches 7 s, 6,011 breaches 20 s), a per-breach Python loop: the
+numba target. Peak memory not recorded (psutil missing; now a dependency). Labels: culverts found 11/15,
+connected 4/15; implied crossings found 15/22, connected 8/22; channels covered 58 %, stream/drain 0.91.
+
+**Hydrology once.** Flow directions are routed once (pipeline) and reused for HAND; outputs identical
+(SH12, every layer and raster). The fill on the raw DEM (depressions) and on the breached DEM (routing)
+are different inputs and both remain.
+
+**Rasters** (`run_network.py --rasters all|hydro|none`, default all), cropped to the AOI so tiles mosaic
+without overlap, float32, with `rasters.json` describing every band:
+- `features.tif`, 17 bands: relief_med5/11/21, tophat_white and tophat_black 11/21/41, laplacian, ridge and
+  valley at sigma 2 and 4 m, openness_pos/neg. (QGIS shows bands 1-3 as RGB by default: the "three layers"
+  were the relief_med bands.)
+- `hydro.tif`, 9 bands: hand_m, floodplain, log10_upstream_area_m2, breach_depth_m, depression_depth_m,
+  channel_mask, channel_centreline, dsm_minus_dem_m, road_distance_m.
+Size: SH12 AOI 44 MB; a quadrant ~0.6 GB; a full tile ~2 GB (production: `hydro` or `none`).
+
+**Not used in processing:** buildings (context only so far); OSM roads (in context.gpkg; `roads.gpkg` is
+LINZ Topo50 when present). OSM detail is uneven (some dual carriageways and footways, some centrelines
+only): LINZ stays the barrier geometry; OSM is for tags (bridge, tunnel=culvert, layer, highway class).
+
+**Sources added** (8 Oct searches): LINZ Topo50 bridges (50244, own label layer `bridges`; implied crossings
+count them as recorded), embankments (50266), dams (50260), enabled. Disabled pending probes: ECan bylaw
+stopbanks and drains (gis.ecan.govt.nz PlanningZones), BOPRC Defence Against Water (culverts, floodgates,
+stopbanks), HBRC asset lines and drains (open data items), NIWA/ESNZ REC2 v2.5 river lines (national,
+CUM_Area upstream area: edge seeding for upstream area and natural-stream labels). Not open: NZTA state
+highway bridge and culvert locations (OIA 2022, declined for security). Known but not online: the NZ
+Inventory of Stopbanks (Crawford-Flett et al. 2022, 5,284 km, via regional councils).
+
+### 7i. Two more grid-scaling costs; probes of new sources (8 Oct 2026)
+
+**Matt: the full tile is slow, the quadrant was fast.** Stage ratios for a quarter of canterbury1 vs the
+whole (4 x cells) found terms growing faster than the area; all fixed with outputs identical (canterbury1,
+every layer, geometry and attribute):
+- Test B pond flood fill (numba) kept a hash set per breach; ponds reach the 2 M-cell cap on large
+  windows, and nested breaches each refill the same pond. Now a reused visit-stamp array and queue
+  (same visiting order): pond fills 9.0 -> 1.4 s, Test B 17.5 -> 10.0 s at canterbury1.
+- Test A built `skeleton & ~toe` (a whole-grid array) once per path: now once per run.
+- road x drain candidates: a 3 x 3 minimum filter of the whole DEM per intersection, intersection with
+  the union of all roads per drain line, and an all-pairs loop over drain ends near roads with a distance
+  to the road union per end. Now: one filter, spatial-index queries, k-d tree pairs (same pair order).
+Remaining ratios ~4-5 x (Test A ~7 x, mostly more paths: 108 -> 615). The quarter vs full-tile timing on
+Matt's machine is the check.
+
+**Probes** (Matt, 8 Oct): ECan bylaw stopbanks (layer 17: 540 features, 115 LINZ tiles; 2019 amendment is
+layer 4, now primary; drains are layers 3 / 16); BOPRC Defence Against Water publishes 6 stopbanks without
+geometry (unusable); HBRC Asset Lines has Stopbank 601, Drain 572, Culvert 176, River Channel 125, Bridge -
+Road 3 (split into hbrc_stopbanks / _culverts / _channels / _bridges by AssetType); REC2 fields are
+CUM_AREA and StreamOrde. **REC2 is not for stream identification** (Matt: coarse source DEM, channels
+missing or misplaced; GeoFabrics snaps it to a finer network): context for upstream area and flow
+statistics where it snaps.
+
+**National stopbank inventory** (Matt is an author; not released because not all councils agreed): may be
+used for training but must not be released. Prefer the original council sources; if used, it needs a
+restricted path (kept out of the repository, bundles, index and published products).
+
+### 7j. Timings after the fixes; GeoFabrics bed estimation; ML decisions (8 Oct 2026)
+
+**Matt's machine, CPU, outputs unchanged:** full tile BW24_10000_0402 (39.5 M cells) 2,557 -> 946 s
+(15.8 min), peak 8.65 GB; quadrant _SE (11.2 M cells) 406 -> 252 s, peak 2.48 GB (~220 B per cell). Full
+tile before -> after: Test B 1,277 -> 250 s, road crossings 364 -> 7, Test A 246 -> 77. Tile / quadrant is
+3.53 x the cells and 3.76 x the time, so nearly linear; Test B is still 6.1 x (41 -> 250 s), the next
+target (numba, or pond reuse between nested breaches). Largest stages now: features 251 s (median
+filters: GPU), Test B 250, HAND/floodplain 124, Test A 77, channel network 70. Sizing for the 32-core /
+192 GB machine: memory allows ~20 tiles at once; 7,678 tiles x 15.8 min / ~24 workers ~ 3.5 days CPU-only.
+
+**Conditioned hydrology (Matt).** `hydro.tif` describes the DEM *before* detection: HAND has
+discontinuities where drainage crosses undetected barriers. Proposed: after the network is assembled,
+a second hydrology pass on a DEM conditioned with the result (culvert links set to the bed interpolated
+between their ends, as GeoFabrics sets a tunnel to the minimum around it), giving flow, upstream area
+(seeded from REC2 where it snaps), HAND to the mapped network, and residual depressions. Residual ponds
+against a barrier with inflow are the "drainage completeness" signal: candidates for missed crossings
+and an ML input. Cost about 3.5 min per tile (+22 %). A full second detection pass to be judged on it.
+
+**GeoFabrics 1.1.30** (rosepearson/GeoFabrics, last commit 12 Mar 2026), river bed:
+`RiverBathymetryGenerator` takes the main channel from REC (with flow and Manning's n per reach), aligns
+it to the DEM with transects at `cross_section_spacing` (bank threshold above the water level; centre
+re-estimated from the widths), smooths width, flat-water width, bank height and slope with an upstream
+rolling mean of `cross_section_spacing x upstream_smoothing_factor` (km scale), fits the water surface
+with a monotone penalised spline (`_unimodal_smoothing`, third-difference penalty lambda 100), and takes
+depth from Neal et al. (uniform flow, d = (n Q / (W sqrt S))^(3/5)) or Rupp & Smart (hydraulic geometry,
+d = (Q / (6.16 W S^0.305))^(1/1.745)), converted from bank-full to the depth below the LiDAR water surface;
+a minimum slope is enforced. `WaterwayBedElevationEstimator`: OSM waterways and tunnels (culverts), a
+tunnel's bed = the minimum elevation around it, open waterways forced downhill. `StopbankCrestElevation
+Estimator`: crest = maximum around the stopbank. Where to smooth less (Matt): the km-scale rolling means
+and the curvature penalty; a monotone fit without a curvature term (isotonic) keeps steps (weirs, riffles),
+with width and slope smoothed only within a reach and Q from REC2 where it snaps.
+
+## 8. Machine learning: decisions (8 Oct 2026, with Matt)
+
+- **Target, first:** at every place a channel meets a barrier (road, rail, embankment, stopbank): culvert,
+  bridge or no structure, and where there is one, the link through it. Then channels and classes; then bed
+  elevation (with less smoothing than GeoFabrics).
+- **Approach:** hybrid, building on the physics chain (candidates, evidence) rather than starting blind;
+  grounded in the Swedish U-Net approach, alternatives tested later. A wide-area training set matters most.
+- **Labels:** council data = reliable (high weight); Matt's labels = partially reliable; unlabelled = the
+  target, never a negative. As council data accumulate they take precedence. Post-processing: every
+  council-recorded crossing is in the final product even where the model misses it.
+- **Evaluation:** primary, automated against council data over a wide sample of tiles; Matt's reviews
+  secondary (limited time). Precision against a partial inventory is measured where the inventory claims
+  completeness: on council channels at roads and rail (implied crossings), within council asset scope.
+- **Compute:** development on Matt's workstation (RTX 4000 Ada), full training and inference on the
+  RTX 6000 machine (192 GB, 32 cores).
+- **Phases:** ML-0 dataset builder; ML-1 candidate scorer (gradient boosting baseline, then patch CNN);
+  ML-2 link decisions and network assembly; ML-3 dense multi-task U-Net (channels with clDice, crests,
+  crossing heatmap); ML-4 bed elevation.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

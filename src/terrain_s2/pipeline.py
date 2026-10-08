@@ -23,6 +23,7 @@ class Result:
     test_a: list = field(default_factory=list)
     timings: dict = field(default_factory=dict)
     device: str = "cpu"
+    flw: object = None          # D8 flow directions on the breached DEM (reuse: do not route twice)
 
 
 def run(z: np.ndarray, transform, params: Params | None = None, be: Backend | None = None,
@@ -66,4 +67,4 @@ def run(z: np.ndarray, transform, params: Params | None = None, be: Backend | No
     t["test_a"] = time.perf_counter() - t0
     t["total"] = sum(t.values())
     return Result(feats=feats, breach=br, dep=dep, upa=upa, breaches=allb, candidates=cands,
-                  timings=t, device=be.name, network=net, test_a=a_recs)
+                  timings=t, device=be.name, network=net, test_a=a_recs, flw=flw)

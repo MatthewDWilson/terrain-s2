@@ -1,7 +1,8 @@
 """SH12 benchmark (Whirinaki, Northland): the stream culverted under SH12 on a DEM drainage divide.
 
 Runs only when the site data are available locally (LiDAR stays out of the repository):
-    TERRAIN_S2_SH12_DIR = folder with AW27_clip.tif, AW27_dsm_clip.tif, roads.gpkg (optional)
+    TERRAIN_S2_SH12_DIR = folder with AW27_clip.tif, AW27_dsm_clip.tif, roads.gpkg (optional;
+    aoi_whirinaki_sh12_roads.gpkg is also accepted, as in the clips_aoi_whirinaki_sh12 folder)
 Acceptance: (1) a crossing within 10 m of the culvert, tier high; (2) the network passes through
 the culvert (one reach, flagged through_culvert); (3) the reaches either side are streams;
 (4) the SH12 bridge is classed as a bridge.
@@ -16,7 +17,14 @@ import pytest
 D = os.environ.get("TERRAIN_S2_SH12_DIR")
 CULVERT = (1642255.6, 6075854.7)
 BRIDGE = (1642170.4, 6075760.4)
-pytestmark = pytest.mark.skipif(not D or not Path(D, "AW27_clip.tif").exists(), reason="SH12 data not available")
+def _first(*names):
+    """The first file present in D: the benchmark names, or the names in Matt's clip folders."""
+    return next((Path(D, n) for n in names if D and Path(D, n).exists()), None)
+
+
+DEM, DSM = _first("AW27_clip.tif", "dem.tif"), _first("AW27_dsm_clip.tif", "dsm.tif")
+ROADS = _first("roads.gpkg", "aoi_whirinaki_sh12_roads.gpkg")
+pytestmark = pytest.mark.skipif(DEM is None or DSM is None, reason="SH12 data not available")
 
 
 @pytest.fixture(scope="module")
@@ -24,11 +32,11 @@ def products(tmp_path_factory):
     import geopandas as gpd
     out = tmp_path_factory.mktemp("sh12")
     root = Path(__file__).resolve().parents[1]
-    cmd = [sys.executable, str(root / "scripts" / "run_network.py"), "--dem", str(Path(D, "AW27_clip.tif")),
-           "--dsm", str(Path(D, "AW27_dsm_clip.tif")), "--aoi", str(root / "examples" / "aoi_whirinaki_sh12.geojson"),
+    cmd = [sys.executable, str(root / "scripts" / "run_network.py"), "--dem", str(DEM),
+           "--dsm", str(DSM), "--aoi", str(root / "examples" / "aoi_whirinaki_sh12.geojson"),
            "--out", str(out), "--device", "cpu"]
-    if Path(D, "roads.gpkg").exists():
-        cmd += ["--roads", str(Path(D, "roads.gpkg"))]
+    if ROADS:
+        cmd += ["--roads", str(ROADS)]
     r = subprocess.run(cmd, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-2000:]
     g = out / "network.gpkg"
