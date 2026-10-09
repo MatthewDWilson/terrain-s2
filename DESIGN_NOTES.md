@@ -1124,6 +1124,41 @@ raster backend is built on the shared reader rather than beside it. ML-0 starts 
 partition; S2-7 and S2-8 come before ML-0 runs at scale, since the structures layer is the label and
 prediction schema. The rest of section 7 follows in the plan's order.
 
+## 10. ML-0 and ML-1 build (from 9 Oct 2026)
+
+**Plan agreed with Matt** (phases in §8): tiles selected only where council data exist (Waimakariri, HBRC,
+Environment Southland, Auckland, ECan); KiwiRail, LINZ bridges and OSM used as labels inside those tiles
+but not to select them. Wave 1: council culvert registers (Waimakariri, HBRC; ~80 LINZ tiles) on Matt's
+workstation (D:, 638 GB free: ~0.5 GB per tile with rasters off and ML patches, so ~40 GB); wave 2: council
+channels only (ES, Auckland; ~320 tiles) on the RTX 6000 machine. Steps: 0 library entry point (S2-1);
+1 tile selection and folds (leave-one-council-out, sheets held out within councils, BW24 test); 2 batch
+runner (parallel, resumable, GPU feature stage for some workers); 3 labels per candidate; 4 features and
+oriented patches inside the run; 5 dataset assembly; 6 gradient-boosting scorer (weighted PU); 7
+evaluation; 8 patch CNN (GPU); 9 integration (`p_structure`, `p_class`, `model_version`; council records
+always included).
+
+**GPU** (Matt's RTX 4000 Ada, cupy-cuda12x 14.2, parity test passed): quadrant BW24_10000_0402_SE features
+73 -> 3.1 s, identical counts; ~1/3 faster per quadrant. Used for the feature stage in step 2.
+
+**Manual crossing labels** (R1 rounds; the round-2 crossing fields were never filled; round-2 channel edits
+exist at SH12 only: 41 reaches `exists = n`, for ML-3). Union of the review files, labels matched at 5 m,
+the later file winning:
+
+| site | files | y | n | unsure | conflicts | not at a current candidate (10 m) |
+|---|---|---|---|---|---|---|
+| SH12 | v1 candidates_for_review, review2 (prev) | 3 | 38 | 2 | 0 | 4 |
+| AOI2 | v1 candidates_for_review, review2 (prev) | 23 | 26 | 3 | 1 | 3 |
+| canterbury1 | ranked_for_review, review2 (prev) | 22 | 39 | 7 | 2 | 0 |
+| canterbury2 | candidates_for_review, review2 (prev) | 38 | 36 | 15 | 3 | 0 |
+| total | | 86 | 139 | 27 | 6 | 7 |
+
+**Step 0 done: `terrain_s2.run.network(...)`** (S2-1). The chain moved from `scripts/run_network.py` into
+`src/terrain_s2/run.py` unchanged; the script parses arguments and calls it. Returns `NetworkRun(info, out,
+layers, state)`; `keep=True` returns the in-memory state (window, pipeline result, network, REM, road
+distance, conditioned pass, channels, crossings) for ML-0 feature extraction. Outputs identical to 439f01d
+(SH12, AOI2, canterbury1 with a REC2 context: every layer, raster, rasters.json and network.json; new
+`scripts/compare_runs.py`). Tests 97 passed (benchmarks included).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
