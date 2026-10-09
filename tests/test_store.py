@@ -154,7 +154,7 @@ def test_clips_never_touch_built_products(env):
     big = ensure(BIG, _settings(tmp), **kw)
     small2 = _box(X0 + 24, Y1 - 136, X0 + 64, Y1 - 24)
     c2 = ensure(small2, _settings(tmp, spatial_reuse=True), **kw)
-    assert "/clips/" in c2.netcdf
+    assert "clips" in __import__("pathlib").Path(c2.netcdf).parts            # any path separator
     mk = {k: v for k, v in kw.items() if k != "registry"}
     assert make(small2, _settings(tmp), **mk).paths["netcdf"] != c2.netcdf     # its own build, unharmed
     near = _box(X0 + 9, Y1 - 151, X0 + 151, Y1 - 9)                             # snaps to the same 8 m grid

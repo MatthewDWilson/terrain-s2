@@ -316,7 +316,8 @@ def valid_footprint(z, transform, crs=None, decimate: int | None = None, max_cel
         pad = np.zeros((H * k, W * k), bool)
         pad[:h, :w] = valid
         valid = pad.reshape(H, k, W, k).any(axis=(1, 3))
-        tr = tr * Affine.scale(k)
+        # scale the cell size by k (no Affine operators: `*` is deprecated in affine 3.1, `@` missing in 2.x)
+        tr = Affine(tr.a * k, tr.b * k, tr.c, tr.d * k, tr.e * k, tr.f)
     shapes = rasterio.features.shapes(valid.astype(np.uint8), mask=valid, transform=tr)
     geoms = [shape(g) for g, v in shapes if v == 1]
     return unary_union(geoms) if geoms else None
