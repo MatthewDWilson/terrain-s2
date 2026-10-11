@@ -50,7 +50,8 @@ dependencies:
   - psycopg2
   - pyyaml
   - requests
-  # EDDIE core runtime (core installed with pip --no-deps)
+  # EDDIE core runtime (core installed with pip --no-deps). Not gunicorn or gevent: the worker serves no HTTP,
+  # and gunicorn has no Windows build (the same file creates the workstation environment).
   - celery
   - redis-py
   - flask
@@ -60,8 +61,6 @@ dependencies:
   - pandas
   - geoalchemy2        # eddie.digitaltwin.tables (the core declares the old 'geoalchemy')
   - aiohttp
-  - gevent
-  - gunicorn
   # image build
   - conda-pack
   - pip
