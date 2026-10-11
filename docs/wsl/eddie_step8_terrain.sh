@@ -5,7 +5,8 @@
 # pinned clone on a local branch 'instance', git-excluded overlay and .env, loopback ports, clean environment.
 #
 #   setup  (default)  clone/pin the core, clone terrain-s2 (if absent), write harness, overlay and .env, validate
-#   build             refresh the terrain-s2 version in .env, then build all images (log to /mnt/d/EDDIE)
+#   build             update the WSL mirror of terrain-s2 from GitHub (fast-forward only), refresh the version in
+#                     .env, then build all images (log to /mnt/d/EDDIE). Git work itself stays in the Windows clone.
 #   check             after 'docker compose up -d': containers, endpoints, terrain routes, worker toolchain, mounts
 #   e2e [raster|geofabrics] [resolution] [dem|geofabric]
 #                     POST /terrain/dem for the SH12 AOI, follow the task, inspect the product, repeat (cache hit)
@@ -77,7 +78,7 @@ setup() {
 
     say "terrain-s2 working clone ($TS2)"
     if [ -d "$TS2/.git" ]; then
-        note "exists: $(git -C "$TS2" rev-parse --abbrev-ref HEAD) @ $(git -C "$TS2" rev-parse --short HEAD) (left as is; pull yourself)"
+        note "exists: $(git -C "$TS2" rev-parse --abbrev-ref HEAD) @ $(git -C "$TS2" rev-parse --short HEAD) ('build' updates it from GitHub)"
     else
         mkdir -p "$(dirname "$TS2")"
         git clone --quiet --branch "$TS2_BRANCH" "$TS2_URL" "$TS2" && note "cloned $TS2_BRANCH"
@@ -340,8 +341,27 @@ EOF
 }
 
 # ------------------------------------------------------------------------------------------------ build
+sync_mirror() {  # the WSL clone mirrors GitHub; git work (commits, git am, push) happens in the Windows clone
+    git -C "$TS2" fetch --quiet origin || { note "!! git fetch failed in $TS2"; exit 1; }
+    local behind ahead
+    behind=$(git -C "$TS2" rev-list --count HEAD.."origin/$TS2_BRANCH" 2>/dev/null || echo 0)
+    ahead=$(git -C "$TS2" rev-list --count "origin/$TS2_BRANCH"..HEAD 2>/dev/null || echo 0)
+    if [ "$ahead" != 0 ] || [ -n "$(git -C "$TS2" status --porcelain)" ]; then
+        note "!! $TS2 has local commits or changes; it should only mirror origin/$TS2_BRANCH"
+        note "   inspect: git -C $TS2 status; to discard them: git -C $TS2 reset --hard origin/$TS2_BRANCH"
+        exit 1
+    fi
+    if [ "$behind" != 0 ]; then
+        git -C "$TS2" merge --quiet --ff-only "origin/$TS2_BRANCH" && note "updated from GitHub: $behind new commit(s)"
+    else
+        note "up to date with origin/$TS2_BRANCH (did you push from Windows?)"
+    fi
+    git -C "$TS2" log -1 --format='  now at %h %s' 
+}
+
 build() {
     cd "$INST" || exit 1
+    say "terrain-s2 mirror ($TS2)"; sync_mirror
     say "terrain-s2 version"; refresh_version
     say "Build (all images; log: /mnt/d/EDDIE/eddie_step8_build.log)"
     docker compose --progress=plain build 2>&1 | tee /mnt/d/EDDIE/eddie_step8_build.log | \

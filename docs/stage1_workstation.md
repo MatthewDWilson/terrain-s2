@@ -20,7 +20,7 @@ against core v5-integration and v4.0.0.
 |---|---|---|
 | `~/eddie/instances/terrain` | core `Digital-Twins`, pinned to `v5-integration` (`5cb3880`); `v4.0.0` available | Postgres/PostGIS, Redis, GeoServer, Terria, backend, core worker. Built with Step 5's core harness, plus `terrain-s2` (base install) and `eddie_terrain` in the backend and core-worker images |
 | terrain worker | `eddie-terrain-terrain` (from `terrain-s2/docker/terrain-worker.Dockerfile`) | GeoFabrics 1.1.30, PDAL, Stage 1 and the Stage 2 libraries; Celery queue `terrain`; no published port |
-| `~/eddie/dev/terrain-s2` | working clone, branch `stage1/w1-w9` | Source for both images. Edit or pull here, then rebuild |
+| `~/eddie/dev/terrain-s2` | WSL mirror of the GitHub branch `stage1/w1-w9` | Source for the images. Never edited: `build` fast-forwards it from GitHub. Git work (patches, commits, pushes) stays in your Windows clone |
 | `~/eddie/data/terrain/cache` | bind mount at `/terrain_data` | STAC catalogue and item indexes, vector snapshots, OpenTopography LAZ tiles |
 | `~/eddie/data/terrain/products` | bind mount at `/terrain_products` | One folder per generator key; readable from Windows at `\\wsl.localhost\eddie\home\<user>\eddie\data\terrain\products` |
 
@@ -45,13 +45,39 @@ FReDT's worker uses threads too.
   `~/eddie/data/terrain/cache` grows with every new survey area.
 - GitHub access from the distro (the Credential Manager set up in install guide §3.3), to clone `terrain-s2`.
 
-## 2. Install the script
+## 2. Working pattern: git in PowerShell, scripts in WSL
 
-The script is `docs/wsl/eddie_step8_terrain.sh` in `terrain-s2`; I've also sent a copy for `D:\EDDIE`.
+Git work stays where it is: your Windows clone (`D:\EDDIE_Terrain\terrain-s2`), in PowerShell. WSL only builds and
+runs. The WSL copy (`~/eddie/dev/terrain-s2`) is a mirror of the GitHub branch, which `build` brings up to date.
+The images are built from that mirror rather than from `/mnt/d/...`, for two reasons:
+- the Windows checkout has CRLF line endings (`core.autocrlf=true`), which would break the shell scripts in the
+  images;
+- builds are much faster on WSL's own filesystem.
+
+So the cycle for every change I send is:
+
+**In PowerShell (git):**
+
+```powershell
+cd D:\EDDIE_Terrain\terrain-s2
+git switch stage1/w1-w9
+git pull --ff-only
+git am '\\file\Usersm$\mwi104\Home\Downloads\<patch>.mbox'
+git push
+Copy-Item '\\file\Usersm$\mwi104\Home\Downloads\eddie_step8_terrain.sh' D:\EDDIE\    # when I send a new script
+```
+
+**In WSL (`wsl -d eddie`; build and run):**
 
 ```bash
-tr -d '\r' < /mnt/d/EDDIE/eddie_step8_terrain.sh > ~/eddie/scripts/eddie_step8_terrain.sh
+tr -d '\r' < /mnt/d/EDDIE/eddie_step8_terrain.sh > ~/eddie/scripts/eddie_step8_terrain.sh   # when the script changed
+S=~/eddie/scripts/eddie_step8_terrain.sh
+bash $S build                  # fast-forwards the mirror from GitHub, then builds
+cd ~/eddie/instances/terrain && docker compose up -d
 ```
+
+If `build` reports that the mirror has local commits or changes, something was committed or edited in WSL. Discard
+it with `git -C ~/eddie/dev/terrain-s2 reset --hard origin/stage1/w1-w9`.
 
 If you use the `edc` wrapper, add `terrain` → `~/eddie/instances/terrain` to its instance list. Otherwise run
 compose commands from `~/eddie/instances/terrain` in a fresh shell. The install guide's rule applies here too:
@@ -189,10 +215,10 @@ Both the backend harness and the terrain worker image are rebuilt against the se
 
 ## 9. Development loop, and the Stage 2 agent
 
-- **Edit or pull in `~/eddie/dev/terrain-s2`**, then run `bash $S build`. That refreshes `TERRAIN_VERSION` and
-  `TERRAIN_COMMIT`, then rebuilds. Then run `docker compose up -d`.
-- **Commit first.** The generator key records the commit, so a new commit gives new products (by design: plan 6.5).
-  Uncommitted changes are built, but the key records only the last commit, and `build` warns.
+- **Change, commit and push from the Windows clone** (section 2), then run `bash $S build` in WSL. That updates the
+  mirror, refreshes `TERRAIN_VERSION` and `TERRAIN_COMMIT`, and rebuilds. Then run `docker compose up -d`.
+- **Only pushed commits are built.** The generator key records the commit, so a new commit gives new products (by
+  design: plan 6.5).
 - **Stage 2 in the same worker.** The terrain worker already has the Stage 2 libraries (`[detect]`). When S2-1 adds
   `terrain_s2.run.network`, `eddie_terrain.tasks.ensure_network` (Input B) works in this slot without further
   setup. The Stage 2 agent's W12 work lands in the same clone and branch layout (patches, as agreed).
