@@ -10,16 +10,20 @@
 # and TERRAIN_COMMIT (required) give the version and commit recorded in every generator key, since the build
 # context has no .git.
 
-FROM mambaorg/micromamba:2.3.3 AS build
+# Build base: the same miniconda image the EDDIE core and module builds use (pulls on the workstation), with mamba
+# from conda-forge. The environment itself is conda-forge only (environment-worker.yml).
+ARG BUILD_IMAGE=continuumio/miniconda3:26.1.1
+FROM ${BUILD_IMAGE} AS build
 ARG EDDIE_REF=v4.0.0
 ARG TERRAIN_VERSION
 ARG TERRAIN_COMMIT
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN conda install -y -c conda-forge mamba && conda clean -a -y
 WORKDIR /src
 COPY environment-worker.yml .
-RUN micromamba create -y -n worker -f environment-worker.yml && micromamba clean -a -y
-SHELL ["micromamba", "run", "-n", "worker", "/bin/bash", "-c"]
+RUN mamba env create -f environment-worker.yml && conda clean -a -y
+SHELL ["conda", "run", "--no-capture-output", "-n", "terrain-worker", "/bin/bash", "-c"]
 COPY pyproject.toml README.md ./
 COPY src src
 COPY eddie eddie
@@ -42,12 +46,15 @@ RUN <<BUILD
     # reads its configuration at import)
     STATSNZ_API_KEY=x LINZ_API_KEY=x MFE_API_KEY=x DATA_DIR_GEOSERVER=/tmp POSTGRES_PASSWORD=x \
         python -c "import eddie.tasks as t; n = [k for k in t.app.tasks if k.startswith('eddie_terrain')]; print(n); assert len(n) == 3"
-    conda-pack -n worker -o /tmp/env.tar --ignore-missing-files
+    conda-pack -n terrain-worker -o /tmp/env.tar --ignore-missing-files
     mkdir /venv && tar xf /tmp/env.tar -C /venv && rm /tmp/env.tar
     /venv/bin/conda-unpack
 BUILD
 
 FROM debian:bookworm-slim AS runtime
+# The worker's user id: products and caches are often bind mounts owned by the host user (WSL: id -u).
+ARG TERRAIN_UID=1000
+ARG TERRAIN_GID=1000
 ADD --chmod=555 https://github.com/gruntwork-io/health-checker/releases/download/v0.0.8/health-checker_linux_amd64 \
     /usr/local/bin/health-checker
 RUN <<SETUP
@@ -55,8 +62,9 @@ RUN <<SETUP
     apt-get update
     apt-get install -y --no-install-recommends ca-certificates curl acl
     rm -rf /var/lib/apt/lists/*
-    useradd --create-home --uid 1000 nonroot
-    for d in /stored_data /stored_data/terrain /terrain_data; do
+    groupadd --gid "${TERRAIN_GID}" nonroot
+    useradd --create-home --uid "${TERRAIN_UID}" --gid "${TERRAIN_GID}" nonroot
+    for d in /stored_data /stored_data/terrain /terrain_data /terrain_products; do
         mkdir -p "$d"; setfacl -R -d -m u:nonroot:rwx "$d"; setfacl -R -m u:nonroot:rwx "$d"
     done
 SETUP
@@ -66,6 +74,8 @@ WORKDIR /app
 ENV PATH=/venv/bin:$PATH \
     TERRAIN_DATA_DIR=/terrain_data \
     TERRAIN_PRODUCT_DIR=/stored_data/terrain \
-    MPLBACKEND=Agg
+    MPLBACKEND=Agg \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    DASK_TEMPORARY_DIRECTORY=/tmp
 USER nonroot
 ENTRYPOINT ["/app/terrain_worker_entrypoint.sh"]

@@ -76,6 +76,8 @@ each document.
 - **6.4.** The land polygon is clipped to the product grid + 100 m (not the AOI + 100 m), so the 200 m Stage 2
   buffer keeps its land.
 - **9.2.**
+  - The worker runs Celery's **threads** pool, not prefork. A prefork child is daemonic and cannot start
+    GeoFabrics' dask worker processes (reproduced; DESIGN_NOTES §10, decision 11).
   - The worker environment needs `libgdal-netcdf` (conda-forge's separate netCDF driver).
   - The `--no-deps` installs need `beautifulsoup4`, `geojson`, `lxml`, `ujson` and `geoalchemy2` from conda.
   - `TERRAIN_VERSION` and `TERRAIN_COMMIT` are required build arguments.

@@ -1190,6 +1190,22 @@ and the module, the 89 existing ones unchanged.
     `TERRAIN_VERSION` and `TERRAIN_COMMIT` are required build arguments, because the generator key records the
     version and commit and the build context has no `.git`.
 
+11. **Terrain worker pool: threads, not prefork** (corrects plan 9.2). GeoFabrics starts a dask `LocalCluster` with
+    worker processes in every stage. A Celery prefork child is a daemonic process and may not have children:
+    reproduced in the sandbox, it fails with "daemonic processes are not allowed to have children" and then
+    "Nanny failed to start". In a thread of the main worker process the cluster starts normally (also
+    reproduced). FReDT's worker uses `-P threads` too. Concurrency stays 1 per container; scale out with more
+    containers, since each GeoFabrics run binds dask's dashboard port.
+12. **Workstation deployment (12 Oct 2026).** The module runs as slot 5 of Matt's WSL multi-instance setup
+    (`EDDIE_dev_env_install_guide.md`): `docs/wsl/eddie_step8_terrain.sh`, with steps in `docs/stage1_workstation.md`.
+    - **Core instance:** pinned to v5-integration (v4.0.0 is one command away), built with Step 5's core harness
+      plus `terrain-s2` (base install) and `eddie_terrain` in the backend and core-worker images.
+    - **Terrain worker:** built from this repository's Dockerfile on the same core revision.
+    - **Cache and products:** bind mounts under `~/eddie/data/terrain`, with the worker running as the WSL user
+      (`TERRAIN_UID`/`TERRAIN_GID` build arguments).
+    - **Build base:** the worker build now uses the same `continuumio/miniconda3:26.1.1` base as the core and
+      module builds.
+
 **Interfaces for the Stage 2 agent.**
 
 - **S2-9.** `stage1/source.py` defines the interface the raster backend needs, and a stopgap reader

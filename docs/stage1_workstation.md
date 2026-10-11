@@ -1,199 +1,228 @@
-# Stage 1 and eddie_terrain: workstation steps (W3, W4, W5, W6, W9 exits)
+# Stage 1 and eddie_terrain on the workstation: WSL and Docker (slot 5)
 
-The sandbox cannot reach nz-elevation, OpenTopography or LINZ, and it has no PostGIS or Docker daemon. These
-steps finish the exits the sandbox could not check. The commands are PowerShell, run from the terrain-s2
-checkout unless stated otherwise.
+The terrain module runs as a fifth instance in the `eddie` WSL distro, next to slots 1–3 of
+`EDDIE_dev_env_install_guide.md`, with the same conventions:
 
-Data live outside the repository and outside OneDrive. Replace `D:\terrain_data` below with your data folder.
+- a pinned clone on a local branch `instance`;
+- a git-excluded overlay and `.env`;
+- loopback-only ports;
+- a step script that starts from a clean environment.
 
-## 0. Apply the branch
+Everything that runs is a Linux image, as in production. This replaces the PowerShell steps of the earlier
+version of this document. The Windows conda environments are now optional (section 10).
 
-The work comes as one mailbox file of commits on `439f01d`.
+These steps finish the exits the sandbox could not check: W3, W4 and W5 on live data, W6, W9, and plan 9.3
+against core v5-integration and v4.0.0.
 
-```powershell
-git fetch origin
-git switch main
-git pull
-git switch -c stage1/w1-w9
-git am '\\file\Usersm$\mwi104\Home\Downloads\stage1-w1-w9.mbox'
-git log --oneline -8
-git push -u origin stage1/w1-w9
-# optional: version numbers read 0.1.x instead of 0.0.1.devN
-git tag v0.1.0
-git push origin v0.1.0
+## 0. What gets built
+
+| Part | Where | Content |
+|---|---|---|
+| `~/eddie/instances/terrain` | core `Digital-Twins`, pinned to `v5-integration` (`5cb3880`); `v4.0.0` available | Postgres/PostGIS, Redis, GeoServer, Terria, backend, core worker. Built with Step 5's core harness, plus `terrain-s2` (base install) and `eddie_terrain` in the backend and core-worker images |
+| terrain worker | `eddie-terrain-terrain` (from `terrain-s2/docker/terrain-worker.Dockerfile`) | GeoFabrics 1.1.30, PDAL, Stage 1 and the Stage 2 libraries; Celery queue `terrain`; no published port |
+| `~/eddie/dev/terrain-s2` | working clone, branch `stage1/w1-w9` | Source for both images. Edit or pull here, then rebuild |
+| `~/eddie/data/terrain/cache` | bind mount at `/terrain_data` | STAC catalogue and item indexes, vector snapshots, OpenTopography LAZ tiles |
+| `~/eddie/data/terrain/products` | bind mount at `/terrain_products` | One folder per generator key; readable from Windows at `\\wsl.localhost\eddie\home\<user>\eddie\data\terrain\products` |
+
+Slot 5 ports, all on `127.0.0.1`: Terria 3501, API 5500, GeoServer 8580, Postgres 5445.
+
+**Flow of a request.** `POST /terrain/dem` (backend) → task `eddie_terrain.tasks.ensure_dem` on queue `terrain` →
+the terrain worker makes or reuses the product → a `terrain_product` row in the instance's Postgres →
+`GET /terrain/tasks/<id>` returns the product id, and `GET /terrain/products/<id>` returns its paths.
+
+**One change from the integration plan (9.2).** The terrain worker runs Celery's **threads** pool with
+concurrency 1, not prefork. GeoFabrics starts a dask cluster with worker processes, and a prefork pool child is
+daemonic, so it may not start child processes ("Nanny failed to start"). I reproduced this in the sandbox.
+FReDT's worker uses threads too.
+
+## 1. Prerequisites
+
+- Steps 3–5 of the install guide are done:
+  - the distro;
+  - Docker integration for `eddie`;
+  - `~/eddie/secrets.env`, which needs `LINZ_API_KEY` only for the Topo50 land sources.
+- About 25 GB of free Docker disk for the images, plus space for products and LAZ tiles.
+  `~/eddie/data/terrain/cache` grows with every new survey area.
+- GitHub access from the distro (the Credential Manager set up in install guide §3.3), to clone `terrain-s2`.
+
+## 2. Install the script
+
+The script is `docs/wsl/eddie_step8_terrain.sh` in `terrain-s2`; I've also sent a copy for `D:\EDDIE`.
+
+```bash
+tr -d '\r' < /mnt/d/EDDIE/eddie_step8_terrain.sh > ~/eddie/scripts/eddie_step8_terrain.sh
 ```
 
-If `git am` stops on a conflict (if the Stage 2 agent changed a shared file in the meantime): resolve it,
-`git add` the file, then `git am --continue`.
+If you use the `edc` wrapper, add `terrain` → `~/eddie/instances/terrain` to its instance list. Otherwise run
+compose commands from `~/eddie/instances/terrain` in a fresh shell. The install guide's rule applies here too:
+never source an instance's `.env` into your shell.
 
-## 1. Environments
+## 3. Set up, build, start, check
 
-**Stage 2 development environment, for the raster backend and the tests.** Add the Stage 1 base packages and
-GDAL's netCDF driver, which conda-forge ships separately.
-
-```powershell
-conda activate terrain-s2
-mamba install -c conda-forge xarray netcdf4 rioxarray sqlalchemy libgdal-netcdf psycopg2
-pip install --no-deps -e .
-pip install --no-deps -e .\eddie
-python -c "from rasterio.drivers import raster_driver_extensions as d; print('netCDF driver:', d().get('nc'))"
-pytest
+```bash
+S=~/eddie/scripts/eddie_step8_terrain.sh
+bash $S setup 2>&1 | tee /mnt/d/EDDIE/eddie_step8_setup_report.txt
+bash $S build                                    # first build ~20-40 min; full log: /mnt/d/EDDIE/eddie_step8_build.log
+cd ~/eddie/instances/terrain && docker compose up -d
+sleep 120
+bash $S check 2>&1 | tee /mnt/d/EDDIE/eddie_step8_check_report.txt
 ```
 
-Expect `netCDF driver: netCDF`, and 127 passed. The skips are the GPU and Whitebox tests, plus the GeoFabrics
-runner test if GeoFabrics is absent.
+**`setup` should show:**
+- `terrain-s2 stage1/w1-w9 @ <sha>` and a `TERRAIN_VERSION`;
+- `pinned -> 5cb388065 (v5-integration)`;
+- `config OK`;
+- seven services, with ports only on `127.0.0.1` and `(none)` for `terrain_worker`;
+- the two bind mounts;
+- `git status clean`.
 
-**Terrain-worker environment, for the geofabrics backend.** This is the environment the image uses, so solving
-it here also checks risk 1 in plan section 14.
+**`build` prints `geofabrics 1.1.30`, the `terrain_s2` version and commit, and the three `eddie_terrain` task names
+from the terrain worker's build-time checks.** It stops with an error if any check fails. If it fails, send me
+`/mnt/d/EDDIE/eddie_step8_build.log`. The likeliest failure is the conda solve of `environment-worker.yml` on
+linux-64 (plan risk 1).
 
-```powershell
-mamba env create -f environment-worker.yml
-conda activate terrain-worker
-pip install --no-deps "geofabrics==1.1.30" "osmpythontools>=0.3.5"
-pip install --no-deps -e .
-pip install --no-deps -e .\eddie
-python -c "import pdal; from geofabrics import runner; import importlib.metadata as m; print(m.version('geofabrics'))"
-pytest tests\test_stage1_gf.py
+**`check` should show:**
+- all seven containers running (Terria `healthy`);
+- `/health-check` returning 200, and `POST /terrain/dem {}` returning **400** (the blueprint is registered);
+- in the terrain worker:
+  - `geofabrics 1.1.30`, `pdal`, and `GDAL … netCDF driver: netCDF`;
+  - both mounts writable;
+  - `1 pong`, the three tasks, and queue `terrain`;
+- core worker routes `{'eddie_terrain.tasks.*': {'queue': 'terrain'}}`.
+
+## 4. Stage 1 end to end: raster backend (W3, W5)
+
+```bash
+bash $S e2e raster 8 2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_raster8.txt
+bash $S e2e raster 1 2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_raster1.txt
 ```
 
-If the environment does not solve, send me the error. The fallback is two images (GeoFabrics; Stage 2) sharing
-the queue prefix.
+Each run does the following:
+- **Sends the request through the API:** the SH12 AOI (Whirinaki; WGS84 bounding box), `backend=raster`.
+- **Follows the task**, printing one line every 15 s with the latest worker log line.
+- **Inspects the product on the host:**
+  - `gdalinfo` of `NETCDF:"…":z` (grid, compound CRS with NZVD2016, statistics);
+  - the provenance (surveys used, gap fraction, timings, code version and commit).
+- **Repeats the identical request**, which should return the same product id in a few seconds (a cache hit).
+- **Lists the `terrain_product` rows.**
+- **Saves everything** in `D:\EDDIE\terrain_e2e_<backend>_<res>m_<time>\`.
 
-## 2. W3: raster backend on live data
+Expected results:
+- **Gap fraction** 0, or near it.
+- **Inputs:** the Northland survey (item ids and `file:checksum` in the provenance).
+- **COG:** a `.tif` copy beside the 1 m product.
+- **Registry:** one row per resolution, with different keys.
 
-```powershell
-conda activate terrain-s2
-$env:TERRAIN_DATA_DIR = 'D:\terrain_data'
-New-Item -ItemType Directory -Force out | Out-Null
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 1 --out-json out\sh12_raster_1m.json
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 8 --out-json out\sh12_raster_8m.json
-Get-Content out\sh12_raster_8m.json
+The first run in a region lists the LINZ collections and builds their item indexes, so it takes minutes. Later
+runs read the cache. To pick up newly published surveys, delete `~/eddie/data/terrain/cache/stac/json`.
+
+**Survey edge (W3 exit).** I still need an AOI that straddles two LINZ surveys. Send me one, or run it through the
+API yourself:
+
+```bash
+curl -s -H 'Content-Type: application/json' -d '{"aoi":"POLYGON((...))","params":{"resolution":1}}' http://localhost:5500/terrain/dem
 ```
 
-- **Check:**
-  - `gap_fraction` is 0 or near it.
-  - The `*.provenance.json` beside the netCDF lists the Northland survey, its item ids and `file:checksum`
-    values.
-  - The 1 m run has a `.tif` COG copy.
-- **Repeat check:** run the 8 m command again. It prints `"reused": true` and takes about a second.
-- **Survey edge (exit):** I need an AOI that straddles two LINZ surveys. Send me one, or run this on any you
-  choose:
+The provenance should then list both surveys, with `gap_fraction` 0.
 
-  ```powershell
-  terrain dem --aoi <edge_aoi.geojson> --resolution 1 --out-json out\edge_1m.json
-  ```
+## 5. GeoFabrics backend (W4), and the otCatalog date check
 
-  The provenance should list both surveys and `gap_fraction` should be 0. `lidar_source` in the netCDF shows
-  which survey supplied each cell.
-
-The first run in a region lists every collection's metadata and builds item indexes, so it takes minutes. Later
-runs use the cache in `D:\terrain_data\stac`. To pick up new surveys, delete `D:\terrain_data\stac\json`, or
-send `refresh_catalogue` on a deployment.
-
-## 3. W4: GeoFabrics backend, and the otCatalog date check
-
-```powershell
-conda activate terrain-worker
-$env:TERRAIN_DATA_DIR = 'D:\terrain_data'
-$env:TERRAIN_GF_MEMORY_LIMIT = '8GiB'
-$env:TERRAIN_GF_CORES = '4'
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --backend geofabrics --resolution 8 --out-json out\sh12_gf_8m.json
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --backend geofabrics --resolution 1 --out-json out\sh12_gf_1m.json
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --backend geofabrics --product geofabric --resolution 8 --out-json out\sh12_geofabric_8m.json
+```bash
+bash $S e2e geofabrics 8           2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf8.txt
+bash $S e2e geofabrics 1           2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf1.txt
+bash $S e2e geofabrics 8 geofabric 2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_geofabric8.txt
+bash $S otcatalog
 ```
 
-- **Check:**
-  - `instructions.json` beside each product has `dataset_mapping.lidar` in newest-first order.
-  - The geofabric product has a `zo` variable.
-  - `data_source` is 1 (LiDAR) or 0 (interpolated) on land.
-  - With the `coverage` land source, the `*_land.geojson` follows the survey's tile index.
-- **otCatalog date check (open item, plan 14).** Does `detail=true` return survey dates?
+Check the following in the product folder:
+- **`instructions.json`:** `dataset_mapping.lidar` is newest first.
+- **The geofabric product:** has a `zo` variable.
+- **`data_source`:** 1 (LiDAR) or 0 (interpolated) on land.
+- **`*_land.geojson`:** follows the survey tile index (the `coverage` land source).
 
-  ```powershell
-  $q = @{productFormat='PointCloud'; minx=173.4603; miny=-35.4633; maxx=173.4710; maxy=-35.4570
-         detail='true'; outputFormat='json'; include_federated='false'}
-  $r = Invoke-RestMethod 'https://portal.opentopography.org/API/otCatalog' -Body $q
-  $r.Datasets | ForEach-Object { $_.Dataset | Select-Object alternateName, temporalCoverage, dateCreated, datePublished }
-  $r | ConvertTo-Json -Depth 20 | Set-Content out\otcatalog_sh12.json
-  ```
+The first GeoFabrics run downloads LAZ tiles into the cache, and dask uses `TERRAIN_GF_CORES` workers of
+`TERRAIN_GF_MEMORY_LIMIT` each (4 × 8 GiB in `.env`; the container limit is 48 GB). Adjust both in `.env`, then run
+`docker compose up -d terrain_worker`.
 
-  Send me `out\otcatalog_sh12.json`. If `temporalCoverage` is empty, I'll read the dates from the dataset
-  metadata page instead. The parser already records which field it used (`date_source` in the provenance
-  inputs).
+**`otcatalog`** saves the OpenTopography response for SH12 to `D:\EDDIE\otcatalog_sh12_<date>.json` and prints each
+dataset's name and dates. Send me the file. It answers whether `detail=true` returns survey dates (an open item).
 
-## 4. W5: registry on PostGIS
+## 6. Tests inside the worker image
 
-Use any PostGIS database. An EDDIE deployment's `db_postgres` on port 5431 works.
-
-```powershell
-$env:TERRAIN_DB_URL = 'postgresql://postgres:<password>@localhost:5431/db'
-conda activate terrain-worker
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 8 --register
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 8 --register
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 4 --register
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --resolution 8 --backend geofabrics --register
-psql $env:TERRAIN_DB_URL -c "select id, product, resolution, generator_key, config_key, parent_id, created_at from terrain_product order by id"
+```bash
+bash $S test                              # full suite, with real PDAL and GeoFabrics
+bash $S test tests/test_stage1_gf.py      # or any subset
 ```
 
-**Exit:** the first two calls print the same `product_id`. Changing the resolution, backend or land source
-gives a new row.
+The suite runs from the working clone, mounted read-only. Unlike in the sandbox, the GeoFabrics runner test runs
+against real PDAL here.
 
-**Shim (what FReDT calls):**
+## 7. Regression harness (W6)
 
-```powershell
-$env:TERRAIN_RESOLUTION = '8'
-python -c "import geopandas as g; from terrain_s2.client.compat import get_dem_by_geometry as f; a = g.read_file('examples/aoi_whirinaki_sh12.geojson'); print(f(None, g.GeoDataFrame(geometry=[a.geometry.iloc[0].envelope], crs=a.crs)))"
+Run the same request twice into two product folders, then compare them:
+
+```bash
+cd ~/eddie/instances/terrain
+W='POLYGON ((173.4603 -35.4633, 173.4710 -35.4633, 173.4710 -35.4570, 173.4603 -35.4570, 173.4603 -35.4633))'
+docker compose exec terrain_worker terrain dem --aoi "$W" --backend geofabrics --resolution 8 --product-dir /terrain_products/harness/A --quiet
+docker compose exec terrain_worker terrain dem --aoi "$W" --backend geofabrics --resolution 8 --product-dir /terrain_products/harness/B --quiet
+docker compose exec terrain_worker terrain compare /terrain_products/harness/A /terrain_products/harness/B --out /terrain_products/harness/sh12_report.md
 ```
 
-## 5. W6: GeoFabrics regression harness
+**Exit:** `max_abs` is 0 (or float noise), and there are no instruction differences. The report is in
+`~/eddie/data/terrain/products/harness/`.
 
-Run the same request twice into two product folders, then compare them.
+- **For a pin bump or template edit:** produce B after rebuilding with the change.
+- **For W7:** compare a raster and a GeoFabrics product the same way.
 
-```powershell
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --backend geofabrics --resolution 8 --product-dir out\harness\A
-terrain dem --aoi examples\aoi_whirinaki_sh12.geojson --backend geofabrics --resolution 8 --product-dir out\harness\B
-terrain compare out\harness\A out\harness\B --out out\harness\sh12_report.md
+## 8. v4 compatibility (plan 9.3)
+
+```bash
+bash $S core v4 && bash $S setup && bash $S build
+cd ~/eddie/instances/terrain && docker compose up -d && sleep 120
+bash $S check && bash $S e2e raster 8
+bash $S core v5 && bash $S setup && bash $S build && docker compose up -d     # back to the target
 ```
 
-**Exit:** the report shows `max_abs` 0 (or float noise) and no instruction differences.
+Both the backend harness and the terrain worker image are rebuilt against the selected core (`EDDIE_REF` in
+`.env`).
 
-- **For a pin bump or template edit:** run B in an environment with the change.
-- **For W7:** compare R-b with R-a, e.g. `--product-dir out\w7\raster` against `out\w7\gf`.
+## 9. Development loop, and the Stage 2 agent
 
-## 6. W9 and plan 9.3: worker image and the stack test
+- **Edit or pull in `~/eddie/dev/terrain-s2`**, then run `bash $S build`. That refreshes `TERRAIN_VERSION` and
+  `TERRAIN_COMMIT`, then rebuilds. Then run `docker compose up -d`.
+- **Commit first.** The generator key records the commit, so a new commit gives new products (by design: plan 6.5).
+  Uncommitted changes are built, but the key records only the last commit, and `build` warns.
+- **Stage 2 in the same worker.** The terrain worker already has the Stage 2 libraries (`[detect]`). When S2-1 adds
+  `terrain_s2.run.network`, `eddie_terrain.tasks.ensure_network` (Input B) works in this slot without further
+  setup. The Stage 2 agent's W12 work lands in the same clone and branch layout (patches, as agreed).
+- **GPU.** Stage 2's CuPy path needs a GPU reservation for `terrain_worker` (as the core worker has). Add it when
+  Stage 2 needs it; Stage 1 doesn't.
 
-Docker Desktop, in a checkout of the EDDIE core with its usual `.env`, `api_keys.env` and
-`.env.docker-override`.
+## 10. Windows conda environments (optional)
 
-```powershell
-git clone https://github.com/GeospatialResearch/Digital-Twins eddie-core
-cd eddie-core
-git checkout v4.0.0
-$env:TERRAIN_S2_DIR = '<full path to the terrain-s2 checkout>'
-$env:TERRAIN_VERSION = git -C $env:TERRAIN_S2_DIR describe --tags --always
-$env:TERRAIN_COMMIT = git -C $env:TERRAIN_S2_DIR rev-parse HEAD
-$env:EDDIE_REF = 'v4.0.0'
-docker compose -f docker-compose.yml -f "$env:TERRAIN_S2_DIR\compose\terrain-worker.yml" build terrain_worker
-docker compose -f docker-compose.yml -f "$env:TERRAIN_S2_DIR\compose\terrain-worker.yml" up -d db_postgres message_broker terrain_worker
-docker compose -f docker-compose.yml -f "$env:TERRAIN_S2_DIR\compose\terrain-worker.yml" ps
-```
+The `terrain-s2` conda environment on Windows still runs the tests and the raster backend from PowerShell, and
+remains useful for Stage 2 development on the workstation GPU. It isn't needed for Stage 1 or the module. The
+earlier Windows `terrain-worker` environment is no longer needed: the worker image uses the same
+`environment-worker.yml` on linux-64.
 
-The build prints `geofabrics 1.1.30` and the three `eddie_terrain` task names; it stops if either check
-fails. `ps` should show `terrain_worker` with no published ports.
+## 11. Troubleshooting
 
-**Send `ensure_dem` by name (SH12, WKT in EPSG:4326), twice:**
+| Symptom | Cause | Resolution |
+|---|---|---|
+| `setup`: `!! python pin not applied` / `redis fix not applied` | The core's `environment.yml` changed at the pinned revision | Send me the setup report; the harness `sed` patterns need updating |
+| `build`: conda solve error in the terrain worker stage | `environment-worker.yml` doesn't solve on linux-64 | Send the build log |
+| `build`: `TERRAIN_VERSION ... is required` | `.env` lacks the version | `bash $S setup` (or `build`, which refreshes it) |
+| `check`: a mount `writable: touch: … Permission denied` | `TERRAIN_UID`/`TERRAIN_GID` in `.env` don't match the owner of `~/eddie/data/terrain` | Fix ownership (`sudo chown -R $(id -u):$(id -g) ~/eddie/data/terrain`) or the values, then `bash $S build` |
+| Task `FAILURE`: `Nanny failed to start` | A prefork pool (not this image's default) | Keep the entrypoint's `-P threads` |
+| Task stays `PENDING` | Terrain worker not running, or not on queue `terrain` | `docker compose logs terrain_worker`; `check` lists the queues |
+| `e2e`: `POST /terrain/dem failed: …400…` | A parameter was refused by validation | The message names it |
+| Another instance's names or ports appear | Shell variables from another `.env` | Fresh terminal; use the script or `edc` |
 
-```powershell
-$wkt = 'POLYGON ((173.4603 -35.4633, 173.4710 -35.4633, 173.4710 -35.4570, 173.4603 -35.4570, 173.4603 -35.4633))'
-$py = "from eddie.tasks import app; r = app.send_task('eddie_terrain.tasks.ensure_dem', args=['$wkt', {'resolution': 8}], queue='terrain'); print(r.get(timeout=7200))"
-docker compose -f docker-compose.yml -f "$env:TERRAIN_S2_DIR\compose\terrain-worker.yml" exec terrain_worker python -c $py
-docker compose -f docker-compose.yml -f "$env:TERRAIN_S2_DIR\compose\terrain-worker.yml" exec terrain_worker python -c $py
-docker compose exec db_postgres psql -U postgres -d db -c "select id, product, resolution, generator_key, paths->>'netcdf' from terrain_product"
-```
+## 12. What to send back
 
-**Exit:** both calls print the same id; the second returns in seconds (a cache hit). The row's netCDF is
-under `/stored_data/terrain/`.
-
-Repeat with `git checkout v5-integration` and `$env:EDDIE_REF = 'v5-integration'`.
-
-Send me the outputs, or any failure, and I'll fold them into DESIGN_NOTES and the W7 report.
+- `eddie_step8_setup_report.txt`, `eddie_step8_check_report.txt`, and the build log if it failed.
+- The `e2e` outputs for raster 8 m and 1 m, and GeoFabrics 8 m and 1 m (the folders in `D:\EDDIE\`).
+- `otcatalog_sh12_<date>.json`.
+- A survey-edge AOI.
+- `bash $S test` output.

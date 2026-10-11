@@ -61,6 +61,9 @@ dependencies:
   - pandas
   - geoalchemy2        # eddie.digitaltwin.tables (the core declares the old 'geoalchemy')
   - aiohttp
+  # tests inside the worker (scripts: eddie_step8_terrain.sh test)
+  - pytest
+  - pyflakes
   # image build
   - conda-pack
   - pip

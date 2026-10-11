@@ -20,6 +20,8 @@ services:
         # required: they are recorded in every generator key (git describe --tags --always; git rev-parse HEAD)
         TERRAIN_VERSION: ${TERRAIN_VERSION:?set TERRAIN_VERSION to the terrain-s2 git describe}
         TERRAIN_COMMIT: ${TERRAIN_COMMIT:?set TERRAIN_COMMIT to the terrain-s2 commit}
+        TERRAIN_UID: ${TERRAIN_UID:-1000}
+        TERRAIN_GID: ${TERRAIN_GID:-1000}
     image: eddie-terrain-worker:${TERRAIN_VERSION}
     restart: always
     env_file:

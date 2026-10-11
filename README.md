@@ -185,9 +185,10 @@ terrain compare <runA folder> <runB folder> --out report.md                     
 - **EDDIE module `eddie_terrain`** (in `eddie/`). Tasks `ensure_dem`, `ensure_network` and `refresh_catalogue`
   on queue `terrain`; endpoints `POST /terrain/dem`, `GET /terrain/products/<id>` and `GET /terrain/tasks/<id>`;
   a PyWPS process `terrain.dem` for v5. It works on core v4.0.0 and v5-integration.
-- **Terrain worker.** `docker/terrain-worker.Dockerfile` with `environment-worker.yml`. Deploy it with the
-  overlay `compose/terrain-worker.yml` (no host ports).
-- **More.** Workstation steps (live data, PostGIS, image, stack test) are in `docs/stage1_workstation.md`.
+- **Terrain worker.** `docker/terrain-worker.Dockerfile` with `environment-worker.yml` (Celery threads pool, queue
+  `terrain`). Deploy it with the overlay `compose/terrain-worker.yml` (no host ports).
+- **More.** Workstation steps (WSL and Docker: slot 5 with the core, the module and the terrain worker; live data;
+  stack tests) are in `docs/stage1_workstation.md`, driven by `docs/wsl/eddie_step8_terrain.sh`.
   Design notes are in DESIGN_NOTES section 10.
 
 ## Layout
