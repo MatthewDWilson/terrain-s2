@@ -76,6 +76,9 @@ each document.
 - **6.4.** The land polygon is clipped to the product grid + 100 m (not the AOI + 100 m), so the 200 m Stage 2
   buffer keeps its land.
 - **9.2.**
+  - Products go to their own `terrain_products` volume (mounted read-only by consumers at `/terrain_products`), not
+    under `stored_data`: a shared named volume takes the first mounting image's ownership, and the terrain worker
+    and core images then lock each other out (DESIGN_NOTES §10, decision 13).
   - The worker runs Celery's **threads** pool, not prefork. A prefork child is daemonic and cannot start
     GeoFabrics' dask worker processes (reproduced; DESIGN_NOTES §10, decision 11).
   - The worker environment needs `libgdal-netcdf` (conda-forge's separate netCDF driver).

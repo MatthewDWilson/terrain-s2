@@ -64,7 +64,7 @@ RUN <<SETUP
     rm -rf /var/lib/apt/lists/*
     groupadd --gid "${TERRAIN_GID}" nonroot
     useradd --create-home --uid "${TERRAIN_UID}" --gid "${TERRAIN_GID}" nonroot
-    for d in /stored_data /stored_data/terrain /terrain_data /terrain_products; do
+    for d in /terrain_data /terrain_products; do
         mkdir -p "$d"; setfacl -R -d -m u:nonroot:rwx "$d"; setfacl -R -m u:nonroot:rwx "$d"
     done
 SETUP
@@ -73,7 +73,7 @@ COPY --chmod=555 docker/terrain_worker_entrypoint.sh /app/terrain_worker_entrypo
 WORKDIR /app
 ENV PATH=/venv/bin:$PATH \
     TERRAIN_DATA_DIR=/terrain_data \
-    TERRAIN_PRODUCT_DIR=/stored_data/terrain \
+    TERRAIN_PRODUCT_DIR=/terrain_products \
     MPLBACKEND=Agg \
     MPLCONFIGDIR=/tmp/matplotlib \
     DASK_TEMPORARY_DIRECTORY=/tmp

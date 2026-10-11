@@ -10,6 +10,8 @@
 #   check             after 'docker compose up -d': containers, endpoints, terrain routes, worker toolchain, mounts
 #   e2e [raster|geofabrics] [resolution] [dem|geofabric]
 #                     POST /terrain/dem for the SH12 AOI, follow the task, inspect the product, repeat (cache hit)
+#   bootstrap         one-off per fresh instance: create the GeoServer workspaces and stores (core finding F2:
+#                     otherwise /terria-catalog.json returns 500 and Terria shows "Error loading map configuration")
 #   test              run the terrain-s2 test suite inside the terrain worker image (real PDAL and GeoFabrics)
 #   otcatalog         save the OpenTopography catalogue response for SH12 (the W4 survey-date check)
 #   core v4|v5        re-pin the core (v4.0.0 or v5-integration); then 'build' and 'docker compose up -d'
@@ -215,6 +217,8 @@ services:
         TERRAIN_VERSION: \${TERRAIN_VERSION}
         TERRAIN_COMMIT: \${TERRAIN_COMMIT}
     entrypoint: ["/app/harness/backend_entrypoint.sh"]
+    volumes:
+      - ${DATA}/products:/terrain_products:ro   # registry paths resolve here too (read-only)
     ports: !override
       - "127.0.0.1:${P_API}:5000"
   celery_worker:
@@ -228,6 +232,8 @@ services:
         TERRAIN_VERSION: \${TERRAIN_VERSION}
         TERRAIN_COMMIT: \${TERRAIN_COMMIT}
     entrypoint: ["/app/harness/celery_worker_entrypoint.sh"]
+    volumes:
+      - ${DATA}/products:/terrain_products:ro
     depends_on:
       - backend    # create after backend: avoids first-start race on the nested geoserver_data mount
     ports: !reset []
@@ -237,7 +243,6 @@ services:
     environment:
       TERRAIN_PRODUCT_DIR: /terrain_products
     volumes: !override
-      - stored_data:/stored_data
       - ${DATA}/cache:/terrain_data
       - ${DATA}/products:/terrain_products
   geoserver:
@@ -337,7 +342,8 @@ EOF
     say "Next"
     note "bash ~/eddie/scripts/eddie_step8_terrain.sh build     # first build: core images + terrain worker (conda env), ~20-40 min"
     note "cd $INST && docker compose up -d"
-    note "sleep 120; bash ~/eddie/scripts/eddie_step8_terrain.sh check 2>&1 | tee /mnt/d/EDDIE/eddie_step8_check_report.txt"
+    note "sleep 120; bash ~/eddie/scripts/eddie_step8_terrain.sh bootstrap   # once per fresh instance"
+    note "bash ~/eddie/scripts/eddie_step8_terrain.sh check 2>&1 | tee /mnt/d/EDDIE/eddie_step8_check_report.txt"
 }
 
 # ------------------------------------------------------------------------------------------------ build
@@ -414,6 +420,24 @@ PY
     say "Images and disk"
     docker images --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep -E "^${PROJECT}" | sed 's/^/  /'
     du -sh "$DATA"/* 2>/dev/null | sed 's/^/  /'
+}
+
+# ------------------------------------------------------------------------------------------------ bootstrap
+bootstrap() {
+    # As eddie_step5_core.sh bootstrap: serve_static_files() creates the main PostGIS store in every catalog
+    # workspace, which a module's base-data load would normally do. Core's src/static/geo holds only a readme.
+    cd "$INST" || exit 1
+    say "Initialise GeoServer workspaces and stores"
+    printf '  catalog before: HTTP %s\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "http://localhost:${P_API}/terria-catalog.json")"
+    docker compose exec -T backend bash -c 'source /venv/bin/activate && python - <<PY
+import pathlib
+from eddie.digitaltwin.setup_environment import get_database
+from eddie.digitaltwin.data_to_db import serve_static_files
+with get_database().connect() as conn:
+    serve_static_files(conn, pathlib.Path("./src/static/geo"))
+print("stores initialised")
+PY' 2>&1 | tail -8 | sed 's/^/  /'
+    printf '  catalog after:  HTTP %s\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "http://localhost:${P_API}/terria-catalog.json")"
 }
 
 # ------------------------------------------------------------------------------------------------ e2e
@@ -506,9 +530,10 @@ case "${1:-setup}" in
     setup) setup ;;
     build) build ;;
     check) check ;;
+    bootstrap) bootstrap ;;
     e2e) shift; e2e "$@" ;;
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|e2e [raster|geofabrics] [res] [dem|geofabric]|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [dem|geofabric]|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac

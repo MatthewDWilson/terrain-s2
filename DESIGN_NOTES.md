@@ -1206,6 +1206,13 @@ and the module, the 89 existing ones unchanged.
     - **Build base:** the worker build now uses the same `continuumio/miniconda3:26.1.1` base as the core and
       module builds.
 
+13. **Products in their own volume** (corrects plan 9.2, which put them under `stored_data/terrain`). A named volume
+    takes its ownership from the first image that mounts it. The terrain worker (uid `TERRAIN_UID`) and the core
+    images (their own `nonroot` user) then lock each other out. On the workstation the worker created
+    `stored_data` first, and the backend could not create `/stored_data/geoserver/data`. Products now go to
+    `terrain_products` (`/terrain_products`). Consumers mount it read-only at the same path, so registry paths
+    resolve unchanged; the slot-5 backend and core worker already do.
+
 **Interfaces for the Stage 2 agent.**
 
 - **S2-9.** `stage1/source.py` defines the interface the raster backend needs, and a stopgap reader

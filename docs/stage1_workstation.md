@@ -91,8 +91,13 @@ bash $S setup 2>&1 | tee /mnt/d/EDDIE/eddie_step8_setup_report.txt
 bash $S build                                    # first build ~20-40 min; full log: /mnt/d/EDDIE/eddie_step8_build.log
 cd ~/eddie/instances/terrain && docker compose up -d
 sleep 120
+bash $S bootstrap                                # once per fresh instance: GeoServer stores (core finding F2)
 bash $S check 2>&1 | tee /mnt/d/EDDIE/eddie_step8_check_report.txt
 ```
+
+`bootstrap` prints the catalog status before and after: 500 then 200. Without it, Terria (http://localhost:3501)
+shows "Error loading map configuration". That is the empty-instance behaviour of the core (finding F2), which
+slot 1 also needed. Terrain products themselves aren't published to GeoServer.
 
 **`setup` should show:**
 - `terrain-s2 stage1/w1-w9 @ <sha>` and a `TERRAIN_VERSION`;
@@ -243,6 +248,7 @@ earlier Windows `terrain-worker` environment is no longer needed: the worker ima
 | Task `FAILURE`: `Nanny failed to start` | A prefork pool (not this image's default) | Keep the entrypoint's `-P threads` |
 | Task stays `PENDING` | Terrain worker not running, or not on queue `terrain` | `docker compose logs terrain_worker`; `check` lists the queues |
 | `e2e`: `POST /terrain/dem failed: …400…` | A parameter was refused by validation | The message names it |
+| `bootstrap`: `PermissionError … /stored_data/geoserver/data` | The `stored_data` volume was first created by the terrain worker (before 12 Oct the worker mounted it), so it has the wrong owner | `docker compose down`, `docker volume rm eddie-terrain_stored_data`, `docker compose up -d`, then `bootstrap` again. The worker no longer mounts `stored_data` |
 | Another instance's names or ports appear | Shell variables from another `.env` | Fresh terminal; use the script or `edc` |
 
 ## 12. What to send back

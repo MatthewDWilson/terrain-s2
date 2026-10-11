@@ -5,10 +5,11 @@
 #   (v5 deployments with the D9 networks also add -f <terrain-s2>/compose/terrain-worker.v5-networks.yml)
 #
 # TERRAIN_S2_DIR: path of the terrain-s2 checkout relative to the deployment folder (default lib/terrain-s2,
-# beside lib/eddie). No host ports (D9). Products go to the shared stored_data volume under /stored_data/terrain;
+# beside lib/eddie). No host ports (D9). Products go to the terrain_products volume (/terrain_products);
 # downloads and snapshots (LAZ tiles, COG item indexes, vector snapshots) to the terrain_data volume.
 volumes:
   terrain_data:
+  terrain_products:
 
 services:
   terrain_worker:
@@ -31,13 +32,18 @@ services:
       - .env.docker-override
     environment:
       TERRAIN_DATA_DIR: /terrain_data
-      TERRAIN_PRODUCT_DIR: /stored_data/terrain
+      TERRAIN_PRODUCT_DIR: /terrain_products
       TERRAIN_WORKER_CONCURRENCY: ${TERRAIN_WORKER_CONCURRENCY:-1}
       TERRAIN_GF_MEMORY_LIMIT: ${TERRAIN_GF_MEMORY_LIMIT:-8GiB}
       TERRAIN_GF_CORES: ${TERRAIN_GF_CORES:-2}
+    # Products in their own volume, not inside the core's stored_data: a shared named volume takes its ownership
+    # from whichever image mounts it first, and the terrain worker (uid TERRAIN_UID) and the core images (their own
+    # nonroot user) would then lock each other out (seen on the workstation: the backend could not create
+    # /stored_data/geoserver/data). Consumers that read products (FReDT, Smart Ideas) mount terrain_products
+    # read-only at the same path, so the registry's paths resolve unchanged.
     volumes:
-      - stored_data:/stored_data
       - terrain_data:/terrain_data
+      - terrain_products:/terrain_products
     healthcheck:
       test: curl --fail -s http://localhost:5001/ || exit 1
       interval: 30s

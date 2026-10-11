@@ -18,7 +18,7 @@ class TerrainConfig(EnvVariable):  # pylint: disable=too-few-public-methods
     TERRAIN_SPATIAL_REUSE = EnvVariable._get_bool_env_variable("TERRAIN_SPATIAL_REUSE", default=False)
     TERRAIN_PROFILE = EnvVariable._get_env_variable("TERRAIN_PROFILE", default="nz")
     TERRAIN_DATA_DIR = EnvVariable._get_env_variable("TERRAIN_DATA_DIR", default="/terrain_data")
-    TERRAIN_PRODUCT_DIR = EnvVariable._get_env_variable("TERRAIN_PRODUCT_DIR", default="/stored_data/terrain")
+    TERRAIN_PRODUCT_DIR = EnvVariable._get_env_variable("TERRAIN_PRODUCT_DIR", default="/terrain_products")
     TERRAIN_AOI_MODE = EnvVariable._get_env_variable("TERRAIN_AOI_MODE", default="bbox")
 
     @staticmethod
