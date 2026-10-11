@@ -22,7 +22,8 @@ services:
         TERRAIN_COMMIT: ${TERRAIN_COMMIT:?set TERRAIN_COMMIT to the terrain-s2 commit}
         TERRAIN_UID: ${TERRAIN_UID:-1000}
         TERRAIN_GID: ${TERRAIN_GID:-1000}
-    image: eddie-terrain-worker:${TERRAIN_VERSION}
+    # No 'image:' here: TERRAIN_VERSION (a PEP 440 version such as 0.1.0.post3+g8c1677b) is not a valid Docker tag,
+    # so Compose names the image after the project (<project>-terrain_worker).
     restart: always
     env_file:
       - .env

@@ -344,7 +344,7 @@ build() {
     cd "$INST" || exit 1
     say "terrain-s2 version"; refresh_version
     say "Build (all images; log: /mnt/d/EDDIE/eddie_step8_build.log)"
-    docker compose build --progress=plain 2>&1 | tee /mnt/d/EDDIE/eddie_step8_build.log | \
+    docker compose --progress=plain build 2>&1 | tee /mnt/d/EDDIE/eddie_step8_build.log | \
         grep -E "^#[0-9]+ (DONE|ERROR)|geofabrics 1|terrain_s2 |eddie_terrain|ERROR|failed" | tail -40
     st=${PIPESTATUS[0]}
     [ "$st" = 0 ] && note "build OK - next: docker compose up -d" || note "!! build failed (exit $st) - send /mnt/d/EDDIE/eddie_step8_build.log"
@@ -392,7 +392,7 @@ PY
         docker compose logs --tail 300 "$s" 2>&1 | grep -iE 'error|traceback|exception' | tail -5 | cut -c1-220 | sed 's/^/      /'
     done
     say "Images and disk"
-    docker images --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep -E "^${PROJECT}|terrain-worker" | sed 's/^/  /'
+    docker images --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep -E "^${PROJECT}" | sed 's/^/  /'
     du -sh "$DATA"/* 2>/dev/null | sed 's/^/  /'
 }
 
