@@ -85,10 +85,15 @@ def parse(response: dict) -> list[Dataset]:
         if not end and d.get("dateCreated"):
             end, src = _date(d.get("dateCreated")), "dateCreated"
         url = d.get("url") or d.get("@id")
+        # Hosted by OpenTopography (fetchable from pc-bulk): an "OT." identifier or metadata URL. That wins over
+        # the provider, which for partner data (e.g. LINZ surveys) names the data owner, not the host. Only
+        # without either is the provider used.
         hosted = bool(ident and str(ident).startswith("OT.")) or bool(url and "/meta/OT." in str(url))
-        prov = d.get("provider") or {}
-        if isinstance(prov, dict) and prov.get("name") and "opentopography" not in str(prov.get("name")).lower():
-            hosted = False
+        if not hosted:
+            prov = d.get("provider") or {}
+            if isinstance(prov, list):
+                prov = prov[0] if prov else {}
+            hosted = isinstance(prov, dict) and "opentopography" in str(prov.get("name", "")).lower()
         out.append(Dataset(name=name, title=d.get("name"), id=ident, url=url, survey_start=start, survey_end=end,
                            published=_date(d.get("datePublished")), date_source=src, hosted=hosted, raw=d))
     return out
@@ -131,12 +136,18 @@ def query(http, bounds_lonlat, *, detail: bool = True, source: str = "opentopogr
 def discover(http, bounds, crs, profile: dict) -> tuple[list[Dataset], dict]:
     """(ranked datasets, raw response) for ``bounds`` in ``crs``. Raises :class:`NoPointClouds` if none."""
     from .aoi import lonlat_bounds
-    resp = query(http, lonlat_bounds(bounds, crs))
+    ll = lonlat_bounds(bounds, crs)
+    resp = query(http, ll)
     gf = profile.get("geofabrics", {})
-    ranked = rank(parse(resp), priority=gf.get("priority") or (), exclude=gf.get("exclude") or (),
+    found = parse(resp)
+    ranked = rank(found, priority=gf.get("priority") or (), exclude=gf.get("exclude") or (),
                   hosted_only=gf.get("hosted_only", True))
     if not ranked:
-        raise NoPointClouds(f"no OpenTopography point cloud covers {tuple(round(b) for b in bounds)} ({crs})")
+        why = "; ".join(f"{d.name} ({'excluded by profile' if d.name in (gf.get('exclude') or ()) else 'not OT-hosted'}"
+                        f", id {d.id})" for d in found) or "none returned"
+        n = len(resp.get("Datasets", []) or []) if isinstance(resp, dict) else "?"
+        raise NoPointClouds(f"no usable OpenTopography point cloud covers {tuple(round(b) for b in bounds)} ({crs}); "
+                            f"otCatalog bbox {tuple(round(v, 4) for v in ll)} returned {n} record(s): {why}")
     return ranked, resp
 
 

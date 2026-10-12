@@ -587,8 +587,9 @@ otcatalog() {
         --data-urlencode productFormat=PointCloud --data-urlencode minx=173.4603 --data-urlencode miny=-35.4633 \
         --data-urlencode maxx=173.4710 --data-urlencode maxy=-35.4570 --data-urlencode detail=true \
         --data-urlencode outputFormat=json --data-urlencode include_federated=false > "$out"
-    jq -r '.Datasets[]?.Dataset | "  \(.alternateName)\t\(.temporalCoverage // "-")\tcreated \(.dateCreated // "-")\tpublished \(.datePublished // "-")"' "$out" \
-        || note "!! not JSON - see $out"
+    jq -r '"  \(.Datasets // [] | length) record(s)", (.Datasets[]?.Dataset | "  \(.alternateName)\t\(.temporalCoverage // "-")\tcreated \(.dateCreated // "-")\tpublished \(.datePublished // "-")",
+        "      id \(.identifier.value? // .identifier // "-")  provider \(.provider.name? // .provider // "-")  url \(.url // ."@id" // "-")")' "$out" \
+        || { note "!! not JSON - start of the response:"; head -c 600 "$out"; echo; }
 }
 
 # ------------------------------------------------------------------------------------------------ core

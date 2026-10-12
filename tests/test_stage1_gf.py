@@ -71,6 +71,23 @@ def test_catalogue_parse_and_rank():
     assert [d.name for d in pr] == ["NZ18_Northland", "NZ22_Whirinaki"]
 
 
+def test_catalogue_hosted_rule_and_diagnostics():
+    # Partner data: OT-hosted ("OT." id) but the provider names the owner -> still hosted
+    linz = {"Datasets": [{"Dataset": {"alternateName": "NZ18_Northland", "identifier": {"value": "OT.042021.2193.1"},
+                                      "provider": {"name": "Land Information New Zealand"}}},
+                         {"Dataset": {"alternateName": "Fed_X", "identifier": {"value": "NOAA.9"},
+                                      "provider": {"name": "NOAA"}}},
+                         {"Dataset": {"alternateName": "OT_noid", "provider": [{"name": "OpenTopography"}]}}]}
+    assert [(d.name, d.hosted) for d in catalogue.parse(linz)] == [("NZ18_Northland", True), ("Fed_X", False),
+                                                                   ("OT_noid", True)]
+
+    class Http:
+        def json(self, *a, **k):
+            return {"Datasets": [linz["Datasets"][1]]}
+    with pytest.raises(catalogue.NoPointClouds, match=r"returned 1 record\(s\): Fed_X \(not OT-hosted, id NOAA.9\)"):
+        catalogue.discover(Http(), (1641752, 6075464, 1642752, 6076192), "EPSG:2193", {"geofabrics": {}})
+
+
 def _tile_index_zip(tmp, name, bounds):
     import geopandas as gpd
     from shapely.geometry import box
