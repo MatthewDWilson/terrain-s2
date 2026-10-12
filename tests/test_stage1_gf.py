@@ -147,7 +147,7 @@ def test_make_geofabrics_orchestration(tmp_path):
     assert land.bounds == pytest.approx((X0 - 50, Y1 - 260, X0 + 260, Y1 + 50))
     p = C.read_dem(r.paths["netcdf"])
     assert p.resolution == 8 and p.crs == "EPSG:2193+7839" and p.provenance["generator_key"] == r.key
-    assert "cog" not in r.paths
+    assert r.paths["cog"].endswith("dem_8m.tif")
     assert make(aoi, s, **kw).reused
     # changing the land source changes the key
     r2 = make(aoi, s.replace(land_source="file", land_file=r.paths["land"]), **kw)
@@ -205,7 +205,7 @@ def test_geofabrics_runner_coarse_dem(tmp_path, monkeypatch, res):
     assert p.resolution == res and np.all(p.data_source == 5) and r["gap_fraction"] == 0
     x = X0 + 40 + res / 2 + res * np.arange(p.z.shape[1])
     np.testing.assert_allclose(p.z[0], 5 + 0.01 * (x - X0), atol=1e-4)
-    assert ("cog" in r["paths"]) == (res == 1)
+    assert "cog" in r["paths"]
     import rasterio
     with rasterio.open(C.gdal_name(r["paths"]["netcdf"])) as src:
         assert tuple(src.transform)[:6] == (res, 0, X0 + 40, 0, -res, Y1 - 40)

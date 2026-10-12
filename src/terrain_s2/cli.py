@@ -107,6 +107,12 @@ def _stage1_input(p: str) -> str:
     if q.is_dir() or q.name == "product.json" or q.suffix == ".nc":
         nc = Path(_resolve_nc(q))
         cog = nc.with_suffix(".tif")
+        import xarray as xr
+        from terrain_s2.io.contract import resolution_from_description
+        with xr.open_dataset(nc, decode_cf=False) as ds:
+            res = resolution_from_description(ds.attrs.get("description", ""))
+        if res != 1:
+            raise SystemExit(f"{nc}: a {res} m product; Stage 2 needs a 1 m Stage 1 product")
         try:
             import importlib
             dataio = importlib.import_module("terrain_s2.dataio")
@@ -115,7 +121,7 @@ def _stage1_input(p: str) -> str:
         except ImportError:
             pass
         if not cog.exists():
-            raise SystemExit(f"{nc}: no 1 m COG copy beside it; Stage 2 needs a 1 m Stage 1 product")
+            raise SystemExit(f"{nc}: no COG copy beside it (products before 12 Oct 2026 have one at 1 m only)")
         return str(cog)
     return p
 

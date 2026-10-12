@@ -215,8 +215,7 @@ def build(*, settings, profile: dict, aoi_geom, bounds, out_dir, name: str, key:
                       extra={"backend": "geofabrics", "gap_fraction": round(gap, 6), "land": land_rec,
                              "data_source_counts": counts, "instructions_file": "instructions.json"})
     contract.finish_netcdf(nc, crs, prov)
-    if int(settings.resolution) == 1:
-        paths["cog"] = str(contract.write_cog(contract.cog_path(nc), p.z, p.transform, crs))
+    paths["cog"] = str(contract.write_cog(contract.cog_path(nc), p.z, p.transform, crs))   # every resolution
     paths["provenance"] = str(contract.write_provenance(contract.provenance_path(nc), prov))
     log(f"geofabrics: {p.z.shape[1]} x {p.z.shape[0]} cells at {settings.resolution} m, "
         f"{len(datasets or [])} dataset(s), gaps {gap:.2%}")

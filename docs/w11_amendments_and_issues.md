@@ -66,6 +66,8 @@ each document.
 
 ### Integration plan itself (small corrections found while building)
 
+- **4.3 contract.** The GeoTIFF (COG) copy of `z` is written at every resolution, not only 1 m: GIS tools
+  open it directly. Stage 2's 1 m check reads the product's resolution, not the presence of the COG.
 - **6.6 table.** Add `config_key` (text, indexed) and `grid` (geometry). They support spatial reuse when only the
   inputs differ (DESIGN_NOTES §10, decision 2).
 - **6.3 template.**

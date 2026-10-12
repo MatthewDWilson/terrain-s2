@@ -1227,6 +1227,19 @@ and the module, the 89 existing ones unchanged.
     driver loads, `check` opens the registry from the worker, and the library's own default URL names
     `postgresql+psycopg2` explicitly.
 
+16. **First GeoFabrics run (12 Oct 2026), and what followed.** SH12 at 8 m through GeoFabrics: 8 LAZ tiles of
+    NZ18_North (65 MB) downloaded, raw and hydrologic DEM in 33 s, gaps 0. Against the raster backend at 8 m
+    the range agrees within 0.1 m (min -0.08 vs -0.10 m, max 65.45 vs 65.36 m); W7 compares properly.
+    - **otCatalog identifiers.** Point clouds are `OTLAS.<n>`, not `OT.<n>`; the hosted test now accepts
+      `OT` plus a product code and a dot. The real reply is a test fixture.
+    - **PDAL plugin errors.** conda-forge's PDAL ships `readers.hdf` and `readers.icebridge`, which need
+      `libhdf5_cpp.so.320`, absent from the solved environment. PDAL loads all plugins at start-up and
+      printed the failures on every use, though LAZ reading (built in) was unaffected. The image now drops
+      plugins with missing libraries and the build fails if load errors remain.
+    - **GeoTIFF at every resolution** (Matt's request; amends plan 4.3). `terrain network` checks the
+      resolution itself.
+    - **x/y without `_FillValue`** in our netCDF (CF coordinate variables); `spatial_ref` stays a coordinate.
+
 **Interfaces for the Stage 2 agent.**
 
 - **S2-9.** `stage1/source.py` defines the interface the raster backend needs, and a stopgap reader

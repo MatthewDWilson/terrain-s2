@@ -51,7 +51,7 @@ def test_contract_round_trip_and_gdal_subdataset(tmp_path):
 def test_contract_description_and_resolution_guard(tmp_path):
     import xarray as xr
     out = C.write_dem(tmp_path / "d8.nc", _product(res=8))
-    assert "cog" not in out                                          # COG only beside 1 m products
+    assert "cog" in out                                              # COG at every resolution (12 Oct 2026)
     with xr.open_dataset(out["netcdf"]) as ds:
         assert int(ds.attrs["description"].split()[-1]) == 8        # what FReDT does
         assert ds["x"].attrs["standard_name"] == "projection_x_coordinate" and ds["z"].attrs["grid_mapping"] == "spatial_ref"
@@ -188,7 +188,7 @@ def test_raster_1m_newest_first_with_fill(tmp_path):
 def test_raster_8m_area_average_and_reuse(tmp_path):
     r, http = _run(tmp_path, 8)
     p = C.read_dem(r.paths["netcdf"])
-    assert p.z.shape == (19, 18) and p.resolution == 8   # y snapped outward: 6075944-6076096 and "cog" not in r.paths
+    assert p.z.shape == (19, 18) and p.resolution == 8   # y snapped outward: 6075944-6076096
     assert np.allclose(p.z[:, :14], 10) and np.allclose(p.z[:, 14:], 20)   # 112 m = 14 cells of 8 m
     n = len(http.calls)
     r2, _ = _run(tmp_path, 8)

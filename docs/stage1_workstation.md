@@ -166,10 +166,17 @@ The provenance should then list both surveys, with `gap_fraction` 0.
   the containers. From Windows: `\\wsl.localhost\eddie\home\mwi104\eddie\data\terrain\products\...`.
   `bash $S products` lists each product folder as a Windows path. `bash $S export <id>` copies one to
   `D:\EDDIE\terrain_products\`.
-- **Files in a product folder:** `dem_<res>m.nc` (variables `z`, `data_source`, `lidar_source`; QGIS asks which
-  one to load: pick `z`), `dem_1m.tif` (COG, 1 m only), `dem_<res>m.provenance.json`,
-  `dem_<res>m_extents.geojson`, plus `product.json` (the build manifest) and `.lock` (the worker's build lock). The GeoFabrics backend adds `instructions.json` and its own intermediate files
-  (`raw_dem`, the land polygon).
+- **Files in a product folder:** `dem_<res>m.nc` (variables `z`, `data_source`, `lidar_source`),
+  `dem_<res>m.tif` (GeoTIFF/COG of `z`; products made before 12 Oct 2026 have it at 1 m only),
+  `dem_<res>m.provenance.json` and `dem_<res>m_extents.geojson`, plus `product.json` (the build manifest) and
+  `.lock` (the worker's build lock). The GeoFabrics backend adds `instructions.json`, the land polygon
+  (`dem_<res>m_land.geojson`), GeoFabrics' raw DEM (`dem_<res>m_raw_dem.nc`), its run logs and the AOI box it
+  was given (`dem_<res>m.geojson`).
+- **QGIS:** open the `.tif`. For the netCDF use *Layer → Add Layer → Add Raster Layer* (GDAL), pick the
+  file and then the `z` subdataset, or paste `NETCDF:"<path>":z` as the source. Opened by dragging, QGIS may
+  take the file as a mesh layer, which has no CRS and doesn't read our grid mapping. The CRS is the compound
+  NZTM2000 + NZVD2016 (EPSG:2193+7839); QGIS versions before 3.38 may list it as a custom CRS, which is
+  still in the right place.
 - **Cache:** `~/eddie/data/terrain/cache` (`/terrain_data` in the worker). It holds the STAC catalogue and item
   indexes (`stac/`). The GeoFabrics backend also downloads point clouds here (`downloads/`). The raster backend
   keeps no intermediate files: it reads only the needed windows of the LINZ 1 m COGs over HTTP.

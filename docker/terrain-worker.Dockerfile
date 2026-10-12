@@ -39,9 +39,18 @@ RUN <<BUILD
     pip install --no-deps "geofabrics==1.1.30" "osmpythontools>=0.3.5"
     pip install --no-deps "eddie @ git+https://github.com/GeospatialResearch/Digital-Twins@${EDDIE_REF}"
     pip install --no-deps . ./eddie
-    # Build-time checks: the pin, and that the library, GeoFabrics and the module import together
+    # PDAL loads every plugin at start-up. Drop plugins whose libraries the solved environment lacks (seen:
+    # readers.hdf and readers.icebridge want libhdf5_cpp.so.320), so each PDAL use doesn't print load errors.
+    # LAS/LAZ reading is built into PDAL itself.
+    lib=/opt/conda/envs/terrain-worker/lib
+    for f in "$lib"/libpdal_plugin_*.so; do
+        miss=$(LD_LIBRARY_PATH="$lib" ldd "$f" 2>/dev/null | grep "not found" | head -1 || true)
+        if [ -n "$miss" ]; then echo "dropping $(basename "$f"):$miss"; rm -f "$f"; fi
+    done
+    # Build-time checks: the pin, and that the library, GeoFabrics and the module import together, quietly
     python -c "import importlib.metadata as m; v = m.version('geofabrics'); print('geofabrics', v); assert v == '1.1.30', v"
-    python -c "import pdal, rasterio, terrain_s2, eddie_terrain; from geofabrics import runner; print('terrain_s2', terrain_s2.__version__, 'GDAL', rasterio.__gdal_version__)"
+    python -c "import pdal, rasterio, terrain_s2, eddie_terrain; from geofabrics import runner; print('terrain_s2', terrain_s2.__version__, 'GDAL', rasterio.__gdal_version__)" 2>&1 | tee /tmp/imports.txt
+    if grep -q "PDAL Error" /tmp/imports.txt; then echo "PDAL plugin load errors remain"; exit 1; fi
     # the worker command imports the core's tasks module, which discovers this module (dummy settings: the core
     # reads its configuration at import)
     STATSNZ_API_KEY=x LINZ_API_KEY=x MFE_API_KEY=x DATA_DIR_GEOSERVER=/tmp POSTGRES_PASSWORD=x \

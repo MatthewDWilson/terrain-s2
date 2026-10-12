@@ -73,3 +73,11 @@ def test_stage1_input_resolves_to_cog(fake_source):
     folder = str(__import__("pathlib").Path(r["paths"]["netcdf"]).parent)
     assert cli._stage1_input(folder) == r["paths"]["cog"]
     assert cli._stage1_input("plain.tif") == "plain.tif"
+
+
+def test_stage1_input_rejects_coarse_products(fake_source):
+    """COGs now sit beside every resolution, so Stage 2's 1 m check reads the product's resolution."""
+    r = _dem(fake_source, "--resolution", "8")
+    assert r["paths"]["cog"].endswith("dem_8m.tif")
+    with pytest.raises(SystemExit, match="8 m product"):
+        cli._stage1_input(r["paths"]["netcdf"])

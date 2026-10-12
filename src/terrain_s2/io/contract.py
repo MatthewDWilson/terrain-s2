@@ -170,21 +170,36 @@ def write_conventions(ds, crs, transform=None):
     return ds
 
 
-def write_dem(path, p: DemProduct, cog: bool | None = None, provenance: bool = True) -> dict:
-    """Write the netCDF contract, the COG copy (default: at 1 m only) and the provenance JSON.
+def _netcdf_layout(ds):
+    """No ``_FillValue`` on the x/y coordinate variables (CF: coordinate variables have no missing values;
+    xarray adds a NaN fill to float coordinates by default). ``spatial_ref`` stays a coordinate, as rioxarray
+    writes it, so ``xr.open_dataset(...).rio.crs`` keeps working."""
+    for n in ("x", "y"):
+        if n in ds.variables:
+            ds[n].encoding["_FillValue"] = None
+    return ds
+
+
+def write_dem(path, p: DemProduct, cog: bool = True, provenance: bool = True) -> dict:
+    """Write the netCDF contract, the GeoTIFF (COG) copy and the provenance JSON.
+
+    The COG is written at every resolution (from 12 Oct 2026; previously 1 m only): GIS tools open it directly,
+    and at 1 m it is the Stage 2 input.
 
     Returns ``{"netcdf": ..., "cog": ..., "provenance": ...}`` (absent entries omitted).
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    ds = to_dataset(p)
+    ds = _netcdf_layout(to_dataset(p))
     # NaN fill everywhere: -1 in data_source / lidar_source is a value (GeoFabrics' "no data" code), not masked.
     enc = {n: {"zlib": True, "complevel": 4, "_FillValue": np.nan} for n in ds.data_vars if n != "spatial_ref"}
+    enc.update({n: {"_FillValue": None} for n in ("x", "y")})
     tmp = path.with_name(path.name + ".part")
     ds.to_netcdf(tmp, format="NETCDF4", engine="netcdf4", encoding=enc)
     tmp.replace(path)
     out = {"netcdf": str(path)}
-    if cog if cog is not None else check_resolution(p.resolution) == 1:
+    check_resolution(p.resolution)
+    if cog:
         out["cog"] = str(write_cog(cog_path(path), p.z, p.transform, p.crs))
     if provenance:
         out["provenance"] = str(write_provenance(provenance_path(path), p.provenance))
@@ -295,6 +310,7 @@ def finish_netcdf(path, crs, provenance: dict, extra_attrs: dict | None = None) 
     ds.attrs.update(extra_attrs or {})
     for v in ds.variables.values():          # re-encode as read
         v.encoding = {k: val for k, val in v.encoding.items() if k in ("_FillValue", "dtype", "zlib", "complevel")}
+    ds = _netcdf_layout(ds)
     tmp = path.with_name(path.name + ".part")
     ds.to_netcdf(tmp, format="NETCDF4", engine="netcdf4")
     tmp.replace(path)
