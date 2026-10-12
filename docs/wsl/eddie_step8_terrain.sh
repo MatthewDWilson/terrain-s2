@@ -11,6 +11,9 @@
 #   e2e [raster|geofabrics] [resolution] [dem|geofabric]
 #                     POST /terrain/dem for the SH12 AOI, follow the task, inspect the product, repeat (cache hit)
 #   task <task id>    status of a terrain task; on failure the end of its traceback (full text to /mnt/d/EDDIE)
+#   products          the terrain_product registry (PostGIS): rows, backend, extents, and each product folder as
+#                     a Windows path; the cache contents
+#   export <id>       copy a product folder to D:\EDDIE\terrain_products\ (for QGIS etc. on Windows)
 #   bootstrap         one-off per fresh instance: create the GeoServer workspaces and stores (core finding F2:
 #                     otherwise /terria-catalog.json returns 500 and Terria shows "Error loading map configuration")
 #   test              run the terrain-s2 test suite inside the terrain worker image (real PDAL and GeoFabrics)
@@ -27,7 +30,7 @@ set -uo pipefail
 # Start from a clean environment: variables exported in the calling shell (e.g. another instance's .env:
 # COMPOSE_PROJECT_NAME, ports, passwords) take priority over this instance's .env in Docker Compose.
 if [ -z "${EDDIE_CLEAN_ENV:-}" ]; then
-    exec env -i HOME="$HOME" PATH="$PATH" USER="${USER:-}" TERM="${TERM:-xterm}" EDDIE_CLEAN_ENV=1 bash "$0" "$@"
+    exec env -i HOME="$HOME" PATH="$PATH" USER="${USER:-}" TERM="${TERM:-xterm}" WSL_DISTRO_NAME="${WSL_DISTRO_NAME:-eddie}" EDDIE_CLEAN_ENV=1 bash "$0" "$@"
 fi
 
 INST="$HOME/eddie/instances/terrain"
@@ -485,9 +488,11 @@ e2e() {
                 FAILURE) note "!! task failed after $(( $(date +%s) - t0 )) s; end of the traceback (all of it: $out/task_error.txt):"
                          task_error "$st" "$out/task_error.txt"; return 1 ;;
             esac
-            sleep 15
-            printf '  %4ds  %-8s %s\n' $(( $(date +%s) - t0 )) "$(echo "$st" | jq -r .status)" \
-                "$(grep -v '^\s*$' "$out/terrain_worker.log" | tail -1 | sed -E 's/^[^|]*\| //' | cut -c1-110)"
+            sleep 3
+            if [ $(( ($(date +%s) - t0) % 15 )) -lt 3 ]; then
+                printf '  %4ds  %-8s %s\n' $(( $(date +%s) - t0 )) "$(echo "$st" | jq -r .status)" \
+                    "$(grep -v '^\s*$' "$out/terrain_worker.log" | tail -1 | sed -E 's/^[^|]*\| //' | cut -c1-110)"
+            fi
         done
         echo "$pid $(( $(date +%s) - t0 ))" > "$out/.last"
     }
@@ -526,6 +531,43 @@ task_status() {
     esac
     say "Terrain worker log lines for this task"
     (cd "$INST" && docker compose logs --no-color terrain_worker 2>&1 | grep -F -A40 "$tid" | tail -45 | cut -c1-220 | sed 's/^/  /')
+}
+
+# ------------------------------------------------------------------------------------------------ products
+winpath() { printf '\\\\wsl.localhost\\%s%s' "${WSL_DISTRO_NAME:-eddie}" "$(echo "$1" | tr '/' '\\')"; }
+
+products() {
+    cd "$INST" || exit 1
+    say "terrain_product registry (database 'db' in eddie-terrain-db; from Windows: localhost:${P_DB})"
+    docker compose exec -T db_postgres psql -U postgres -d db -P pager=off -c "
+        select id, product, resolution as res, generator_info->'request'->>'backend' as backend,
+               left(generator_key, 16) as key, left(config_key, 16) as config, parent_id as parent,
+               round(st_area(extent)::numeric / 1e6, 3) as km2,
+               to_char(created_at, 'YYYY-MM-DD HH24:MI') as created
+        from terrain_product order by id" 2>&1 | sed 's/^/  /'
+    say "Product folders (open in Windows Explorer or QGIS; the netCDF's 'z' is the DEM)"
+    docker compose exec -T db_postgres psql -U postgres -d db -At -F' ' -c \
+        "select id, paths->>'netcdf' from terrain_product order by id" 2>/dev/null |
+    while read -r id nc; do
+        local host="${nc/#\/terrain_products/$DATA/products}"
+        note "$id  $(winpath "$(dirname "$host")")"
+        ls -1 "$(dirname "$host")" 2>/dev/null | sed 's/^/        /'
+    done
+    say "Cache (~/eddie/data/terrain/cache = /terrain_data in the worker)"
+    du -sh "$DATA"/cache/* "$DATA"/cache/*/* 2>/dev/null | sed 's/^/  /'
+}
+
+export_product() {
+    local id="${1:-}"; [ -n "$id" ] || { note "usage: export <product id>"; exit 2; }
+    cd "$INST" || exit 1
+    local nc; nc=$(docker compose exec -T db_postgres psql -U postgres -d db -At -c \
+        "select paths->>'netcdf' from terrain_product where id = $((id))" 2>/dev/null)
+    [ -n "$nc" ] || { note "!! no product $id"; exit 1; }
+    local src; src="$(dirname "${nc/#\/terrain_products/$DATA/products}")"
+    local key; key="$(basename "$(dirname "$src")")"
+    local dst="/mnt/d/EDDIE/terrain_products/${id}_${key}_$(basename "$src")"
+    mkdir -p "$dst" && cp -a "$src"/. "$dst"/ && note "copied to D:\\EDDIE\\terrain_products\\$(basename "$dst")"
+    ls -la "$dst" | sed 's/^/  /'
 }
 
 # ------------------------------------------------------------------------------------------------ test
@@ -567,8 +609,10 @@ case "${1:-setup}" in
     bootstrap) bootstrap ;;
     e2e) shift; e2e "$@" ;;
     task) shift; task_status "$@" ;;
+    products) products ;;
+    export) shift; export_product "$@" ;;
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [dem|geofabric]|task <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [dem|geofabric]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac

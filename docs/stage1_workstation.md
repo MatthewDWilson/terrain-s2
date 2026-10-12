@@ -160,6 +160,55 @@ curl -s -H 'Content-Type: application/json' -d '{"aoi":"POLYGON((...))","params"
 
 The provenance should then list both surveys, with `gap_fraction` 0.
 
+### 4a. Where the outputs are, and how to look at them
+
+- **Products:** `~/eddie/data/terrain/products/<generator key>/<grid id>/` in WSL; `/terrain_products/...` inside
+  the containers. From Windows: `\\wsl.localhost\eddie\home\mwi104\eddie\data\terrain\products\...`.
+  `bash $S products` lists each product folder as a Windows path. `bash $S export <id>` copies one to
+  `D:\EDDIE\terrain_products\`.
+- **Files in a product folder:** `dem_<res>m.nc` (variables `z`, `data_source`, `lidar_source`; QGIS asks which
+  one to load: pick `z`), `dem_1m.tif` (COG, 1 m only), `dem_<res>m.provenance.json`,
+  `dem_<res>m_extents.geojson`, plus `product.json` (the build manifest) and `.lock` (the worker's build lock). The GeoFabrics backend adds `instructions.json` and its own intermediate files
+  (`raw_dem`, the land polygon).
+- **Cache:** `~/eddie/data/terrain/cache` (`/terrain_data` in the worker). It holds the STAC catalogue and item
+  indexes (`stac/`). The GeoFabrics backend also downloads point clouds here (`downloads/`). The raster backend
+  keeps no intermediate files: it reads only the needed windows of the LINZ 1 m COGs over HTTP.
+- **Registry:** table `terrain_product` in EDDIE's PostGIS database (`db`), one row per product. `bash $S products`
+  shows it. From QGIS or pgAdmin on Windows, connect to `localhost:5445`, database `db`, with the `POSTGRES_*`
+  values in the instance's `.env`; `aoi`, `extent` and `grid` are EPSG:2193 geometries.
+- **Terria:** products don't appear in the map. Publishing DEMs to GeoServer is out of Stage 1 scope (plan
+  section 2, defaults).
+
+### 4b. The API
+
+| Call | Body or response |
+|---|---|
+| `POST /terrain/dem` | Body `{"aoi": "<WKT polygon, EPSG:4326>", "params": {...}}`. Returns `202 {"taskId": ...}`, or `400` with the reason. |
+| `GET /terrain/tasks/<taskId>` | `{"status": "PENDING" \| "STARTED" \| "SUCCESS" \| "FAILURE", "result": <product id>}`, or `"error": <traceback>` |
+| `GET /terrain/products/<id>` | The registry row: `generator_key`, `resolution`, `aoi`/`extent`/`grid` (WKT, EPSG:2193), `paths` (`netcdf`, `cog`, `provenance`, `extents`), `generator_info`, `created_at` |
+
+`params` is optional; anything left out takes the deployment's `TERRAIN_*` value from `.env`:
+
+| Parameter | Values | Default (slot 5) |
+|---|---|---|
+| `backend` | `raster` (LINZ 1 m DEM) or `geofabrics` (point clouds through GeoFabrics) | `raster` |
+| `resolution` | 1, 2, 4 or 8 (metres) | 8 |
+| `product` | `dem`, or `geofabric` (adds roughness `zo`; GeoFabrics only) | `dem` |
+| `land_source` | `coverage`, `topo50`, `topo50_mangrove`, `file` | `coverage` |
+| `buffer_m` | metres added round the AOI | 10 |
+| `spatial_reuse` | reuse a stored product that contains the AOI | true |
+| `lidar_classes`, `allow_fallback`, `profile`, `aoi_mode` (`bbox` or `polygon`) | see `terrain_s2/settings.py` | |
+
+```bash
+curl -s -H 'Content-Type: application/json' \
+  -d '{"aoi": "POLYGON ((173.4603 -35.4633, 173.4710 -35.4633, 173.4710 -35.4570, 173.4603 -35.4570, 173.4603 -35.4633))",
+       "params": {"backend": "raster", "resolution": 1}}' \
+  http://localhost:5500/terrain/dem
+```
+
+Inside EDDIE, FReDT and Smart Ideas don't use HTTP: they call `terrain_s2.client.compat.get_dem_by_geometry`,
+which sends the same task and reads the registry. Under v5 the same request is also the OGC process `terrain.dem`.
+
 ## 5. GeoFabrics backend (W4), and the otCatalog date check
 
 ```bash
