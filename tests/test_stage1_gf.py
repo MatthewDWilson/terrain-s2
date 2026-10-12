@@ -80,6 +80,13 @@ def test_catalogue_hosted_rule_and_diagnostics():
                          {"Dataset": {"alternateName": "OT_noid", "provider": [{"name": "OpenTopography"}]}}]}
     assert [(d.name, d.hosted) for d in catalogue.parse(linz)] == [("NZ18_Northland", True), ("Fed_X", False),
                                                                    ("OT_noid", True)]
+    # The real reply for SH12 (12 Oct 2026; coverage reduced to its bounding box): an OTLAS. identifier, a DOI
+    # URL and no provider
+    real = json.loads((Path(__file__).parent / "fixtures" / "otcatalog_sh12_20261012.json").read_text())
+    (d,) = catalogue.rank(catalogue.parse(real))
+    assert (d.name, d.id, d.hosted) == ("NZ18_North", "OTLAS.112022.2193.1", True)
+    assert (d.survey_start, d.survey_end, d.date_source) == ("2018-12-01", "2020-02-01", "temporalCoverage")
+    assert catalogue.tile_index_url(d.name).endswith("/NZ18_North/NZ18_North_TileIndex.zip")
 
     class Http:
         def json(self, *a, **k):

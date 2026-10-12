@@ -33,7 +33,7 @@ class NoPointClouds(LookupError):
 class Dataset:
     name: str                       # alternateName: the pc-bulk prefix
     title: str | None
-    id: str | None                  # OpenTopography identifier, e.g. OT.012020.2193.1
+    id: str | None                  # OpenTopography identifier, e.g. OTLAS.112022.2193.1
     url: str | None
     survey_end: str | None
     survey_start: str | None
@@ -48,6 +48,7 @@ class Dataset:
                 "date_source": self.date_source}
 
 
+_OT_ID = re.compile(r"(?<![A-Za-z])OT[A-Z]*\.\d")
 _DATE = re.compile(r"\d{4}(-\d{2}(-\d{2})?)?")
 
 
@@ -85,10 +86,12 @@ def parse(response: dict) -> list[Dataset]:
         if not end and d.get("dateCreated"):
             end, src = _date(d.get("dateCreated")), "dateCreated"
         url = d.get("url") or d.get("@id")
-        # Hosted by OpenTopography (fetchable from pc-bulk): an "OT." identifier or metadata URL. That wins over
-        # the provider, which for partner data (e.g. LINZ surveys) names the data owner, not the host. Only
-        # without either is the provider used.
-        hosted = bool(ident and str(ident).startswith("OT.")) or bool(url and "/meta/OT." in str(url))
+        # Hosted by OpenTopography (fetchable from pc-bulk): an OpenTopography identifier, "OT" plus a product
+        # code and a dot: OTLAS.112022.2193.1 for point clouds (the real otCatalog reply, 12 Oct 2026), OTSDEM.
+        # for rasters, OT. in older records; or such an id in the metadata URL. That wins over the provider,
+        # which for partner data (e.g. LINZ surveys) names the data owner. Only without either is the provider
+        # used. (With include_federated=false the catalogue returns hosted data only; this is the backstop.)
+        hosted = bool(ident and _OT_ID.match(str(ident))) or bool(url and _OT_ID.search(str(url).rsplit("/", 1)[-1]))
         if not hosted:
             prov = d.get("provider") or {}
             if isinstance(prov, list):
