@@ -1213,6 +1213,14 @@ and the module, the 89 existing ones unchanged.
     `terrain_products` (`/terrain_products`). Consumers mount it read-only at the same path, so registry paths
     resolve unchanged; the slot-5 backend and core worker already do.
 
+14. **Worker logs and task errors** (core finding F3). The v5 core's `setup_logging()` sets `propagate = False`
+    on the `celery` and `kombu` loggers. A worker on v5 then logs nothing after its banner: no "received", no
+    "raised unexpected", no traceback. v4 is unaffected. The terrain worker image sets `TERRAIN_CELERY_LOGS=1`,
+    and `eddie_terrain.tasks` then turns `celery` propagation back on, at import and on `after_setup_logger`.
+    Other containers keep the core's choice. Separately, the core's `OnFailureStateTask` stores the traceback as
+    a list of lines, which a client sees as a tuple. `GET /terrain/tasks/<id>` now returns it as text. Worth
+    raising with the core team: a worker that hides its own failures is hard to operate.
+
 **Interfaces for the Stage 2 agent.**
 
 - **S2-9.** `stage1/source.py` defines the interface the raster backend needs, and a stopgap reader

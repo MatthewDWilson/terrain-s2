@@ -144,6 +144,10 @@ Expected results:
 - **COG:** a `.tif` copy beside the 1 m product.
 - **Registry:** one row per resolution, with different keys.
 
+**If a run fails,** the script prints the end of the task's traceback and saves all of it as `task_error.txt` in
+the results folder. For any task id, `bash $S task <id>` shows its status, the traceback and the worker's log lines
+for it.
+
 The first run in a region lists the LINZ collections and builds their item indexes, so it takes minutes. Later
 runs read the cache. To pick up newly published surveys, delete `~/eddie/data/terrain/cache/stac/json`.
 
@@ -249,6 +253,8 @@ earlier Windows `terrain-worker` environment is no longer needed: the worker ima
 | Task stays `PENDING` | Terrain worker not running, or not on queue `terrain` | `docker compose logs terrain_worker`; `check` lists the queues |
 | `e2e`: `POST /terrain/dem failed: …400…` | A parameter was refused by validation | The message names it |
 | `bootstrap`: `PermissionError … /stored_data/geoserver/data` | The `stored_data` volume was first created by the terrain worker (before 12 Oct the worker mounted it), so it has the wrong owner | `docker compose down`, `docker volume rm eddie-terrain_stored_data`, `docker compose up -d`, then `bootstrap` again. The worker no longer mounts `stored_data` |
+| Task `FAILURE` within ~15 s: `GET https://nz-elevation.s3-ap-southeast-2.amazonaws.com/catalog.json failed after 3 attempts` | The terrain worker can't reach the LINZ elevation bucket (proxy, firewall, DNS) | `check` prints the status from inside the worker (expect 200). Compare with `curl -I` of the same URL in WSL. If WSL works and the container doesn't, send both outputs |
+| Worker log shows the banner and nothing else | The v5 core's `setup_logging()` stops the `celery` logger propagating (core finding F3) | Images built from 12 Oct set `TERRAIN_CELERY_LOGS=1` in the terrain worker, which restores the worker's own lines. Rebuild with `bash $S build` |
 | Another instance's names or ports appear | Shell variables from another `.env` | Fresh terminal; use the script or `edc` |
 
 ## 12. What to send back

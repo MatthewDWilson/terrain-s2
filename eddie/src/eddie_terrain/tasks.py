@@ -17,12 +17,25 @@ so the compatibility shim finds the product for FReDT's catchment area. ``polygo
 from __future__ import annotations
 
 import logging
+import os
 
 from eddie.tasks import OnFailureStateTask, app  # pylint: disable=cyclic-import
 
 from . import QUEUE
 
 log = logging.getLogger(__name__)
+
+# Worker log lines ("received", "succeeded", "raised unexpected" with the traceback). The v5 core's setup_logging()
+# stops the "celery" logger propagating, so a worker shows nothing after its banner. The terrain worker image sets
+# TERRAIN_CELERY_LOGS=1 to put them back; other containers keep the core's choice.
+if os.environ.get("TERRAIN_CELERY_LOGS", "").lower() in ("1", "true", "yes"):
+    from celery.signals import after_setup_logger
+
+    def _celery_logs(**_kw) -> None:
+        logging.getLogger("celery").propagate = True
+
+    _celery_logs()
+    after_setup_logger.connect(_celery_logs, weak=False)
 
 # Route every terrain task to the terrain worker, wherever it is sent from.
 _routes = app.conf.task_routes or {}

@@ -10,6 +10,7 @@
 #   check             after 'docker compose up -d': containers, endpoints, terrain routes, worker toolchain, mounts
 #   e2e [raster|geofabrics] [resolution] [dem|geofabric]
 #                     POST /terrain/dem for the SH12 AOI, follow the task, inspect the product, repeat (cache hit)
+#   task <task id>    status of a terrain task; on failure the end of its traceback (full text to /mnt/d/EDDIE)
 #   bootstrap         one-off per fresh instance: create the GeoServer workspaces and stores (core finding F2:
 #                     otherwise /terria-catalog.json returns 500 and Terria shows "Error loading map configuration")
 #   test              run the terrain-s2 test suite inside the terrain worker image (real PDAL and GeoFabrics)
@@ -45,6 +46,22 @@ SH12_WKT='POLYGON ((173.4603 -35.4633, 173.4710 -35.4633, 173.4710 -35.4570, 173
 
 say()  { printf '\n==== %s\n' "$1"; }
 note() { printf '  %s\n' "$1"; }
+
+task_error() {  # task_error JSON [FILE]: a failed task's traceback as text (last 20 lines here; all of it to FILE)
+    # The backend returns it as text; older eddie_terrain versions return the Python tuple of lines.
+    local txt
+    txt=$(echo "$1" | jq -r '.error // empty' | python3 -c '
+import ast, sys
+t = sys.stdin.read().strip()
+try:
+    v = ast.literal_eval(t)
+    t = "\n".join(v) if isinstance(v, (tuple, list)) else str(v)
+except Exception:
+    pass
+print(t.rstrip())')
+    [ -n "${2:-}" ] && printf '%s\n' "$txt" > "$2"
+    printf '%s\n' "$txt" | grep -v '^\s*[~^ ]*$' | tail -20 | cut -c1-240 | sed 's/^/    /'
+}
 
 exclude_local() {  # keep instance-local files out of git status, without touching tracked files
     local ex; ex="$(git -C "$1" rev-parse --path-format=absolute --git-path info/exclude)"
@@ -405,6 +422,7 @@ PY
         for d in /terrain_data /terrain_products; do
             echo "  $d writable: $(touch "$d/.w" 2>&1 && rm "$d/.w" && echo yes)"
         done
+        echo "  LINZ elevation STAC from the worker: $(curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://nz-elevation.s3-ap-southeast-2.amazonaws.com/catalog.json) (expect 200)"
         echo "  ping: $(celery -A eddie.tasks inspect ping -d terrain@$HOSTNAME 2>&1 | grep -c pong) pong"
         celery -A eddie.tasks inspect registered -d terrain@$HOSTNAME 2>/dev/null | grep -o "eddie_terrain[a-z_.]*" | sed "s/^/  task: /"
         echo "  queues: $(celery -A eddie.tasks inspect active_queues -d terrain@$HOSTNAME 2>/dev/null | grep -oE "name.: .[a-z_]+" | sort -u | tr "\n" " ")"
@@ -463,7 +481,8 @@ e2e() {
             st=$(curl -s --max-time 30 "$api/terrain/tasks/$tid")
             case "$(echo "$st" | jq -r .status)" in
                 SUCCESS) pid=$(echo "$st" | jq -r .result); break ;;
-                FAILURE) note "!! task failed: $(echo "$st" | jq -r .error | cut -c1-400)"; return 1 ;;
+                FAILURE) note "!! task failed after $(( $(date +%s) - t0 )) s; end of the traceback (all of it: $out/task_error.txt):"
+                         task_error "$st" "$out/task_error.txt"; return 1 ;;
             esac
             sleep 15
             printf '  %4ds  %-8s %s\n' $(( $(date +%s) - t0 )) "$(echo "$st" | jq -r .status)" \
@@ -492,6 +511,20 @@ e2e() {
     docker compose exec -T db_postgres psql -U postgres -d db -c \
         "select id, product, resolution, left(generator_key,16) as key, parent_id, created_at from terrain_product order by id" 2>&1 | sed 's/^/  /'
     note "worker log during the run: $out/terrain_worker.log ($(grep -ciE 'error|traceback' "$out/terrain_worker.log") error lines)"
+}
+
+# ------------------------------------------------------------------------------------------------ task
+task_status() {
+    local tid="${1:-}"; [ -n "$tid" ] || { note "usage: task <task id>"; exit 2; }
+    local st; st=$(curl -s --max-time 30 "http://localhost:${P_API}/terrain/tasks/$tid")
+    say "Task $tid: $(echo "$st" | jq -r .status)"
+    case "$(echo "$st" | jq -r .status)" in
+        SUCCESS) note "result: $(echo "$st" | jq -c .result)" ;;
+        FAILURE) note "end of the traceback (all of it: /mnt/d/EDDIE/terrain_task_${tid:0:8}_error.txt):"
+                 task_error "$st" "/mnt/d/EDDIE/terrain_task_${tid:0:8}_error.txt" ;;
+    esac
+    say "Terrain worker log lines for this task"
+    (cd "$INST" && docker compose logs --no-color terrain_worker 2>&1 | grep -F -A40 "$tid" | tail -45 | cut -c1-220 | sed 's/^/  /')
 }
 
 # ------------------------------------------------------------------------------------------------ test
@@ -532,8 +565,9 @@ case "${1:-setup}" in
     check) check ;;
     bootstrap) bootstrap ;;
     e2e) shift; e2e "$@" ;;
+    task) shift; task_status "$@" ;;
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [dem|geofabric]|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [dem|geofabric]|task <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac

@@ -56,5 +56,16 @@ def get_task(task_id: str):
     if r.successful():
         out["result"] = r.result
     elif r.failed():
-        out["error"] = str(r.result)
+        out["error"] = _error_text(r.result)
     return make_response(jsonify(out), OK)
+
+
+def _error_text(exc) -> str:
+    """The failure as text. The core's ``OnFailureStateTask`` stores the traceback lines as the exception's
+    arguments, so join them rather than showing a tuple."""
+    args = getattr(exc, "args", None)
+    if args and len(args) == 1 and isinstance(args[0], (list, tuple)):
+        args = args[0]
+    if args and all(isinstance(a, str) for a in args) and len(args) > 1:
+        return "\n".join(args).rstrip()
+    return str(exc)

@@ -76,6 +76,7 @@ ENV PATH=/venv/bin:$PATH \
     TERRAIN_PRODUCT_DIR=/terrain_products \
     MPLBACKEND=Agg \
     MPLCONFIGDIR=/tmp/matplotlib \
-    DASK_TEMPORARY_DIRECTORY=/tmp
+    DASK_TEMPORARY_DIRECTORY=/tmp \
+    TERRAIN_CELERY_LOGS=1
 USER nonroot
 ENTRYPOINT ["/app/terrain_worker_entrypoint.sh"]

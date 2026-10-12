@@ -131,3 +131,27 @@ def test_ensure_dem_task_body(monkeypatch, tmp_path):
     monkeypatch.setenv("TERRAIN_RESOLUTION", "8")
     hydro, _, _, res = compat.get_dem_by_geometry(None, core.wkt_to_gdf(wkt))
     assert hydro == row.netcdf and res == 8
+
+
+def test_task_error_is_text():
+    """GET /terrain/tasks/<id> gives the traceback as text, not the tuple of lines the core stores."""
+    from eddie_terrain.blueprint import _error_text
+
+    class Remote(Exception):  # as celery.backends.base rebuilds the core's FAILURE meta
+        pass
+
+    lines = ("Traceback (most recent call last):", '  File "x.py", line 1, in f', "OSError: boom", "")
+    assert _error_text(Remote(*lines)) == "Traceback (most recent call last):\n  File \"x.py\", line 1, in f\nOSError: boom"
+    assert _error_text(ValueError("plain")) == "plain"
+
+
+def test_worker_celery_logs(monkeypatch):
+    """TERRAIN_CELERY_LOGS=1 (terrain worker image) undoes the v5 core's non-propagating 'celery' logger."""
+    import importlib
+    import logging
+
+    import eddie_terrain.tasks as t
+    logging.getLogger("celery").propagate = False
+    monkeypatch.setenv("TERRAIN_CELERY_LOGS", "1")
+    importlib.reload(t)
+    assert logging.getLogger("celery").propagate is True
