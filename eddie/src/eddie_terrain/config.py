@@ -11,7 +11,7 @@ class TerrainConfig(EnvVariable):  # pylint: disable=too-few-public-methods
 
     TERRAIN_BACKEND = EnvVariable._get_env_variable("TERRAIN_BACKEND", default="raster")
     TERRAIN_RESOLUTION = int(EnvVariable._get_env_variable("TERRAIN_RESOLUTION", default="8"))
-    TERRAIN_PRODUCT = EnvVariable._get_env_variable("TERRAIN_PRODUCT", default="dem")
+    TERRAIN_PRODUCT = EnvVariable._get_env_variable("TERRAIN_PRODUCT", default="auto")
     TERRAIN_LAND_SOURCE = EnvVariable._get_env_variable("TERRAIN_LAND_SOURCE", default="coverage")
     TERRAIN_LIDAR_CLASSES = EnvVariable._get_env_variable("TERRAIN_LIDAR_CLASSES", default="2")
     TERRAIN_BUFFER_M = float(EnvVariable._get_env_variable("TERRAIN_BUFFER_M", default="10"))

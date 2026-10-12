@@ -8,7 +8,8 @@ Variable                       Meaning                                      Defa
 =============================  ===========================================  ==================================
 ``TERRAIN_BACKEND``            ``raster`` or ``geofabrics``                 ``raster`` (until W7 decides)
 ``TERRAIN_RESOLUTION``         integer metres: 1, 2, 4 or 8                 ``8``
-``TERRAIN_PRODUCT``            ``dem`` or ``geofabric`` (adds ``zo``)       ``dem``
+``TERRAIN_PRODUCT``            ``auto``, ``dem`` or ``geofabric`` (adds     ``auto``: ``geofabric`` with the
+                               roughness ``zo``; GeoFabrics only)            GeoFabrics backend, else ``dem``
 ``TERRAIN_LAND_SOURCE``        ``coverage``, ``topo50``,                    ``coverage``
                                ``topo50_mangrove``, ``file``
 ``TERRAIN_LIDAR_CLASSES``      comma-separated LAS classes                  ``2``
@@ -37,6 +38,14 @@ from pathlib import Path
 
 BACKENDS = ("raster", "geofabrics")
 PRODUCTS = ("dem", "geofabric")
+PRODUCT_CHOICES = ("auto",) + PRODUCTS
+
+
+def product_for(product: str, backend: str) -> str:
+    """The concrete product: ``auto`` is ``geofabric`` (DEM plus roughness) with GeoFabrics, else ``dem``."""
+    if product != "auto":
+        return product
+    return "geofabric" if backend == "geofabrics" else "dem"
 LAND_SOURCES = ("coverage", "topo50", "topo50_mangrove", "file")
 RESOLUTIONS = (1, 2, 4, 8)
 
@@ -61,7 +70,7 @@ def _env(name, default=None, env=None):
 class Settings:
     backend: str = "raster"
     resolution: int = 8
-    product: str = "dem"
+    product: str = "auto"
     land_source: str = "coverage"
     lidar_classes: tuple = (2,)
     buffer_m: float = 10.0
@@ -102,7 +111,7 @@ def from_env(env: dict | None = None, **overrides) -> Settings:
     s = Settings(
         backend=e("TERRAIN_BACKEND", "raster"),
         resolution=int(e("TERRAIN_RESOLUTION", "8")),
-        product=e("TERRAIN_PRODUCT", "dem"),
+        product=e("TERRAIN_PRODUCT", "auto"),
         land_source=e("TERRAIN_LAND_SOURCE", "coverage"),
         lidar_classes=tuple(int(c) for c in str(classes).replace(" ", "").split(",") if c),
         buffer_m=float(e("TERRAIN_BUFFER_M", "10")),
@@ -128,8 +137,8 @@ def validate(s: Settings) -> None:
     from .io.contract import check_resolution
     if s.backend not in BACKENDS:
         raise ValueError(f"backend must be one of {BACKENDS}, got {s.backend!r}")
-    if s.product not in PRODUCTS:
-        raise ValueError(f"product must be one of {PRODUCTS}, got {s.product!r}")
+    if s.product not in PRODUCT_CHOICES:
+        raise ValueError(f"product must be one of {PRODUCT_CHOICES}, got {s.product!r}")
     if s.product == "geofabric" and s.backend != "geofabrics":
         raise ValueError("product 'geofabric' (with roughness zo) needs backend 'geofabrics'")
     if s.land_source not in LAND_SOURCES:

@@ -200,7 +200,7 @@ The provenance should then list both surveys, with `gap_fraction` 0.
 |---|---|---|
 | `backend` | `raster` (LINZ 1 m DEM) or `geofabrics` (point clouds through GeoFabrics) | `raster` |
 | `resolution` | 1, 2, 4 or 8 (metres) | 8 |
-| `product` | `dem`, or `geofabric` (adds roughness `zo`; GeoFabrics only) | `dem` |
+| `product` | `auto`, `dem`, or `geofabric` (DEM plus roughness `zo`; GeoFabrics only). `auto` gives `geofabric` with the GeoFabrics backend and `dem` with raster | `auto` |
 | `land_source` | `coverage`, `topo50`, `topo50_mangrove`, `file` | `coverage` |
 | `buffer_m` | metres added round the AOI | 10 |
 | `spatial_reuse` | reuse a stored product that contains the AOI | true |
@@ -219,15 +219,19 @@ which sends the same task and reads the registry. Under v5 the same request is a
 ## 5. GeoFabrics backend (W4), and the otCatalog date check
 
 ```bash
-bash $S e2e geofabrics 8           2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf8.txt
+bash $S e2e geofabrics 8           2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf8.txt     # DEM + roughness (auto)
 bash $S e2e geofabrics 1           2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf1.txt
-bash $S e2e geofabrics 8 geofabric 2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_geofabric8.txt
+bash $S e2e geofabrics 8 dem       2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf8dem.txt  # DEM only (no OSM roads)
 bash $S otcatalog
 ```
 
 Check the following in the product folder:
 - **`instructions.json`:** `dataset_mapping.lidar` is newest first.
-- **The geofabric product:** has a `zo` variable.
+- **The geofabric product** (the default with GeoFabrics): has a `zo` variable. Its roughness stage downloads
+  OSM roads from the Overpass API; `check` probes it.
+- **No bed estimation.** The Stage 1 templates run GeoFabrics' raw and hydrologic DEM stages only (plus
+  roughness), with no river, waterway or ocean inputs. Under water the LiDAR has few ground returns, so the
+  channel is filled by interpolation (`data_source` 0). Channel and bed work belongs to Stage 2.
 - **`data_source`:** 1 (LiDAR) or 0 (interpolated) on land.
 - **`*_land.geojson`:** follows the survey tile index (the `coverage` land source).
 

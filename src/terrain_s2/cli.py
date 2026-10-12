@@ -146,7 +146,7 @@ def parser() -> argparse.ArgumentParser:
     d.add_argument("--aoi-crs", help="CRS of a WKT AOI (default EPSG:4326) or of a file without one")
     d.add_argument("--resolution", type=int)
     d.add_argument("--backend", choices=["raster", "geofabrics"])
-    d.add_argument("--product", choices=["dem", "geofabric"])
+    d.add_argument("--product", choices=["auto", "dem", "geofabric"])
     d.add_argument("--land-source", choices=["coverage", "topo50", "topo50_mangrove", "file"])
     d.add_argument("--land-file")
     d.add_argument("--lidar-classes", help="comma-separated, e.g. 2,9")

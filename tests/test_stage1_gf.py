@@ -133,7 +133,7 @@ def test_make_geofabrics_orchestration(tmp_path):
     tis = {catalogue.tile_index_url(n): _tile_index_zip(tmp_path, n, (X0 - 50, Y1 - 300, X0 + 300, Y1 + 50))
            for n in ("NZ22_Whirinaki", "NZ18_Northland", "NZ_Undated")}
     http = FakeHttp({catalogue.OT_CATALOG: OT_RESPONSE}, binary=tis)
-    s = Settings(backend="geofabrics", resolution=8, buffer_m=0, data_dir=tmp_path / "data")
+    s = Settings(backend="geofabrics", product="dem", resolution=8, buffer_m=0, data_dir=tmp_path / "data")
     aoi = f"POLYGON(({X0} {Y1 - 160}, {X0 + 160} {Y1 - 160}, {X0 + 160} {Y1}, {X0} {Y1}, {X0} {Y1 - 160}))"
     kw = dict(aoi_crs="EPSG:2193", http=http, store=SnapshotStore(tmp_path / "snap"), gf_runner=_fake_gf_runner,
               log=lambda *a: None)
@@ -193,7 +193,7 @@ def test_geofabrics_runner_coarse_dem(tmp_path, monkeypatch, res):
     from terrain_s2.stage1.profile import load
     yy, xx = np.mgrid[Y1 - 0.5:Y1 - 400:-1, X0 + 0.5:X0 + 400:1]
     write_cog(tmp_path / "coarse.tif", (5 + 0.01 * (xx - X0)).astype(np.float32), X0, Y1)
-    s = Settings(backend="geofabrics", resolution=res, buffer_m=0, data_dir=tmp_path / "data", gf_cores=1,
+    s = Settings(backend="geofabrics", product="dem", resolution=res, buffer_m=0, data_dir=tmp_path / "data", gf_cores=1,
                  gf_memory_limit="1GiB")
     bounds = (X0 + 40, Y1 - 200, X0 + 200, Y1 - 40)
     r = gf.build(settings=s, profile=load("nz"), aoi_geom=box(*bounds), bounds=bounds, out_dir=tmp_path / "prod",
@@ -209,3 +209,22 @@ def test_geofabrics_runner_coarse_dem(tmp_path, monkeypatch, res):
     import rasterio
     with rasterio.open(C.gdal_name(r["paths"]["netcdf"])) as src:
         assert tuple(src.transform)[:6] == (res, 0, X0 + 40, 0, -res, Y1 - 40)
+
+
+def test_product_auto_and_osm_cache(tmp_path, monkeypatch):
+    from terrain_s2.settings import Settings, from_env, product_for
+    assert from_env({}).product == "auto"
+    assert product_for("auto", "geofabrics") == "geofabric" and product_for("auto", "raster") == "dem"
+    assert product_for("dem", "geofabrics") == "dem"
+    with pytest.raises(ValueError):
+        from_env({"TERRAIN_PRODUCT": "geofabric"})            # roughness needs the GeoFabrics backend
+    # OSMPythonTools' default cache is ./cache: in a read-only working directory it can't be created, which
+    # GeoFabrics reports as a failed OSM download. osm_cache() points it at a writable folder.
+    from OSMPythonTools.cachingStrategy import CachingStrategy
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    monkeypatch.chdir(ro)
+    d = gf.osm_cache(tmp_path / "data" / "geofabrics" / "osm")
+    CachingStrategy.set("k", {"v": 1})
+    assert (d / "k").exists() and CachingStrategy.get("k") == {"v": 1}
+    assert not (ro / "cache").exists()

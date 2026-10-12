@@ -1240,6 +1240,16 @@ and the module, the 89 existing ones unchanged.
       resolution itself.
     - **x/y without `_FillValue`** in our netCDF (CF coordinate variables); `spatial_ref` stays a coordinate.
 
+17. **Roughness by default with GeoFabrics; the OSM cache** (12 Oct 2026). `TERRAIN_PRODUCT=auto` (the new
+    default) gives `geofabric` (DEM plus roughness `zo`) with the GeoFabrics backend and `dem` with raster,
+    resolved after any fallback (Matt's request). The first `geofabric` run failed with "Did not successfully
+    download the OSM data in 3 attempts". GeoFabrics' roughness stage fetches OSM roads through
+    OSMPythonTools, whose response cache defaults to `./cache` in the working directory, and the worker can't
+    create that in `/app`. GeoFabrics catches the PermissionError as a failed download. `gf.osm_cache()` now
+    points the cache at `$TERRAIN_DATA_DIR/geofabrics/osm`. `check` probes Overpass and OpenTopography.
+    Stage 1 runs no GeoFabrics bed estimation (no river, waterway or ocean inputs). Channels without ground
+    returns are interpolated (`data_source` 0); channel work is Stage 2's.
+
 **Interfaces for the Stage 2 agent.**
 
 - **S2-9.** `stage1/source.py` defines the interface the raster backend needs, and a stopgap reader

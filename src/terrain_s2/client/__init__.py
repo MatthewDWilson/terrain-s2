@@ -18,7 +18,8 @@ class TerrainClient:
         """The request part of the generator info these settings produce (for matching stored products)."""
         s = self.settings
         from ..stage1.profile import load
-        return {"product": s.product, "profile": load(s.profile)["name"], "resolution": int(s.resolution),
+        from ..settings import product_for
+        return {"product": product_for(s.product, s.backend), "profile": load(s.profile)["name"], "resolution": int(s.resolution),
                 "land_source": s.land_source, "buffer_m": s.buffer_m}
 
     def find(self, geometry, *, backend: str | None = None, contains: bool = True):

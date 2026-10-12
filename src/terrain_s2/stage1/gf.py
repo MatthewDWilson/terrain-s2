@@ -160,11 +160,26 @@ def run_geofabrics(ins: dict) -> None:
         root.setLevel(level)
 
 
+def osm_cache(folder) -> Path:
+    """Point OSMPythonTools' response cache (GeoFabrics' roughness stage downloads OSM roads through it) at a
+    writable folder. Its default is ``./cache`` in the working directory, which the worker can't create
+    (``/app`` is read-only for it); GeoFabrics then reports the PermissionError as "Did not successfully
+    download the OSM data in 3 attempts"."""
+    from OSMPythonTools.cachingStrategy import JSON, CachingStrategy
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    CachingStrategy.use(JSON, cacheDir=str(folder))
+    return folder
+
+
 def build(*, settings, profile: dict, aoi_geom, bounds, out_dir, name: str, key: str, info: dict, datasets,
           mapping, land_file, land_rec: dict, cache_dir, overrides: dict | None = None, log=print,
           runner=None) -> dict:
     """Run GeoFabrics for one product and bring its output up to the contract."""
     import geopandas as gpd
+    from ..settings import product_for
+    if settings.product == "auto":
+        settings = settings.replace(product=product_for("auto", "geofabrics"))
     from shapely.geometry import box
 
     from ..key import provenance
@@ -185,6 +200,8 @@ def build(*, settings, profile: dict, aoi_geom, bounds, out_dir, name: str, key:
         if k in dp:
             f = Path(dp[k]) if Path(dp[k]).is_absolute() else Path(dp["local_cache"]) / dp["subfolder"] / dp[k]
             f.unlink(missing_ok=True)
+    if settings.product == "geofabric":
+        osm_cache(Path(cache_dir) / "osm")
     (runner or run_geofabrics)(ins)
     t_gf = time.perf_counter() - t0
     nc = result_path(ins, settings.product)

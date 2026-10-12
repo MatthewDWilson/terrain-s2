@@ -140,6 +140,9 @@ def prepare(aoi, settings=None, *, aoi_crs=None, http=None, store=None, source=N
     if note:
         log(note)
         s = s.replace(backend=backend)
+    from ..settings import product_for
+    if s.product == "auto":                       # after any fallback: the backend decides
+        s = s.replace(product=product_for("auto", backend))
 
     if backend == "raster":
         from . import raster

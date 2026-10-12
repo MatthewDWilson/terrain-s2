@@ -8,7 +8,7 @@
 #   build             update the WSL mirror of terrain-s2 from GitHub (fast-forward only), refresh the version in
 #                     .env, then build all images (log to /mnt/d/EDDIE). Git work itself stays in the Windows clone.
 #   check             after 'docker compose up -d': containers, endpoints, terrain routes, worker toolchain, mounts
-#   e2e [raster|geofabrics] [resolution] [dem|geofabric]
+#   e2e [raster|geofabrics] [resolution] [auto|dem|geofabric]
 #                     POST /terrain/dem for the SH12 AOI, follow the task, inspect the product, repeat (cache hit)
 #   task <task id>    status of a terrain task; on failure the end of its traceback (full text to /mnt/d/EDDIE)
 #   products          the terrain_product registry (PostGIS): rows, backend, extents, and each product folder as
@@ -426,6 +426,8 @@ PY
             echo "  $d writable: $(touch "$d/.w" 2>&1 && rm "$d/.w" && echo yes)"
         done
         echo "  LINZ elevation STAC from the worker: $(curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://nz-elevation.s3-ap-southeast-2.amazonaws.com/catalog.json) (expect 200)"
+        echo "  OpenTopography catalogue: $(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "https://portal.opentopography.org/API/otCatalog?productFormat=PointCloud&minx=173.46&miny=-35.46&maxx=173.47&maxy=-35.45&outputFormat=json") (expect 200)"
+        echo "  OSM Overpass (roughness roads): $(curl -s -o /dev/null -w "%{http_code}" --max-time 20 http://overpass-api.de/api/status) (expect 200)"
         echo "  registry: $(python -c "from eddie_terrain.tables import get_store; s = get_store(); print(\"terrain_product ready on\", s.engine.url.render_as_string(hide_password=True))" 2>&1 | grep -v "|" | tail -1)"
         echo "  ping: $(celery -A eddie.tasks inspect ping -d terrain@$HOSTNAME 2>&1 | grep -c pong) pong"
         celery -A eddie.tasks inspect registered -d terrain@$HOSTNAME 2>/dev/null | grep -o "eddie_terrain[a-z_.]*" | sed "s/^/  task: /"
@@ -464,7 +466,7 @@ PY' 2>&1 | tail -8 | sed 's/^/  /'
 
 # ------------------------------------------------------------------------------------------------ e2e
 e2e() {
-    local backend="${1:-raster}" res="${2:-8}" product="${3:-dem}"
+    local backend="${1:-raster}" res="${2:-8}" product="${3:-auto}"
     cd "$INST" || exit 1
     local stamp out api="http://localhost:${P_API}"
     stamp="$(date +%Y%m%d_%H%M)"; out="/mnt/d/EDDIE/terrain_e2e_${backend}_${res}m_${stamp}"; mkdir -p "$out"
@@ -615,5 +617,5 @@ case "${1:-setup}" in
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [dem|geofabric]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac
