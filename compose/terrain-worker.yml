@@ -1,0 +1,59 @@
+# Terrain worker overlay (integration plan 9.2). Adds one service to an EDDIE deployment; it does not copy the
+# core compose file. From the deployment folder (FReDT, Smart Ideas, ...):
+#
+#   docker compose -f docker-compose.yml -f <terrain-s2>/compose/terrain-worker.yml up -d
+#   (v5 deployments with the D9 networks also add -f <terrain-s2>/compose/terrain-worker.v5-networks.yml)
+#
+# TERRAIN_S2_DIR: path of the terrain-s2 checkout relative to the deployment folder (default lib/terrain-s2,
+# beside lib/eddie). No host ports (D9). Products go to the terrain_products volume (/terrain_products);
+# downloads and snapshots (LAZ tiles, COG item indexes, vector snapshots) to the terrain_data volume.
+volumes:
+  terrain_data:
+  terrain_products:
+
+services:
+  terrain_worker:
+    build:
+      context: ${TERRAIN_S2_DIR:-lib/terrain-s2}
+      dockerfile: docker/terrain-worker.Dockerfile
+      args:
+        EDDIE_REF: ${EDDIE_REF:-v4.0.0}
+        # required: they are recorded in every generator key (git describe --tags --always; git rev-parse HEAD)
+        TERRAIN_VERSION: ${TERRAIN_VERSION:?set TERRAIN_VERSION to the terrain-s2 git describe}
+        TERRAIN_COMMIT: ${TERRAIN_COMMIT:?set TERRAIN_COMMIT to the terrain-s2 commit}
+        TERRAIN_UID: ${TERRAIN_UID:-1000}
+        TERRAIN_GID: ${TERRAIN_GID:-1000}
+    # No 'image:' here: TERRAIN_VERSION (a PEP 440 version such as 0.1.0.post3+g8c1677b) is not a valid Docker tag,
+    # so Compose names the image after the project (<project>-terrain_worker).
+    restart: always
+    env_file:
+      - .env
+      - api_keys.env
+      - .env.docker-override
+    environment:
+      TERRAIN_DATA_DIR: /terrain_data
+      TERRAIN_PRODUCT_DIR: /terrain_products
+      TERRAIN_WORKER_CONCURRENCY: ${TERRAIN_WORKER_CONCURRENCY:-1}
+      TERRAIN_GF_MEMORY_LIMIT: ${TERRAIN_GF_MEMORY_LIMIT:-8GiB}
+      TERRAIN_GF_CORES: ${TERRAIN_GF_CORES:-2}
+    # Products in their own volume, not inside the core's stored_data: a shared named volume takes its ownership
+    # from whichever image mounts it first, and the terrain worker (uid TERRAIN_UID) and the core images (their own
+    # nonroot user) would then lock each other out (seen on the workstation: the backend could not create
+    # /stored_data/geoserver/data). Consumers that read products (FReDT, Smart Ideas) mount terrain_products
+    # read-only at the same path, so the registry's paths resolve unchanged.
+    volumes:
+      - terrain_data:/terrain_data
+      - terrain_products:/terrain_products
+    healthcheck:
+      test: curl --fail -s http://localhost:5001/ || exit 1
+      interval: 30s
+      timeout: 25s
+      retries: 10
+    depends_on:
+      - db_postgres
+      - message_broker
+    deploy:
+      resources:
+        limits:
+          # a full LINZ tile needs about 9 GB for Stage 2; GeoFabrics memory is TERRAIN_GF_MEMORY_LIMIT x cores
+          memory: ${TERRAIN_WORKER_MEMORY:-24g}

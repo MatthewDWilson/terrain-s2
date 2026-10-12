@@ -1,0 +1,11 @@
+.git
+data/
+out/
+**/__pycache__
+*.egg-info
+.pytest_cache
+build/
+dist/
+tests/
+eddie/tests/
+examples/*.tif

@@ -1,0 +1,73 @@
+# Terrain worker environment (integration plan 9.2): GeoFabrics 1.1.30 + Stage 2 + the EDDIE core's runtime
+# dependencies, all from conda-forge (GDAL, PROJ, PDAL from one build ecosystem).
+#   mamba env create -f environment-worker.yml
+# Then, without letting pip touch the conda packages:
+#   pip install --no-deps geofabrics==1.1.30 osmpythontools "eddie @ git+https://github.com/GeospatialResearch/Digital-Twins@<tag>"
+#   pip install --no-deps . ./eddie
+# docker/terrain-worker.Dockerfile does exactly this. Solve this file first in W9 (plan section 14 risk 1); if
+# it does not solve, fall back to two images (GeoFabrics; Stage 2) sharing the queue-name prefix.
+name: terrain-worker
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  # geospatial stack
+  - gdal>=3.9
+  - libgdal-netcdf       # GDAL's netCDF driver is a separate package on conda-forge (netcdf:"<file>":z)
+  - rasterio>=1.4
+  - pyproj
+  - shapely>=2.0
+  - geopandas>=1.0
+  - pyogrio
+  - xarray
+  - netcdf4
+  - rioxarray
+  # GeoFabrics 1.1.30 (pip, --no-deps) and its dependencies
+  - pdal
+  - python-pdal>=3.3
+  - dask
+  - distributed
+  - geoapis>=0.3.4
+  - boto3
+  - scipy
+  # imported by osmpythontools (pip, --no-deps), which GeoFabrics imports at module level
+  - beautifulsoup4
+  - lxml
+  - geojson
+  - ujson
+  - python-dateutil
+  # Stage 2 [detect]
+  - numpy>=2.0
+  - affine
+  - numba>=0.60
+  - pyflwdir>=0.5.10
+  - scikit-image>=0.24
+  - matplotlib-base
+  - psutil
+  # library base and [acquire]
+  # SQLAlchemy 2.0, as the core pins (2.0.48): from 2.1 a plain postgresql:// URL (the core's get_database)
+  # means psycopg 3, which neither image has
+  - sqlalchemy>=2.0,<2.1
+  - psycopg2
+  - pyyaml
+  - requests
+  # EDDIE core runtime (core installed with pip --no-deps). Not gunicorn or gevent: the worker serves no HTTP,
+  # and gunicorn has no Windows build (the same file creates the workstation environment).
+  - celery
+  - redis-py
+  - flask
+  - flask-cors
+  - pywps
+  - python-dotenv
+  - pandas
+  - geoalchemy2        # eddie.digitaltwin.tables (the core declares the old 'geoalchemy')
+  - aiohttp
+  # tests inside the worker (scripts: eddie_step8_terrain.sh test)
+  - pytest
+  - pyflakes
+  # image build
+  - conda-pack
+  - pip
+  - pip:
+      - flask_swagger_ui

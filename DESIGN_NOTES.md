@@ -1124,7 +1124,157 @@ raster backend is built on the shared reader rather than beside it. ML-0 starts 
 partition; S2-7 and S2-8 come before ML-0 runs at scale, since the structures layer is the label and
 prediction schema. The rest of section 7 follows in the plan's order.
 
-## 10. ML-0 and ML-1 build (from 9 Oct 2026)
+## 10. Stage 1 and the EDDIE module (Cowork, 9 Oct 2026)
+
+Work packages W1-W6, W8 and W9 of the integration plan (section 11) are implemented on branch `stage1/w1-w9`, on
+`439f01d`. W7 (quality evaluation) and the live exits of W3, W4, W5 and W9 run on the workstation
+(`docs/stage1_workstation.md`). W11 drafts are in `docs/w11_amendments_and_issues.md`. Existing Stage 2 modules
+are untouched; the shared files changed are `pyproject.toml`, `__init__.py` (version), `.gitignore`, a README
+section and this section.
+
+**Layout (plan section 5).** `io/contract.py`, `key.py`, `settings.py`, `store.py`, `client/` (with `compat.py`),
+`cli.py`, `stage1/` (`dem.py` entry point, `raster.py`, `gf.py`, `catalogue.py`, `land.py`, `aggregate.py`,
+`aoi.py`, `source.py`, `profile.py`, `compare.py`, `profiles/nz.yml`, `templates/`), `eddie/` (distribution
+`eddie-terrain`), `docker/`, `compose/`, `environment-worker.yml`. 127 tests pass (8 skipped): 38 new ones for Stage 1
+and the module, the 89 existing ones unchanged.
+
+**Verified in the sandbox.**
+
+- GDAL reads `netcdf:"<file>":z` with the right transform and the compound CRS. FReDT's read path
+  (`rioxarray.open_rasterio(...).sel(band=1)`, `.description`, `.spatial_ref.crs_wkt`, `.rio.bounds()`) works
+  on our products.
+- The raster backend on a fake STAC of local COGs: newest survey first, national fill, survey edge without gaps,
+  checksums in the key and provenance, 8 m by block mean.
+- GeoFabrics 1.1.30's real runner runs our template end to end (raw, then hydrologic DEM) on its coarse-DEM
+  path, at 1 m and 8 m, with PDAL stubbed. The grid lands exactly on the snapped bounds; the output is
+  finished to the contract.
+- `eddie_terrain` against core `v4.0.0` and `v5-integration`:
+  - discovery, the three tasks, the route to queue `terrain`, the blueprint routes;
+  - no heavy imports (GeoFabrics, scipy, numba, dask, Stage 2) in the backend or the default worker;
+  - the `ensure_dem` body end to end, with the shim finding the product for FReDT's `wkt_to_gdf` rectangle.
+- `docker compose config` merges the overlay with core v4.0.0's compose file, with no host ports.
+
+**Decisions taken while building (for review).**
+
+1. **Product folder.** `<TERRAIN_PRODUCT_DIR>/<generator_key>/<grid_id>/`. The key has no AOI in it, so
+   `grid_id` (a hash of the snapped grid and CRS) keeps two AOIs made from the same inputs apart. Clips go to
+   `<key>/clips/<id>/`, a namespace builds never write.
+2. **`terrain_product` columns added.** `config_key` (the key without the source version) and `grid` (the
+   snapped grid box). With them, a larger product serves a smaller AOI (spatial reuse) when the inputs under
+   the smaller one are unchanged (`store.sources_compatible`). When the grids coincide, the parent's files are
+   registered for the new AOI.
+3. **Key additions.** `backend` in the request part; a profile hash; the land file's sha256 for
+   `land_source=file`. GeoFabrics processing settings (memory, cores, chunk size) stay out of the key.
+4. **AOI from EDDIE.** WKT in EPSG:4326. With `TERRAIN_AOI_MODE=bbox` (the default), the product AOI is the
+   projected bounding rectangle, as `eddie.tasks.wkt_to_gdf` gives FReDT. That is how the shim finds the
+   product for FReDT's catchment.
+5. **GeoFabrics paths.** GeoFabrics requires the result folder inside `local_cache`
+   (`processor.get_vector_or_raster_paths`), so `local_cache` is the product folder and `downloads` is an
+   absolute path to the shared LAZ cache (`$TERRAIN_DATA_DIR/geofabrics/downloads`). `chunk_size` scales as
+   800 / resolution (100 at 8 m, as in Document 2). The runner skips stages whose outputs exist, so outputs left
+   by an interrupted build are deleted first. Root logging, which GeoFabrics reconfigures, is restored after
+   each run.
+6. **Templates.** `datasets` and `dataset_mapping` sit in `default`, so the roughness stage sees the point
+   clouds too. Roughness keeps LAS classes `[1, 2, 4, 6, 9]`, as in GeoFabrics' own multi-stage example (a W7
+   check). Its other settings are GeoFabrics' defaults (OSM roads).
+7. **otCatalog.** `include_federated=false` (only OpenTopography-hosted clouds can be fetched from `pc-bulk`).
+   Survey dates come from `temporalCoverage`, else `dateCreated`; undated datasets rank last. The response is
+   kept in the snapshot store.
+8. **Land.** The polygon is clipped to the product grid + 100 m, not the AOI + 100 m, so a 200 m Stage 2
+   buffer keeps its land. For GeoFabrics with `coverage`, the tile indexes are fetched first, to where geoapis
+   keeps them.
+9. **Build lock.** An OS file lock (`fcntl`/`msvcrt`), released by the kernel when a worker dies, so a killed
+   build never blocks the queue.
+10. **Worker image.** pip `--no-deps` for `geofabrics`, `osmpythontools` and the core; everything else from
+    conda-forge, including `libgdal-netcdf` (conda-forge ships GDAL's netCDF driver separately).
+    `TERRAIN_VERSION` and `TERRAIN_COMMIT` are required build arguments, because the generator key records the
+    version and commit and the build context has no `.git`.
+
+11. **Terrain worker pool: threads, not prefork** (corrects plan 9.2). GeoFabrics starts a dask `LocalCluster` with
+    worker processes in every stage. A Celery prefork child is a daemonic process and may not have children:
+    reproduced in the sandbox, it fails with "daemonic processes are not allowed to have children" and then
+    "Nanny failed to start". In a thread of the main worker process the cluster starts normally (also
+    reproduced). FReDT's worker uses `-P threads` too. Concurrency stays 1 per container; scale out with more
+    containers, since each GeoFabrics run binds dask's dashboard port.
+12. **Workstation deployment (12 Oct 2026).** The module runs as slot 5 of Matt's WSL multi-instance setup
+    (`EDDIE_dev_env_install_guide.md`): `docs/wsl/eddie_step8_terrain.sh`, with steps in `docs/stage1_workstation.md`.
+    - **Core instance:** pinned to v5-integration (v4.0.0 is one command away), built with Step 5's core harness
+      plus `terrain-s2` (base install) and `eddie_terrain` in the backend and core-worker images.
+    - **Terrain worker:** built from this repository's Dockerfile on the same core revision.
+    - **Cache and products:** bind mounts under `~/eddie/data/terrain`, with the worker running as the WSL user
+      (`TERRAIN_UID`/`TERRAIN_GID` build arguments).
+    - **Build base:** the worker build now uses the same `continuumio/miniconda3:26.1.1` base as the core and
+      module builds.
+
+13. **Products in their own volume** (corrects plan 9.2, which put them under `stored_data/terrain`). A named volume
+    takes its ownership from the first image that mounts it. The terrain worker (uid `TERRAIN_UID`) and the core
+    images (their own `nonroot` user) then lock each other out. On the workstation the worker created
+    `stored_data` first, and the backend could not create `/stored_data/geoserver/data`. Products now go to
+    `terrain_products` (`/terrain_products`). Consumers mount it read-only at the same path, so registry paths
+    resolve unchanged; the slot-5 backend and core worker already do.
+
+14. **Worker logs and task errors** (core finding F3). The v5 core's `setup_logging()` sets `propagate = False`
+    on the `celery` and `kombu` loggers. A worker on v5 then logs nothing after its banner: no "received", no
+    "raised unexpected", no traceback. v4 is unaffected. The terrain worker image sets `TERRAIN_CELERY_LOGS=1`,
+    and `eddie_terrain.tasks` then turns `celery` propagation back on, at import and on `after_setup_logger`.
+    Other containers keep the core's choice. Separately, the core's `OnFailureStateTask` stores the traceback as
+    a list of lines, which a client sees as a tuple. `GET /terrain/tasks/<id>` now returns it as text. Worth
+    raising with the core team: a worker that hides its own failures is hard to operate.
+
+15. **SQLAlchemy 2.0 in the worker.** The first live task failed with `No module named 'psycopg'`. The worker
+    environment had SQLAlchemy 2.1, which maps a plain `postgresql://` URL (the core's `get_database`) to
+    psycopg 3; the core pins 2.0.48 with psycopg2. The worker now pins `<2.1`, the build checks that the
+    driver loads, `check` opens the registry from the worker, and the library's own default URL names
+    `postgresql+psycopg2` explicitly.
+
+16. **First GeoFabrics run (12 Oct 2026), and what followed.** SH12 at 8 m through GeoFabrics: 8 LAZ tiles of
+    NZ18_North (65 MB) downloaded, raw and hydrologic DEM in 33 s, gaps 0. Against the raster backend at 8 m
+    the range agrees within 0.1 m (min -0.08 vs -0.10 m, max 65.45 vs 65.36 m); W7 compares properly.
+    - **otCatalog identifiers.** Point clouds are `OTLAS.<n>`, not `OT.<n>`; the hosted test now accepts
+      `OT` plus a product code and a dot. The real reply is a test fixture.
+    - **PDAL plugin errors.** conda-forge's PDAL ships `readers.hdf` and `readers.icebridge`, which need
+      `libhdf5_cpp.so.320`, absent from the solved environment. PDAL loads all plugins at start-up and
+      printed the failures on every use, though LAZ reading (built in) was unaffected. The image now drops
+      plugins with missing libraries and the build fails if load errors remain.
+    - **GeoTIFF at every resolution** (Matt's request; amends plan 4.3). `terrain network` checks the
+      resolution itself.
+    - **x/y without `_FillValue`** in our netCDF (CF coordinate variables); `spatial_ref` stays a coordinate.
+
+17. **Roughness by default with GeoFabrics; the OSM cache** (12 Oct 2026). `TERRAIN_PRODUCT=auto` (the new
+    default) gives `geofabric` (DEM plus roughness `zo`) with the GeoFabrics backend and `dem` with raster,
+    resolved after any fallback (Matt's request). The first `geofabric` run failed with "Did not successfully
+    download the OSM data in 3 attempts". GeoFabrics' roughness stage fetches OSM roads through
+    OSMPythonTools, whose response cache defaults to `./cache` in the working directory, and the worker can't
+    create that in `/app`. GeoFabrics catches the PermissionError as a failed download. `gf.osm_cache()` now
+    points the cache at `$TERRAIN_DATA_DIR/geofabrics/osm`. `check` probes Overpass and OpenTopography.
+    Stage 1 runs no GeoFabrics bed estimation (no river, waterway or ocean inputs). Channels without ground
+    returns are interpolated (`data_source` 0); channel work is Stage 2's.
+
+**Interfaces for the Stage 2 agent.**
+
+- **S2-9.** `stage1/source.py` defines the interface the raster backend needs, and a stopgap reader
+  (`InterimLinzSource`) built on `linz_elevation`: all `<region>/<survey>/dem_1m/2193` collections meeting the
+  area, profile priority first, newest capture first, the national mosaic last (fill only), and a per-cell
+  survey index. When `acquire/elevation.py` exposes `ElevationSource(profile, http=, cache_dir=, stac_root=)`
+  with `plan(bounds, product)` and `read(plan)` as documented there, `get_source` uses it and the stopgap can
+  go.
+- **S2-2.** Until `dataio` reads netCDF, `terrain network --dem <Stage 1 product>` passes the 1 m COG copy.
+  When S2-2 lands, set `dataio.READS_NETCDF = True` and the CLI will pass the `.nc`.
+- **S2-13.** `key.stage2_components(...)` and `key.provenance(...)` are ready for `run.py`.
+- **S2-1.** `cli.py` calls `terrain_s2.run.main(argv)` when it exists, and `eddie_terrain.tasks.ensure_network`
+  calls `terrain_s2.run.network(dem, dsm, aoi, params=, out=)`. Until then, `terrain network` runs the script.
+- **Tests.** The Stage 1 tests skip when `xarray`, `netCDF4`, `rioxarray` or `SQLAlchemy` are missing. The base
+  install needs them (and `libgdal-netcdf` for GDAL's netCDF reads). `environment.yml` is left to the Stage 2
+  agent: adding `xarray netcdf4 rioxarray sqlalchemy libgdal-netcdf` there runs everything in one environment.
+
+**Open (needs Matt or the workstation).**
+
+- An AOI that straddles two LINZ surveys, for the W3 exit.
+- The otCatalog date check (W4); the commands are in the workstation notes.
+- Tagging `v0.1.0`, so versions read `0.1.x` rather than `0.0.1.devN`.
+- Push access for Cowork, or apply the patch series by hand.
+
+## 11. ML-0 and ML-1 build (from 9 Oct 2026)
 
 **Plan agreed with Matt** (phases in §8): tiles selected only where council data exist (Waimakariri, HBRC,
 Environment Southland, Auckland, ECan); KiwiRail, LINZ bridges and OSM used as labels inside those tiles
