@@ -1321,6 +1321,12 @@ the command line. Outputs identical to the old script again (SH12, AOI2, canterb
 network`). `compare_runs.py --layers-only` skips rasters (for runs with `--rasters none`). Test failures in
 the sandbox after the merge are the Stage 1 branch's own, from optional packages not installed here
 (OSMPythonTools, the EDDIE core for `eddie/tests`): the same 6 failures and 2 errors on stage1/w1-w9 alone.
+On Matt's workstation (Stage 2 environment) the same: 7 failed, 2 errors. They were meant to skip: the guard
+in `eddie/tests/conftest.py` tried `import eddie`, which succeeds without the core because the repository's
+own `eddie/` folder is importable as a namespace package (the repository root is on `sys.path`). The guard now
+looks for `eddie.tasks`, `eddie.app` and Flask; `test_product_auto_and_osm_cache` skips its OSM part without
+OSMPythonTools (it comes with GeoFabrics). Sandbox: 123 passed, 19 skipped, none failing. (Guards in Cowork's
+files, changed by the Stage 2 agent to unblock the merge; for Cowork's review.)
 
 
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)

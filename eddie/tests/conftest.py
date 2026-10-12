@@ -23,11 +23,20 @@ def pytest_configure(config):
         seen[lk] = k
 
 
-def pytest_collection_modifyitems(config, items):
+def _core_installed() -> bool:
+    """The EDDIE core, not this repository's own ``eddie/`` folder: with the repository root on ``sys.path``,
+    ``import eddie`` finds that folder as a namespace package and succeeds without the core (13 Oct 2026),
+    so look for the core's modules and for Flask, which the module's blueprint imports."""
+    import importlib.util
     try:
-        import eddie  # noqa: F401
-    except ImportError:
-        skip = pytest.mark.skip(reason="EDDIE core (eddie) not installed")
+        return all(importlib.util.find_spec(m) is not None for m in ("eddie.tasks", "eddie.app", "flask"))
+    except (ImportError, ValueError):
+        return False
+
+
+def pytest_collection_modifyitems(config, items):
+    if not _core_installed():
+        skip = pytest.mark.skip(reason="EDDIE core (eddie.tasks, eddie.app) or Flask not installed")
         for it in items:
             if "eddie/tests" in str(it.fspath).replace("\\", "/"):
                 it.add_marker(skip)

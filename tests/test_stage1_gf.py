@@ -220,6 +220,8 @@ def test_product_auto_and_osm_cache(tmp_path, monkeypatch):
         from_env({"TERRAIN_PRODUCT": "geofabric"})            # roughness needs the GeoFabrics backend
     # OSMPythonTools' default cache is ./cache: in a read-only working directory it can't be created, which
     # GeoFabrics reports as a failed OSM download. osm_cache() points it at a writable folder.
+    # OSMPythonTools comes with GeoFabrics (terrain worker, [geofabrics] extra): skipped without it.
+    pytest.importorskip("OSMPythonTools")
     from OSMPythonTools.cachingStrategy import CachingStrategy
     ro = tmp_path / "ro"
     ro.mkdir()
