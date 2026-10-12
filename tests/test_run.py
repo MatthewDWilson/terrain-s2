@@ -7,7 +7,7 @@ import numpy as np
 import rasterio
 from shapely.geometry import box
 
-from terrain_s2.run import NetworkRun, network
+from terrain_s2.run import NetworkResult, NetworkRun, main, network
 from terrain_s2.synthetic import make_scene
 
 
@@ -26,9 +26,10 @@ def _write(tmp_path):
 
 def test_network_entry_point(tmp_path):
     d = _write(tmp_path)
-    run = network(d / "dem.tif", d / "aoi.geojson", d / "out", dsm=d / "dsm.tif", buffer=50.0, rasters="hydro",
+    run = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "out", params={"buffer": 50.0, "rasters": "hydro"},
                   device="cpu", keep=True)
-    assert isinstance(run, NetworkRun)
+    assert isinstance(run, NetworkResult) and NetworkRun is NetworkResult
+    assert run.paths["network"].exists() and run.paths["hydro"].exists() and run.perf["total_s"] > 0
     info = json.loads((d / "out" / "network.json").read_text())
     assert info["channels_km"] == run.info["channels_km"] > 0 and info["dem"] == [str(d / "dem.tif")]
     assert {"channels", "crossings"} <= set(run.layers) and (d / "out" / "hydro.tif").exists()
@@ -36,5 +37,20 @@ def test_network_entry_point(tmp_path):
     s = run.state
     assert s["w"].z.shape == s["sk"].shape and s["rem"] is not None and np.isfinite(s["rem"]).any()
     assert len(s["cr"]) >= len(run.layers["crossings"])                  # window vs written (AOI) layers
-    assert network(d / "dem.tif", d / "aoi.geojson", d / "out2", buffer=50.0, rasters="none", device="cpu",
+    assert network(d / "dem.tif", None, d / "aoi.geojson", out=d / "out2", buffer=50.0, rasters="none", device="cpu",
                    conditioned=False).state is None
+
+
+def test_geometry_aoi_params_and_cli(tmp_path):
+    """The Stage 1 module's call (eddie_terrain.tasks.ensure_network): network(dem, None, geometry, params=..., out=...)."""
+    import pytest
+    d = _write(tmp_path)
+    g = gpd.read_file(d / "aoi.geojson").geometry.iloc[0]
+    a = network(d / "dem.tif", None, g, params={"buffer": 50.0, "rasters": "none", "device": "cpu"}, out=d / "g")
+    b = network(d / "dem.tif", None, d / "aoi.geojson", buffer=50.0, rasters="none", device="cpu", out=d / "p")
+    assert a.info["crossings"] == b.info["crossings"] and a.info["channels_km"] == b.info["channels_km"]
+    with pytest.raises(ValueError, match="unknown network option"):
+        network(d / "dem.tif", None, g, params={"bufer": 50.0})
+    assert main(["--dem", str(d / "dem.tif"), "--aoi", str(d / "aoi.geojson"), "--out", str(d / "cli"), "--buffer", "50",
+                 "--rasters", "none", "--device", "cpu", "--no-conditioned"]) == 0
+    assert (d / "cli" / "network.json").exists()

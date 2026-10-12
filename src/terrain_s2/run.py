@@ -16,11 +16,11 @@ Also ``network.json`` (summary, timings, peak memory) and, with ``rasters``, ``f
 ``hydro.tif``, ``conditioned.tif`` and ``rasters.json``.
 
     from terrain_s2.run import network
-    run = network("dem.tif", "aoi.geojson", "out/site", dsm="dsm.tif", roads="roads.gpkg", rasters="none")
-    run.info["crossings"], run.layers["crossings"]
+    res = network("dem.tif", "dsm.tif", "aoi.geojson", roads="roads.gpkg", out="out/site", rasters="none")
+    res.info["crossings"], res.layers["crossings"], res.paths["network"]
 
 ``keep=True`` also returns the in-memory state (DEM window, pipeline result, network, rasters) as
-``run.state``, for feature extraction while the arrays are in memory (ML-0). It holds the run's memory
+``res.state``, for feature extraction while the arrays are in memory (ML-0). It holds the run's memory
 (~220 bytes per cell), so it is off by default.
 """
 from __future__ import annotations
@@ -42,11 +42,24 @@ from .perf import StageTimer
 
 
 @dataclass
-class NetworkRun:
-    info: dict                                  # what network.json holds
+class NetworkResult:
+    info: dict                                  # what network.json holds (summary, conditioned pass, perf)
     out: Path
     layers: dict = field(default_factory=dict)  # name -> GeoDataFrame, as written (cropped to the AOI)
+    paths: dict = field(default_factory=dict)   # network, summary, features, hydro, conditioned, rasters_json
+    provenance: dict | None = None              # S2-13 (provenance.json) when it lands
     state: dict | None = None                   # keep=True: w, dsm, res, net, sk, fp, rem, rd, cond, ch, cr, ...
+
+    @property
+    def perf(self) -> dict:
+        return self.info.get("perf", {})
+
+
+NetworkRun = NetworkResult                      # the name in the first S2-1 commit (aa975d8)
+
+OPTIONS = dict(stream_model=None, buffer=200.0, max_hand=10.0, clean=True, aoi_crs=None, assume_crs=None,
+               device="auto", height_model="rem", conditioned=True, burn_m=0.25, context=None, rasters="all",
+               profile=False, keep=False)
 
 
 def _paths(p):
@@ -151,17 +164,36 @@ def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, 
     (out / "rasters.json").write_text(json.dumps(meta, indent=2))
 
 
-def network(dem, aoi, out, *, dsm=None, roads=None, stream_model=None, buffer=200.0, max_hand=10.0, clean=True,
-            aoi_crs=None, assume_crs=None, device="auto", height_model="rem", conditioned=True, burn_m=0.25,
-            context=None, rasters="all", profile=False, keep=False) -> NetworkRun:
-    """Run the network chain for one AOI. Arguments mirror ``scripts/run_network.py`` (``clean`` and
-    ``conditioned`` negate ``--no-clean`` and ``--no-conditioned``); ``dem`` and ``dsm`` are a path or a
-    list of paths (mosaicked)."""
-    a = SimpleNamespace(dem=_paths(dem), dsm=_paths(dsm), aoi=str(aoi), out=str(out), roads=str(roads) if roads else None,
-                        stream_model=str(stream_model) if stream_model else None, buffer=buffer, max_hand=max_hand,
-                        no_clean=not clean, aoi_crs=aoi_crs, assume_crs=assume_crs, device=device,
-                        height_model=height_model, no_conditioned=not conditioned, burn_m=burn_m,
-                        context=str(context) if context else None, rasters=rasters, profile=profile)
+def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **options) -> NetworkResult:
+    """Run the network chain for one AOI (integration plan S2-1).
+
+    ``dem``, ``dsm``: a path or a list of paths (mosaicked). ``aoi``: a path, a shapely geometry, a GeoSeries
+    or a GeoDataFrame (a geometry without a CRS is taken in ``aoi_crs``, else the DEM's CRS). ``roads``: a
+    vector path. ``params`` and ``options`` set the run options (``OPTIONS``: the script's flags, ``clean``
+    and ``conditioned`` negating ``--no-clean`` and ``--no-conditioned``); ``options`` win. ``out``: the
+    output folder (a temporary folder if None)."""
+    opts = dict(OPTIONS)
+    for src in (params or {}), options:
+        bad = sorted(set(src) - set(OPTIONS))
+        if bad:
+            raise ValueError(f"unknown network option(s) {bad}; known: {sorted(OPTIONS)}")
+        opts.update(src)
+    if aoi is None:
+        raise ValueError("network() needs an aoi (path, geometry or GeoDataFrame)")
+    if out is None:
+        import tempfile
+        out = tempfile.mkdtemp(prefix="terrain_network_")
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    aoi_path = _aoi_path(aoi, out, opts["aoi_crs"], _paths(dem)[0], opts["assume_crs"])
+    a = SimpleNamespace(dem=_paths(dem), dsm=_paths(dsm), aoi=aoi_path, out=str(out), roads=str(roads) if roads else None,
+                        stream_model=str(opts["stream_model"]) if opts["stream_model"] else None, buffer=opts["buffer"],
+                        max_hand=opts["max_hand"], no_clean=not opts["clean"], aoi_crs=opts["aoi_crs"],
+                        assume_crs=opts["assume_crs"], device=opts["device"], height_model=opts["height_model"],
+                        no_conditioned=not opts["conditioned"], burn_m=opts["burn_m"],
+                        context=str(opts["context"]) if opts["context"] else None, rasters=opts["rasters"],
+                        profile=opts["profile"])
+    keep = opts["keep"]
     import geopandas as gpd
     from shapely.geometry import LineString, box
     prof = None
@@ -324,8 +356,67 @@ def network(dem, aoi, out, *, dsm=None, roads=None, stream_model=None, buffer=20
     if gpkg.exists():
         import pyogrio
         written = {n: gpd.read_file(gpkg, layer=n) for n, _ in pyogrio.list_layers(gpkg)}
+    paths = {k: out / f for k, f in (("network", "network.gpkg"), ("summary", "network.json"), ("features", "features.tif"),
+                                     ("hydro", "hydro.tif"), ("conditioned", "conditioned.tif"),
+                                     ("rasters_json", "rasters.json")) if (out / f).exists()}
     state = None
     if keep:
         state = dict(w=w, dsm=dsm, res=res, net=net, sk=sk, fp=fp, rem=hand if fp is not None else None, rd=rd,
                      cond=cond, ch=ch, cr=cr, rep=rep, culvert_edges=culvert_edges, aoi=aoi, crs=hcrs)
-    return NetworkRun(info=info, out=out, layers=written, state=state)
+    return NetworkResult(info=info, out=out, layers=written, paths=paths, state=state)
+
+
+def _aoi_path(aoi, out, aoi_crs, dem0, assume_crs):
+    """A path for dataio.read_aoi: as given, or the geometry written to <out>/aoi_input.geojson."""
+    if isinstance(aoi, (str, Path)):
+        return str(aoi)
+    import geopandas as gpd
+    if isinstance(aoi, gpd.GeoDataFrame):
+        g = aoi
+    elif isinstance(aoi, gpd.GeoSeries):
+        g = gpd.GeoDataFrame(geometry=aoi)
+    else:
+        g = gpd.GeoDataFrame(geometry=[aoi])
+    if g.crs is None:
+        g = g.set_crs(aoi_crs or dataio.processing_crs(dem0, assume_crs))
+    f = Path(out) / "aoi_input.geojson"
+    g[["geometry"]].to_file(f, driver="GeoJSON")
+    return str(f)
+
+
+def main(argv=None):
+    """The command line (``scripts/run_network.py`` and ``terrain network``)."""
+    import argparse
+    import sys
+    ap = argparse.ArgumentParser(prog="run_network", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dem", nargs="+", required=True)
+    ap.add_argument("--dsm", nargs="*", default=None)
+    ap.add_argument("--aoi", required=True)
+    ap.add_argument("--aoi-crs")
+    ap.add_argument("--roads", help="optional road centrelines (any vector format)")
+    ap.add_argument("--stream-model", help="optional trained stream/drain model (joblib)")
+    ap.add_argument("--buffer", type=float, default=200.0)
+    ap.add_argument("--max-hand", type=float, default=10.0, help="floodplain: height above nearest drainage (m); <= 0 disables")
+    ap.add_argument("--no-clean", action="store_true", help="keep isolated pieces and short dangling reaches")
+    ap.add_argument("--assume-crs")
+    ap.add_argument("--device", default="auto")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--profile", action="store_true", help="cProfile the run: <out>/profile.prof and profile_top.txt")
+    ap.add_argument("--height-model", choices=["rem", "hand"], default="rem",
+                    help="height above drainage for the floodplain and rasters: relative elevation model (IDW of channel "
+                         "elevations, continuous) or HAND (nearest drainage along flow); default rem")
+    ap.add_argument("--no-conditioned", action="store_true",
+                    help="skip the conditioned hydrology pass (conditioned.tif, residual_ponds)")
+    ap.add_argument("--burn-m", type=float, default=0.25, help="channel burn below the local bed, conditioned pass (m)")
+    ap.add_argument("--context", help="context.gpkg with rivers_rec2 to seed upstream area at the window edge "
+                                      "(default: context.gpkg beside the DEM, if present)")
+    ap.add_argument("--rasters", choices=["all", "hydro", "none"], default="all",
+                    help="write features.tif (DEM feature stack) and hydro.tif (HAND, upstream area, ...), cropped "
+                         "to the AOI, with rasters.json describing the bands (all: both; hydro: hydro.tif only)")
+    a = ap.parse_args(argv if argv is not None else sys.argv[1:])
+    res = network(a.dem, a.dsm, a.aoi, roads=a.roads, out=a.out, stream_model=a.stream_model, buffer=a.buffer,
+                  max_hand=a.max_hand, clean=not a.no_clean, aoi_crs=a.aoi_crs, assume_crs=a.assume_crs,
+                  device=a.device, height_model=a.height_model, conditioned=not a.no_conditioned, burn_m=a.burn_m,
+                  context=a.context, rasters=a.rasters, profile=a.profile)
+    print(json.dumps(res.info))
+    return 0

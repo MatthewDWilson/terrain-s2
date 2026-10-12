@@ -4,6 +4,7 @@ every raster band, rasters.json and network.json (timings and paths excepted). F
 not change outputs (e.g. S2-1) and for CPU vs GPU runs.
 
     python scripts/compare_runs.py D:/eddie_data/runs/a D:/eddie_data/runs/b
+    python scripts/compare_runs.py a b --layers-only     # rasters skipped (e.g. one run had --rasters none)
 """
 import argparse
 import json
@@ -13,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 
-def compare(a, b, log=print):
+def compare(a, b, log=print, layers_only=False):
     import geopandas as gpd
     import pyogrio
     import rasterio
@@ -31,7 +32,7 @@ def compare(a, b, log=print):
                 and all(g1.equals_exact(g2, 0) for g1, g2 in zip(x.geometry, y.geometry)))
         log(f"layer {n}: {len(x)} / {len(y)} rows, {'identical' if same else 'DIFFERENT'}")
         ok &= same
-    for f in ("features.tif", "hydro.tif", "conditioned.tif"):
+    for f in () if layers_only else ("features.tif", "hydro.tif", "conditioned.tif"):
         pa, pb = a / f, b / f
         if not (pa.exists() or pb.exists()):
             continue
@@ -55,7 +56,7 @@ def compare(a, b, log=print):
         log("network.json differs: " + json.dumps({k: (ia.get(k), ib.get(k)) for k in set(ia) | set(ib) if ia.get(k) != ib.get(k)}))
         ok = False
     ra, rb = a / "rasters.json", b / "rasters.json"
-    if ra.exists() and rb.exists() and ra.read_text() != rb.read_text():
+    if not layers_only and ra.exists() and rb.exists() and ra.read_text() != rb.read_text():
         log("rasters.json differs")
         ok = False
     log("IDENTICAL" if ok else "DIFFERENT")
@@ -66,8 +67,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("a")
     ap.add_argument("b")
+    ap.add_argument("--layers-only", action="store_true", help="compare layers and network.json, not rasters")
     a = ap.parse_args()
-    sys.exit(0 if compare(a.a, a.b) else 1)
+    sys.exit(0 if compare(a.a, a.b, layers_only=a.layers_only) else 1)
 
 
 if __name__ == "__main__":

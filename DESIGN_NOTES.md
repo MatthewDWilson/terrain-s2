@@ -1307,7 +1307,21 @@ the later file winning:
 layers, state)`; `keep=True` returns the in-memory state (window, pipeline result, network, REM, road
 distance, conditioned pass, channels, crossings) for ML-0 feature extraction. Outputs identical to 439f01d
 (SH12, AOI2, canterbury1 with a REC2 context: every layer, raster, rasters.json and network.json; new
-`scripts/compare_runs.py`). Tests 97 passed (benchmarks included).
+`scripts/compare_runs.py`). Tests 97 passed (benchmarks included). On Matt's workstation (13 Oct): the
+quadrant BW24_10000_0402_SE identical to its previous run; CPU and GPU runs identical in every layer.
+
+**Merge with Stage 1** (13 Oct): `stage1/w1-w9` (Cowork, W1-W9, 22 commits from 439f01d) merged with main
+(aa975d8). One conflict: both added a section 10 here; Stage 1 keeps 10, the ML build is 11.
+**S2-1 aligned with the plan's signature**, which Cowork's callers already use (`eddie_terrain.tasks.
+ensure_network`: `network(dem, None, geometry, params=..., out=...)`; `terrain network` calls `run.main`):
+`network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **options) -> NetworkResult` (info,
+out, layers, paths, provenance (S2-13), state; `perf` property); the AOI may be a path, a geometry or a
+GeoDataFrame; `params` and keyword options are the script's flags (unknown keys raise); `run.main(argv)` is
+the command line. Outputs identical to the old script again (SH12, AOI2, canterbury1, and through `terrain
+network`). `compare_runs.py --layers-only` skips rasters (for runs with `--rasters none`). Test failures in
+the sandbox after the merge are the Stage 1 branch's own, from optional packages not installed here
+(OSMPythonTools, the EDDIE core for `eddie/tests`): the same 6 failures and 2 errors on stage1/w1-w9 alone.
+
 
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
