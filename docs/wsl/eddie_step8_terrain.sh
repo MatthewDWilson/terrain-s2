@@ -423,6 +423,7 @@ PY
             echo "  $d writable: $(touch "$d/.w" 2>&1 && rm "$d/.w" && echo yes)"
         done
         echo "  LINZ elevation STAC from the worker: $(curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://nz-elevation.s3-ap-southeast-2.amazonaws.com/catalog.json) (expect 200)"
+        echo "  registry: $(python -c "from eddie_terrain.tables import get_store; s = get_store(); print(\"terrain_product ready on\", s.engine.url.render_as_string(hide_password=True))" 2>&1 | grep -v "|" | tail -1)"
         echo "  ping: $(celery -A eddie.tasks inspect ping -d terrain@$HOSTNAME 2>&1 | grep -c pong) pong"
         celery -A eddie.tasks inspect registered -d terrain@$HOSTNAME 2>/dev/null | grep -o "eddie_terrain[a-z_.]*" | sed "s/^/  task: /"
         echo "  queues: $(celery -A eddie.tasks inspect active_queues -d terrain@$HOSTNAME 2>/dev/null | grep -oE "name.: .[a-z_]+" | sort -u | tr "\n" " ")"

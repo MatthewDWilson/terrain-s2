@@ -1221,6 +1221,12 @@ and the module, the 89 existing ones unchanged.
     a list of lines, which a client sees as a tuple. `GET /terrain/tasks/<id>` now returns it as text. Worth
     raising with the core team: a worker that hides its own failures is hard to operate.
 
+15. **SQLAlchemy 2.0 in the worker.** The first live task failed with `No module named 'psycopg'`. The worker
+    environment had SQLAlchemy 2.1, which maps a plain `postgresql://` URL (the core's `get_database`) to
+    psycopg 3; the core pins 2.0.48 with psycopg2. The worker now pins `<2.1`, the build checks that the
+    driver loads, `check` opens the registry from the worker, and the library's own default URL names
+    `postgresql+psycopg2` explicitly.
+
 **Interfaces for the Stage 2 agent.**
 
 - **S2-9.** `stage1/source.py` defines the interface the raster backend needs, and a stopgap reader

@@ -46,6 +46,8 @@ RUN <<BUILD
     # reads its configuration at import)
     STATSNZ_API_KEY=x LINZ_API_KEY=x MFE_API_KEY=x DATA_DIR_GEOSERVER=/tmp POSTGRES_PASSWORD=x \
         python -c "import eddie.tasks as t; n = [k for k in t.app.tasks if k.startswith('eddie_terrain')]; print(n); assert len(n) == 3"
+    # the database driver behind the core's postgresql:// URL loads (create_engine imports it; no connection)
+    python -c "import sqlalchemy as sa; e = sa.create_engine('postgresql://u:p@db:5432/db'); print('sqlalchemy', sa.__version__, 'driver', e.dialect.driver)"
     conda-pack -n terrain-worker -o /tmp/env.tar --ignore-missing-files
     mkdir /venv && tar xf /tmp/env.tar -C /venv && rm /tmp/env.tar
     /venv/bin/conda-unpack

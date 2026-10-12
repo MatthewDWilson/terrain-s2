@@ -84,6 +84,8 @@ each document.
   - The worker environment needs `libgdal-netcdf` (conda-forge's separate netCDF driver).
   - The `--no-deps` installs need `beautifulsoup4`, `geojson`, `lxml`, `ujson` and `geoalchemy2` from conda.
   - `TERRAIN_VERSION` and `TERRAIN_COMMIT` are required build arguments.
+  - The worker environment pins SQLAlchemy below 2.1, as the core does. From 2.1 the core's `postgresql://` URL
+    selects psycopg 3, which isn't installed.
 
 ## 2. Upstream issues (drafts)
 

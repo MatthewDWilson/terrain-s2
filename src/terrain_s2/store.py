@@ -145,7 +145,7 @@ def default_url(settings=None) -> str:
     if e.get("POSTGRES_DB") and e.get("POSTGRES_USER"):
         host = e.get("POSTGRES_HOST", "localhost")
         port = e.get("POSTGRES_PORT", "5432")
-        return f"postgresql://{e['POSTGRES_USER']}:{e.get('POSTGRES_PASSWORD', '')}@{host}:{port}/{e['POSTGRES_DB']}"
+        return f"postgresql+psycopg2://{e['POSTGRES_USER']}:{e.get('POSTGRES_PASSWORD', '')}@{host}:{port}/{e['POSTGRES_DB']}"
     data = Path(settings.data_dir) if settings is not None else Path(e.get("TERRAIN_DATA_DIR", Path.home() / "terrain_data"))
     data.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{data / 'terrain_products.sqlite'}"

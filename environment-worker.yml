@@ -46,7 +46,9 @@ dependencies:
   - matplotlib-base
   - psutil
   # library base and [acquire]
-  - sqlalchemy>=2.0
+  # SQLAlchemy 2.0, as the core pins (2.0.48): from 2.1 a plain postgresql:// URL (the core's get_database)
+  # means psycopg 3, which neither image has
+  - sqlalchemy>=2.0,<2.1
   - psycopg2
   - pyyaml
   - requests
