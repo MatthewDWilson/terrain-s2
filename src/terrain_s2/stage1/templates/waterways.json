@@ -1,0 +1,6 @@
+{
+ "_comment": "GeoFabrics 1.1.30 WaterwayBedElevationEstimator (OSM drains, streams and culverts from Overpass), merged over the product's 'default' block and run as its own runner call by terrain_s2.stage1.rivers. Widths as in GeoFabrics' Waikanae tests; profile waterways.parameters overrides them.",
+ "general": {"lidar_classifications_to_keep": [2, 9]},
+ "data_paths": {"subfolder": "{subfolder}"},
+ "waterways": {"widths": {"drain": 5, "stream": 7.5, "river": 10}, "source": "osm"}
+}

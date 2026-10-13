@@ -151,14 +151,19 @@ for it.
 The first run in a region lists the LINZ collections and builds their item indexes, so it takes minutes. Later
 runs read the cache. To pick up newly published surveys, delete `~/eddie/data/terrain/cache/stac/json`.
 
-**Survey edge (W3 exit).** I still need an AOI that straddles two LINZ surveys. Send me one, or run it through the
-API yourself:
+**Survey edge (W3 exit), now on the shared reader (S2-9).**
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"aoi":"POLYGON((...))","params":{"resolution":1}}' http://localhost:5500/terrain/dem
+bash $S edge 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w3_edge.txt
 ```
 
-The provenance should then list both surveys, with `gap_fraction` 0.
+- **AOI:** two neighbouring 1:10k tiles in the partition (`D:\eddie_data\partition\nz_tiles.gpkg`; give another
+  path as an argument) whose latest surveys differ, and a 1.2 x 0.8 km box across their shared edge. It is saved
+  as `D:\EDDIE\w3_edge_aoi.wkt`.
+- **Run:** `e2e raster 1` on that AOI.
+- **Expected:** the inputs list both surveys, gap fraction 0, and each input with its checksum.
+
+Any AOI can be run the same way: put its WKT (EPSG:4326) in a file, then `bash $S e2e raster 1 dem aoi=<file>`.
 
 ### 4a. Where the outputs are, and how to look at them
 
@@ -204,6 +209,7 @@ The provenance should then list both surveys, with `gap_fraction` 0.
 | `land_source` | `coverage`, `topo50`, `topo50_mangrove`, `file` | `coverage` |
 | `buffer_m` | metres added round the AOI | 10 |
 | `spatial_reuse` | reuse a stored product that contains the AOI | true |
+| `rivers`, `waterways` | GeoFabrics river bed estimation (REC1 flows) and OSM waterway beds; GeoFabrics only (`docs/stage1_rivers.md`) | false |
 | `lidar_classes`, `allow_fallback`, `profile`, `aoi_mode` (`bbox` or `polygon`) | see `terrain_s2/settings.py` | |
 
 ```bash
@@ -216,7 +222,27 @@ curl -s -H 'Content-Type: application/json' \
 Inside EDDIE, FReDT and Smart Ideas don't use HTTP: they call `terrain_s2.client.compat.get_dem_by_geometry`,
 which sends the same task and reads the registry. Under v5 the same request is also the OGC process `terrain.dem`.
 
+### 4c. W5 on PostGIS: the compatibility shim
+
+```bash
+bash $S shim 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w5_shim.txt
+```
+
+This makes FReDT's calls from the core worker, where FReDT's tasks run:
+
+- `dem_signature(wkt)` on the terrain queue (as `process_dem.si(wkt)` in its chain);
+- `get_dem_by_geometry` with FReDT's catchment (the bounding rectangle in EPSG:2193);
+- `get_dem_band_and_resolution_by_geometry`.
+
+**Expected:** the product id; the netCDF path for both DEM paths; resolution 8; then a Dataset with `z`, the
+compound CRS, the grid's bounds and the description ending in 8.
+
+The other W5 exits are already met live: an identical request is a cache hit, and a changed resolution or backend
+makes a new product (products 1 to 5). A changed land source is tested in the sandbox.
+
 ## 5. GeoFabrics backend (W4), and the otCatalog date check
+
+River and waterway bed estimation (`rivers=true`, `waterways=true`) are in `docs/stage1_rivers.md`.
 
 ```bash
 bash $S e2e geofabrics 8           2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf8.txt     # DEM + roughness (auto)

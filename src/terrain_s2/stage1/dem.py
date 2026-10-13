@@ -76,6 +76,7 @@ class Prepared:
     store: object = None
     overrides: dict | None = None
     fallback_note: str | None = None
+    rivers: object = None              # stage1.rivers.RiverPlan (geofabrics with rivers)
 
 
 def grid_id(bounds, crs) -> str:
@@ -124,7 +125,7 @@ def prepare(aoi, settings=None, *, aoi_crs=None, http=None, store=None, source=N
                 plan = src.plan(bounds, "dem")
                 break
             except NoElevationData as e:
-                if not s.allow_fallback or attempt or s.product == "geofabric":
+                if not s.allow_fallback or attempt or s.product == "geofabric" or s.rivers or s.waterways:
                     raise
                 note, backend = f"raster: {e}; fell back to geofabrics", "geofabrics"
         else:
@@ -134,7 +135,7 @@ def prepare(aoi, settings=None, *, aoi_crs=None, http=None, store=None, source=N
                 mapping = mk_mapping(datasets)
                 break
             except NoPointClouds as e:
-                if not s.allow_fallback or attempt or s.product == "geofabric":
+                if not s.allow_fallback or attempt or s.product == "geofabric" or s.rivers or s.waterways:
                     raise
                 note, backend = f"geofabrics: {e}; fell back to raster", "raster"
     if note:
@@ -147,10 +148,15 @@ def prepare(aoi, settings=None, *, aoi_crs=None, http=None, store=None, source=N
     if backend == "raster":
         from . import raster
         source_version, configuration = plan.source_version(), raster.configuration(s)
-    else:
+    rplan = None
+    if backend != "raster":
         from . import gf
         source_version = {"datasets": [d.record() for d in datasets], "mapping": mapping}
         configuration = gf.configuration(s, overrides)
+        if s.rivers:
+            from . import rivers as R
+            rplan = R.plan(_http(), bounds, profile, log=log)
+            source_version["rivers"] = rplan.record()
     from ..key import digest, file_sha256
     configuration["profile"] = digest(profile, 64)           # CRS, sources, overrides, exclusions
     if s.land_source == "file":
@@ -161,7 +167,7 @@ def prepare(aoi, settings=None, *, aoi_crs=None, http=None, store=None, source=N
     return Prepared(settings=s, profile=profile, crs=crs, hcrs=hcrs, geom=geom, bounds=bounds, backend=backend,
                     key=key, info=info, name=f"{s.product}_{res}m", out_dir=s.products / key / grid_id(bounds, crs),
                     plan=plan, src=src, datasets=datasets, mapping=mapping, http=http, store=store,
-                    overrides=overrides, fallback_note=note)
+                    overrides=overrides, fallback_note=note, rivers=rplan)
 
 
 def build(prep: Prepared, *, log=print, gf_runner=None, lock_timeout_s: float = 6 * 3600) -> Stage1Result:
@@ -186,7 +192,8 @@ def build(prep: Prepared, *, log=print, gf_runner=None, lock_timeout_s: float = 
             from . import gf
             land_file, land_rec = _gf_land(prep, log)
             r = gf.build(datasets=prep.datasets, mapping=prep.mapping, land_file=land_file, land_rec=land_rec,
-                         cache_dir=Path(s.data_dir) / "geofabrics", overrides=prep.overrides, runner=gf_runner, **kw)
+                         cache_dir=Path(s.data_dir) / "geofabrics", overrides=prep.overrides, runner=gf_runner,
+                         rivers_plan=prep.rivers, **kw)
         result = Stage1Result(key=prep.key, info=prep.info, product=s.product, backend=prep.backend,
                               resolution=int(s.resolution), crs=prep.crs, product_dir=str(out_dir), paths=r["paths"],
                               aoi_wkt=prep.geom.wkt, grid_bounds=list(prep.bounds),

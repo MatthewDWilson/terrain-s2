@@ -29,3 +29,19 @@ geofabrics:
   exclude: []
   # Restrict discovery to OpenTopography-hosted point clouds (those geoapis can fetch from pc-bulk).
   hosted_only: true
+# GeoFabrics river bed estimation (TERRAIN_GF_RIVERS / request "rivers": true; stage1/rivers.py). REC2 has no
+# flows per reach, so the network is REC1 with flows (Matt, 14 Oct 2026). Field names are to be confirmed
+# against the layer (step script 'rec1' mode): until 'flow' is set, a rivers request stops and lists the fields.
+rivers:
+  network:
+    source: {kind: arcgis, url: 548b3bfcff8f4728b0f64caf6f815233}   # ArcGIS Online item; or {kind: file, path: ...}
+    columns: {id: NZREACH, from_node: FROM_NODE, to_node: TO_NODE, area: CATCHAREA, flow: null, mannings_n: null}
+    mannings_n: 0.035        # used while columns.mannings_n is null (GeoFabrics' Waikanae reaches: 0.03-0.04)
+    margin_m: 1000           # network fetched for the grid plus this margin; reaches clipped to it
+  area_threshold_m2: 10000000   # main channels: upstream area at least 10 km2
+  max_rivers: 5
+  z_label: bed_elevation_Rupp_and_Smart   # or bed_elevation_Neal_et_al (both written by GeoFabrics)
+  parameters: {}           # overrides for templates/rivers.json "rivers" keys (widths, bank heights, corridor)
+  osm: {}                  # {<network_id>: {type: way, id: <OSM id>}} to align a river to that OSM waterway
+waterways:
+  parameters: {}           # overrides for templates/waterways.json "waterways" keys

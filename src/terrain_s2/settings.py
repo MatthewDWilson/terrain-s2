@@ -24,6 +24,9 @@ Variable                       Meaning                                      Defa
 ``TERRAIN_GF_MEMORY_LIMIT``    GeoFabrics dask memory limit per worker      ``4GiB``
 ``TERRAIN_GF_CORES``           GeoFabrics dask workers                      ``2``
 ``TERRAIN_GF_DOWNLOAD_LIMIT``  GeoFabrics download limit, GB                ``100``
+``TERRAIN_GF_RIVERS``          GeoFabrics river bed estimation (REC flows,  ``false``
+                               profile ``rivers``; GeoFabrics backend only)
+``TERRAIN_GF_WATERWAYS``       GeoFabrics OSM waterway bed elevations       ``false``
 ``TERRAIN_ALLOW_FALLBACK``     fall back to ``raster`` when no point        ``false``
                                clouds are found (and the reverse)
 ``LINZ_API_KEY``               LINZ Data Service key (Topo50 land sources)  none
@@ -84,6 +87,8 @@ class Settings:
     gf_cores: int = 2
     gf_download_limit_gb: float = 100.0
     allow_fallback: bool = False
+    rivers: bool = False
+    waterways: bool = False
     linz_api_key: str | None = None
     land_file: str | None = None
 
@@ -125,6 +130,8 @@ def from_env(env: dict | None = None, **overrides) -> Settings:
         gf_cores=int(e("TERRAIN_GF_CORES", "2")),
         gf_download_limit_gb=float(e("TERRAIN_GF_DOWNLOAD_LIMIT", "100")),
         allow_fallback=_bool(e("TERRAIN_ALLOW_FALLBACK"), False),
+        rivers=_bool(e("TERRAIN_GF_RIVERS"), False),
+        waterways=_bool(e("TERRAIN_GF_WATERWAYS"), False),
         linz_api_key=e("LINZ_API_KEY"),
         land_file=e("LAND_FILE"),
     )
@@ -141,6 +148,8 @@ def validate(s: Settings) -> None:
         raise ValueError(f"product must be one of {PRODUCT_CHOICES}, got {s.product!r}")
     if s.product == "geofabric" and s.backend != "geofabrics":
         raise ValueError("product 'geofabric' (with roughness zo) needs backend 'geofabrics'")
+    if (s.rivers or s.waterways) and s.backend != "geofabrics":
+        raise ValueError("rivers and waterways (GeoFabrics bed estimation) need backend 'geofabrics'")
     if s.land_source not in LAND_SOURCES:
         raise ValueError(f"land_source must be one of {LAND_SOURCES}, got {s.land_source!r}")
     if s.land_source == "file" and not s.land_file:

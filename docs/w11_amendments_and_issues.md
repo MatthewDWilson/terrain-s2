@@ -122,6 +122,12 @@ ourselves meanwhile.
 sends `inlcude_federated`, so the API ignores it and applies its own default. Fix the spelling. Also allow
 `detail=true`, and return the survey dates (`temporalCoverage`), so callers can rank datasets newest first.
 
+**GeoFabrics 6. Upstream trace compares reach ids with index labels.**
+`bathymetry_estimation.Channel._get_up_stream_reaches` appends dataframe index labels to `reaches_index`, then
+checks the next reach *id* against that list. When a reach id equals an index label it reports "circular network
+connections" for a valid network. REC ids (seven digits) never collide, so it is latent for NZ data. Proposal:
+compare ids with ids. Found while matching our river selection to GeoFabrics' trace (`tests/test_stage1_rivers.py`).
+
 Items GeoFabrics 1 and 4 matter only if raster input ever goes back through GeoFabrics; P-3 avoids that.
 
 Not an issue to raise, but worth knowing: the runner skips any stage whose output file already exists, so a
