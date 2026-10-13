@@ -44,6 +44,7 @@ def main():
     ap.add_argument("--rerun-older", action="store_true", help="rerun tiles done by another code version")
     ap.add_argument("--no-build", action="store_true", help="never build bundles (they must exist)")
     ap.add_argument("--no-mirror", action="store_true")
+    ap.add_argument("--no-features", action="store_true", help="skip step 4 (features and patches)")
     a = ap.parse_args()
     from terrain_s2.acquire.elevation import default_data_dir
     data = default_data_dir()
@@ -61,7 +62,8 @@ def main():
     params = dict(kv.split("=", 1) for kv in a.param)
     cfg = BatchConfig(partition=a.partition, bundles=a.bundles or str(data / "tiles"), runs=a.runs or str(data / "runs"),
                       cache=a.cache, params={k: _value(v) for k, v in params.items()}, build=not a.no_build,
-                      rerun=a.rerun, rerun_older=a.rerun_older, mirror=not a.no_mirror)
+                      rerun=a.rerun, rerun_older=a.rerun_older, mirror=not a.no_mirror,
+                      features=not a.no_features)
     recs = run_batch(tiles, cfg, workers=a.workers, gpu_workers=a.gpu_workers)
     if recs:
         import pandas as pd

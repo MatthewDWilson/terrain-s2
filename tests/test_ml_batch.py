@@ -19,7 +19,9 @@ def test_batch_resumes_and_reruns_on_new_parameters(tmp_path):
     r = run_batch(["T1"], cfg, log=lambda *a: None)
     assert len(r) == 1 and r[0]["ok"], r[0].get("error")
     done = json.loads((tmp_path / "runs" / "T1" / "done.json").read_text())
-    assert done["params_hash"] == params_hash(dict(buffer=50.0, rasters="none", device="cpu"))
+    from terrain_s2.ml.features import FEATURES_VERSION
+    assert done["params_hash"] == params_hash(dict(buffer=50.0, rasters="none", device="cpu", features=FEATURES_VERSION))
+    assert (tmp_path / "runs" / "T1" / "ml_features.parquet").exists() and (tmp_path / "runs" / "T1" / "ml_patches.npy").exists()
     assert status("T1", cfg, dict(buffer=50.0, rasters="none", device="cpu")) == "done"
     assert run_batch(["T1"], cfg, log=lambda *a: None) == []                      # skipped
     cfg.params["max_hand"] = 5.0

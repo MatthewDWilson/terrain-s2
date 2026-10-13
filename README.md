@@ -8,6 +8,8 @@ Input is any previously generated raster DEM in a projected metric CRS: Stage 1 
 (Input A), the LINZ 1 m DEM (Input B), or another national DEM. A DSM on the same grid is
 optional.
 
+Current status, ownership and next steps: [`docs/status.md`](docs/status.md).
+
 ## Environment
 
 ```bash

@@ -6,6 +6,9 @@ gets ``<runs>/<tile>/done.json`` with the parameters, their hash and the code ve
 ``done.json`` has the same parameter hash is skipped (``rerun=True`` forces it; ``rerun_older=True`` also reruns
 tiles done by another code version).
 
+With ``features`` (default), the run keeps its arrays and ``ml.features.extract`` writes the candidate
+features and oriented patches (step 4) before they are freed; ``FEATURES_VERSION`` is in the hash.
+
 Workers are processes (Windows spawns them, so everything here is importable). ``gpu_workers`` of them run the
 feature stage on the GPU (``device="gpu"``), the rest on the CPU; size ``workers`` by peak memory (~8.7 GB per
 LINZ tile, ~2.5-3.2 GB per quadrant, DESIGN_NOTES 7j and 11). Rasters are off by default (``rasters="none"``):
@@ -33,6 +36,7 @@ class BatchConfig:
     index: str | None = None
     params: dict = field(default_factory=dict)        # run.network options (buffer, rasters, height_model, ...)
     build: bool = True                                # (re)build the bundle if it has no site.json
+    features: bool = True                             # step 4: ml_features.parquet and ml_patches.npy
     rerun: bool = False
     rerun_older: bool = False
     mirror: bool = True
@@ -40,6 +44,12 @@ class BatchConfig:
 
 def params_hash(params: dict) -> str:
     return hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def _hashed(params: dict, cfg) -> dict:
+    """What a tile's done.json hash covers: the network options and, with features, their version."""
+    from .features import FEATURES_VERSION
+    return dict(params, features=FEATURES_VERSION) if getattr(cfg, "features", False) else dict(params)
 
 
 def _version() -> str:
@@ -56,7 +66,7 @@ def status(tile_id: str, cfg: BatchConfig, params: dict) -> str:
     if not f.exists():
         return "todo"
     d = json.loads(f.read_text())
-    if d.get("params_hash") != params_hash(params):
+    if d.get("params_hash") != params_hash(_hashed(params, cfg)):
         return "todo"
     return "done" if d.get("version") == _version() else "stale"
 
@@ -71,7 +81,8 @@ def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> 
     root = Path(__file__).resolve().parents[3]
     params = dict(DEFAULT_PARAMS, **cfg.params)
     t0 = time.perf_counter()
-    rec = dict(tile_id=tile_id, device=device, params=params, params_hash=params_hash(params), version=_version())
+    rec = dict(tile_id=tile_id, device=device, params=params, params_hash=params_hash(_hashed(params, cfg)),
+               version=_version(), features=cfg.features)
     bundle = Path(cfg.bundles) / tile_id
     try:
         if cfg.build and not (bundle / "site.json").exists():
@@ -87,9 +98,15 @@ def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> 
         dsm = bundle / "dsm.tif"
         res = network(bundle / "dem.tif", dsm if dsm.exists() else None, bundle / "aoi.geojson",
                       roads=bundle / "roads.gpkg" if (bundle / "roads.gpkg").exists() else None,
-                      out=Path(cfg.runs) / tile_id, params=dict(params, device=device))
+                      out=Path(cfg.runs) / tile_id, params=dict(params, device=device), keep=cfg.features)
+        if cfg.features:
+            from .features import extract
+            t1 = time.perf_counter()
+            tab, _, _ = extract(res, Path(cfg.runs) / tile_id)
+            rec.update(features_s=round(time.perf_counter() - t1, 1), n_features=int(tab.shape[1]))
         rec.update(ok=True, seconds=round(time.perf_counter() - t0, 1), crossings=res.info.get("crossings"),
                    channels_km=res.info.get("channels_km"), peak_rss_gb=res.perf.get("peak_rss_gb"))
+        del res
         (Path(cfg.runs) / tile_id / "done.json").write_text(json.dumps(rec, indent=1, default=str))
     except Exception as e:  # noqa: BLE001 - recorded; the batch carries on
         rec.update(ok=False, error=f"{type(e).__name__}: {e}", traceback=traceback.format_exc()[-4000:],

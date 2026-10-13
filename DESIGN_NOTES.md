@@ -1383,6 +1383,29 @@ configs `ml/config/wave1.yml`, `ml/config/labels.yml`):
   canterbury1 +26 -39 (3 council, 2 implied, the rest manual; 2 implied misses; 1 conflict, manual n against an
   implied road crossing), canterbury2 +39 -36 (2 implied misses; 1 conflict of the same kind).
 
+**Wave 1 started** (Matt, 14 Oct): `select_tiles.py` gave the 83 tiles of the trial (manifest committed,
+6576e2b). First two tiles (HBRC, BH41): 823 s on the GPU and 1,124 s on the CPU (build 180-345 s of it, the first
+download into the COG mirror), peak 10.1 and 9.5 GB, 2,970 and 2,246 candidates. Labels: 14 and 8 positives,
+almost all bridges and implied crossings (HBRC records 3 and 1 culverts there), no negatives: positives are
+~0.3-0.6 % of candidates in HBRC tiles. BW24_10000_0402 (an earlier full-tile run, with canterbury1 and the
+reviews): +104 -37, 64 council culverts in the core of which 17 have no candidate within 15 m (27 %, the same
+rate as the quadrant's 11 of 15 found), and 16 of 64 implied crossings likewise: the recall gap ML-3 is for.
+
+**ML-0 step 4: features and patches** (`ml/features.py`, 14 Oct). Inside the run (`run.network(..., keep=True)`;
+the batch runner does it by default, `--no-features` to skip; `FEATURES_VERSION` is in the done.json hash, so
+earlier tiles rerun once, reusing their bundles). Per written candidate, `ml_features.parquet`: its own evidence
+(h_b, gap, deck, vegetation, road distance, tiers as ordinals, one column per proposing test or source), for each
+of 26 raster bands (the 17-band feature stack; DSM - DEM, REM, log10 upstream area, breach depth, depression depth,
+residual depression, channel mask, centreline, road distance) the value at the crest, maximum and minimum within
+5 m and mean within 10 m, and the nearest residual-pond outlet (distance, volume, depth, inflow): 141 columns.
+`ml_patches.npy`: 64 x 64 m at 1 m, float16, 14 bands (`z_rel`, the DEM relative to the crest, and 13 of the above),
+rotated so the local channel axis (skeleton second moments, nearest centreline cell within 10 m) runs along the
+patch x axis; `ml_patches.json` names the bands. Only inputs available everywhere; never council layers.
+canterbury1: 6.5 s for 261 candidates, 0.2 MB of features and 30 MB of patches (~115 kB per candidate), so a full
+tile adds ~10-20 s, ~1.5 GB of memory and ~350 MB of disk (wave 1: ~29 GB).
+
+**Status document**: `docs/status.md` (done, in progress, next, ownership, data layout), kept current with these notes.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
