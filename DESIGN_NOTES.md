@@ -1406,6 +1406,29 @@ tile adds ~10-20 s, ~1.5 GB of memory and ~350 MB of disk (wave 1: ~29 GB).
 
 **Status document**: `docs/status.md` (done, in progress, next, ownership, data layout), kept current with these notes.
 
+**ML-0 step 5: dataset assembly** (`ml/dataset.py`, `scripts/build_dataset.py`, 14 Oct). For each tile of the
+manifests with a finished run with features: labels rebuilt when missing or older than the run (a rerun replaces
+the candidates); features and labelled candidates joined on (x, y) (same layer, same order; a mismatch stops that
+tile); manifest fields added (council, sheet, split, holdout, region, survey); `cand_id` and the patch reference
+(`patch_file`, `patch_row`: the tile's own `ml_patches.npy`, not copied, ~29 GB saved for wave 1). Writes
+`candidates.parquet`, `misses.parquet` (labels without a candidate: the recall denominator), `tiles.csv` and
+`card.json` / `card.md` (counts per council, split, label kind and class; the 139 feature columns, location and
+identifiers excluded; versions of code, features, label config and manifests). canterbury1 as a trial: 261
+candidates, +26 (council 3, implied 2, manual 21), -39, 6 unsure, 2 implied misses. Fixed on the way: the label
+builder failed on a bundle with no label layers.
+
+**Wave 2 config** (`ml/config/wave2.yml`): councils with channels and no culvert register, selected by channels:
+trial on the index 266 tiles, Environment Southland 165 (19 sheets; 336 drains, long lines) and Auckland 101
+(13 sheets; 10,833 channels). Positives: implied crossings, KiwiRail, bridges.
+
+**High-performance workstation** (`docs/wsl/terrain_hpc.sh`, `.md`): one script in a WSL distro, no Docker:
+`setup` (checks cores, the memory WSL sees, disk and GPU; micromamba; the environment from `environment.yml` with
+conda-forge CuPy; a mirror of `main`; `~/terrain/env.sh`; a `terrain-hpc` command), `update`, `check` (versions,
+a CuPy kernel, the tests), `labels`, `partition`, `batch` (workers from memory, ~12 GB per tile, at most half the
+cores, two on the GPU; logs) and `dataset`. Windows side: `.wslconfig` (WSL takes half the RAM by default; 176 GB
+for the 192 GB machine) and the distro moved to the data drive. Passes `bash -n` and ShellCheck; untested on the
+target (the sandbox cannot reach conda-forge).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

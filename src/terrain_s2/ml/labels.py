@@ -208,7 +208,7 @@ def label_run(run_dir, bundle_dir, manual=None, config=None, aoi=None, write=Tru
     out["near_positive"] = near_pos & np.isnan(out.struct.to_numpy(float))
     out["in_core"] = out.geometry.intersects(core)
     out["in_scope"] = out.geometry.intersects(fp) if fp is not None else True
-    misses = L[~matched & L.in_core & L.in_scope & (L.struct == 1)].drop(columns="match_geom")
+    misses = L[~matched & L.in_core & L.in_scope & (L.struct == 1)].drop(columns="match_geom", errors="ignore")
     conflicts = gpd.GeoDataFrame(conflicts, geometry="geometry", crs=crs) if conflicts else \
         gpd.GeoDataFrame(columns=["candidate", "x", "y", "kept", "labels", "geometry"], geometry="geometry", crs=crs)
     core_c = out[out.in_core]

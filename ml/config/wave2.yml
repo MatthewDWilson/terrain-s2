@@ -1,0 +1,16 @@
+# ML-0 wave 2 (DESIGN_NOTES section 11): councils with channel data but no culvert register. Selected where the
+# council's channels have at least min_features in the LINZ tile; their positives are implied crossings (council
+# channel x road or rail), plus KiwiRail and bridges where they fall. For the RTX 6000 machine
+# (docs/wsl/terrain_hpc.md).
+name: wave2
+select_by: channels
+min_features: 1
+max_tiles_per_council: null
+seed: 0
+holdout_sheets: [BW24]
+councils:
+  environment_southland:
+    channels: [es_drainage]
+    stopbanks: [es_stopbanks]
+  auckland:
+    channels: [auckland_channels]
