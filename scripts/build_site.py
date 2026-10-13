@@ -21,19 +21,13 @@ from terrain_s2.acquire.site import load_site, load_sources  # noqa: E402
 
 
 def tile_site(tile_id, partition, buffer_m):
-    """A site for one partition tile: its bounds, its LINZ survey and region, its split as role."""
-    import geopandas as gpd
-    from terrain_s2 import grid
-    from terrain_s2.acquire.site import Site
+    from terrain_s2.acquire.site import tile_site as _tile_site
     if not partition:
         sys.exit("--tile needs --partition (for the tile's region and survey)")
-    t = gpd.read_file(partition, layer="tiles", where=f"tile_id = '{tile_id}'")
-    if not len(t):
-        sys.exit(f"{tile_id} is not in {partition}")
-    r = t.iloc[0]
-    return Site(id=tile_id, bounds=grid.tile_bounds(tile_id), buffer_m=buffer_m, role=r.split, sources="auto",
-                elevation=dict(region=r.region, products=["dem", "dsm"] if r.has_dsm else ["dem"], survey=r.latest_survey),
-                notes=f"partition tile; LINZ tile {r.linz_tile}; neighbours with the same survey: {r.n_neighbours_same_survey}/8")
+    try:
+        return _tile_site(tile_id, partition, buffer_m)
+    except ValueError as e:
+        sys.exit(str(e))
 
 
 def main():

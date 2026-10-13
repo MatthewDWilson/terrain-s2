@@ -1354,6 +1354,35 @@ disabled for bundles (Stage 1's `land.py` fetches them through `linz_wfs` and th
 xarray, netCDF4, rioxarray, SQLAlchemy and libgdal-netcdf, so both stages' tests run in one environment.
 Tests: 128 passed, 19 skipped (sandbox).
 
+**Warnings** (14 Oct): the three pytest warnings come from rioxarray 0.23.0 (`_spatial_utils.py` composes
+transforms with `*`, pending deprecation in affine 3; unchanged on its master). Our own code raises none
+(the suite passes with deprecations as errors). Silenced narrowly in `pyproject.toml`, as for rasterio;
+`affine` pinned `>=2.4,<4` until both use `@`. `pyarrow` added for Parquet (step 5).
+
+**ML-0 steps 1-3** (14 Oct; `terrain_s2/ml/`, scripts `select_tiles.py`, `run_tiles.py`, `build_labels.py`,
+configs `ml/config/wave1.yml`, `ml/config/labels.yml`):
+- *Step 1, selection* (`ml/select.py`): a tile is selected for a council when that council's `select_by` sources
+  (wave 1: crossings) have at least `min_features` in it (coverage index counts per LINZ tile); KiwiRail and
+  other sources never select. Manifest columns: council, folds, partition fields, council counts per label type,
+  every label source's count. Trial on the committed index: 83 tiles, Waimakariri 45 (3 sheets: BW22, BW23,
+  BW24; 1,011 council culverts), HBRC 38 (8 sheets; 176). Folds: `council` (leave-one-council-out), `sheet`
+  (blocked cross-validation groups), `holdout` (BW24, the canterbury1/2 sheet: 12 tiles never trained on). The
+  partition's `split` is kept for reference only: with so few sheets per council it puts every Waimakariri tile
+  in test or validation and every HBRC tile in train.
+- *Step 2, batch runner* (`ml/batch.py`): per tile the bundle (`acquire.site.tile_site`, moved from the script)
+  and `run.network`; `done.json` with the parameters, their hash and the code version (skipped when the hash
+  matches; `--rerun`, `--rerun-older`); `failed.json` and the batch carries on; spawned worker processes,
+  `--gpu-workers` of them with `device=gpu`; a worker that dies is reported. Rasters off by default.
+- *Step 3, labels* (`ml/labels.py`): per candidate, from the bundle's `crossings` (council, other asset
+  registers), `bridges`, `crossings_implied` and Matt's review files (in config order, the later file winning
+  within 5 m; 251 labels: 85 y, 139 n, 27 unsure). Matching at the crest (culvert midpoint; bridge by distance
+  to its line); nearest candidate in reach (15 m; manual 10 m); priority council/asset/bridge, then manual, then
+  implied; disagreements are conflicts; other candidates within a positive's reach are `near_positive`; labels
+  in the core and floodplain without a candidate are misses. Weights: council, asset, bridge 1.0; implied 0.7;
+  manual 0.6; unlabelled 0 here (set in training). Sandbox, the four sites: SH12 +3 -34, AOI2 +22 -23,
+  canterbury1 +26 -39 (3 council, 2 implied, the rest manual; 2 implied misses; 1 conflict, manual n against an
+  implied road crossing), canterbury2 +39 -36 (2 implied misses; 1 conflict of the same kind).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

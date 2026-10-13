@@ -1,0 +1,18 @@
+# ML-0 step 3 (terrain_s2.ml.labels): which labels count and how much. DESIGN_NOTES sections 8 and 11.
+council_sources: [waimakariri_culverts, hbrc_culverts]     # council culvert registers: reliable
+asset_sources: [kiwirail_culverts]                          # other asset registers: reliable
+weights: {council: 1.0, asset: 1.0, bridge: 1.0, manual: 0.6, implied: 0.7}
+radius_m: {council: 15, asset: 15, bridge: 15, manual: 10, implied: 15}
+# Matt's reviews (R1 rounds). Paths relative to manual_root (default TERRAIN_DATA_DIR/labels/manual).
+# In order: where two labels lie within 5 m, the later file wins. Round-2 crossing fields were never filled;
+# review2 files carry the round-1 labels as prev_culvert. v1 files give the crest as crest_x / crest_y.
+manual_root: null
+manual:
+  - {file: sh12_candidates_for_review.geojson, label: culvert_y_n_unsure, x: crest_x, y: crest_y, round: sh12_v1}
+  - {file: aoi2_candidates_for_review.geojson, label: culvert_y_n_unsure, x: crest_x, y: crest_y, round: aoi2_v1}
+  - {file: canterbury1_ranked_for_review.geojson, label: culvert_y_n_unsure, round: canterbury1_r1}
+  - {file: canterbury2_candidates_for_review.geojson, label: culvert_y_n_unsure, round: canterbury2_r1}
+  - {file: sh12_crossings_review2.geojson, label: prev_culvert, round: sh12_r1b}
+  - {file: aoi2_crossings_review2.geojson, label: prev_culvert, round: aoi2_r1b}
+  - {file: cant1_crossings_review2.geojson, label: prev_culvert, round: canterbury1_r1b}
+  - {file: cant2_crossings_review2.geojson, label: prev_culvert, round: canterbury2_r1b}

@@ -63,3 +63,18 @@ def load_site(path, root=None) -> Site:
 def load_sources(path) -> dict:
     import yaml
     return yaml.safe_load(Path(path).read_text())["sources"]
+
+
+def tile_site(tile_id: str, partition, buffer_m: float = 200.0) -> Site:
+    """A site for one partition tile (``scripts/partition.py``): its bounds, its LINZ survey (first priority)
+    and region, its split as role, ``sources: auto``. Tile ids may be LINZ tiles or quadrants."""
+    import geopandas as gpd
+
+    from .. import grid
+    t = gpd.read_file(partition, layer="tiles", where=f"tile_id = '{tile_id}'")
+    if not len(t):
+        raise ValueError(f"{tile_id} is not in {partition}")
+    r = t.iloc[0]
+    return Site(id=tile_id, bounds=grid.tile_bounds(tile_id), buffer_m=buffer_m, role=r.split, sources="auto",
+                elevation=dict(region=r.region, products=["dem", "dsm"] if r.has_dsm else ["dem"], survey=r.latest_survey),
+                notes=f"partition tile; LINZ tile {r.linz_tile}; neighbours with the same survey: {r.n_neighbours_same_survey}/8")

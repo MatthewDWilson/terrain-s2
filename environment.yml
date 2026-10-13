@@ -16,7 +16,7 @@ channels:
 dependencies:
   - python=3.12
   - numpy>=2.0
-  - affine
+  - affine>=2.4,<4             # 4 may drop `*` composition, still used by rasterio and rioxarray
   - scipy>=1.13
   - numba>=0.60
   - pyflwdir>=0.5.10
@@ -34,6 +34,7 @@ dependencies:
   - netcdf4
   - rioxarray
   - sqlalchemy                  # Stage 1 product registry (SQLite here, Postgres under EDDIE)
+  - pyarrow                     # ML datasets (Parquet)
   - libgdal-netcdf              # GDAL's netCDF driver (reads of Stage 1 .nc products)
   - pytest
   - pyflakes                    # tests/test_static.py (undefined names)

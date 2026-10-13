@@ -1,0 +1,20 @@
+# ML-0 wave 1 (DESIGN_NOTES section 11): tiles with council culvert registers. Selected where the council's
+# crossings sources have at least min_features in the LINZ tile (coverage index counts); every other label
+# source (KiwiRail, LINZ and HBRC bridges, implied crossings, Matt's reviews) is used where it falls.
+name: wave1
+select_by: crossings
+min_features: 1
+max_tiles_per_council: null
+seed: 0
+# never trained on: BW24 holds canterbury1 and canterbury2 (test sites, Matt's manual labels)
+holdout_sheets: [BW24]
+councils:
+  waimakariri:
+    crossings: [waimakariri_culverts]
+    channels: [waimakariri_channels]
+    stopbanks: [ecan_stopbanks]
+  hbrc:
+    crossings: [hbrc_culverts]
+    channels: [hbrc_channels]
+    stopbanks: [hbrc_stopbanks]
+    bridges: [hbrc_bridges]
