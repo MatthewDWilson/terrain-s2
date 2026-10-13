@@ -2,7 +2,7 @@
 """Assemble site bundles automatically (R2 milestone M1): LiDAR DEM/DSM from the LINZ nz-elevation
 bucket, council inventories (ArcGIS REST), roads/rail/tracks (LINZ Topo50 WFS, OpenStreetMap).
 
-    python scripts/build_site.py --site sites/canterbury1.yml --out D:/eddie_data/sites --cache D:/eddie_data/cache
+    python scripts/build_site.py --site sites/canterbury1.yml --out D:/eddie_data/sites [--cache D:/eddie_data/cache]
     python scripts/build_site.py --site sites/*.yml --dry-run        # plan only: surveys, tiles, queries
 
 LINZ Topo50 layers need an API key: set LINZ_API_KEY (data.linz.govt.nz, My account, API keys).
@@ -45,10 +45,14 @@ def main():
     ap.add_argument("--sources", default=str(ROOT / "sites" / "sources.yml"))
     ap.add_argument("--index", help="coverage index (default: sources_coverage.geojson beside sources.yml)")
     ap.add_argument("--out", default="data/sites")
-    ap.add_argument("--cache", default="data/cache")
+    ap.add_argument("--cache", help="shared cache root (default: TERRAIN_DATA_DIR, else ~/terrain_data): STAC, "
+                                    "mirrored COG tiles, snapshots")
+    ap.add_argument("--no-mirror", action="store_true", help="read COG windows over HTTP instead of keeping whole tiles")
     ap.add_argument("--only", choices=["elevation", "sources"])
     ap.add_argument("--dry-run", action="store_true", help="discover surveys/tiles and list queries; download nothing")
     a = ap.parse_args()
+    from terrain_s2.acquire.elevation import default_data_dir
+    cache = a.cache or str(default_data_dir())
     sources = load_sources(a.sources)
     idx_path = Path(a.index) if a.index else registry.default_index_path(a.sources)
     index = registry.load_index(idx_path) if idx_path.exists() else None
@@ -59,7 +63,7 @@ def main():
     sites = [load_site(p, ROOT) for p in paths] + [tile_site(t, a.partition, a.buffer) for t in a.tile]
     bad = 0
     for site in sites:
-        prov = build_site(site, sources, a.out, a.cache, dry_run=a.dry_run, only=a.only, index=index)
+        prov = build_site(site, sources, a.out, cache, dry_run=a.dry_run, only=a.only, index=index, mirror=not a.no_mirror)
         print(f"[{site.id}] done in {prov['seconds']} s; errors: {len(prov['errors'])}; -> {Path(a.out) / site.id}")
         for e in prov["errors"]:
             print(f"    ERROR {e['step']}: {e['error']}")

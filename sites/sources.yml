@@ -127,6 +127,22 @@ sources:
     layer: buildings
     fields: {use: use}
     id_field: building_id
+  linz_coastline:
+    kind: linz_wfs
+    layer_id: 51153                               # NZ Coastline Polygons (Topo, 1:50k), mean high water
+    # Stage 1 land masks (stage1/land.py fetches it through linz_wfs and the snapshot store); not used
+    # in Stage 2 bundles (S2-10).
+    layer: coastline
+    id_field: t50_fid
+    enabled: false
+    scope: Stage 1 land mask only
+  linz_mangrove:
+    kind: linz_wfs
+    layer_id: 50296                               # NZ Mangrove Polygons (Topo, 1:50k)
+    layer: mangrove
+    id_field: t50_fid
+    enabled: false
+    scope: Stage 1 land mask only (with linz_coastline)
   linz_bridges:
     kind: linz_wfs
     layer_id: 50244                               # NZ Bridge Centrelines (Topo, 1:50k)

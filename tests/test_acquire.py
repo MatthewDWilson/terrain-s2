@@ -151,8 +151,13 @@ def _fake_linz(tmp_path):
     items = {k: {"id": k, "bbox": list(linz_elevation.to_lonlat(b)),
                  "assets": {"visual": {"href": f"file://{p}", "type": "image/tiff; application=geotiff; profile=cloud-optimized",
                                        "file:checksum": "1220" + k}}} for k, (p, b) in tiles.items()}
+    far = dict(coll, **{"linz:slug": "x", "extent": {"spatial": {"bbox": [[174.7, -41.3, 174.8, -41.2]]},
+               "temporal": {"interval": [["2013-01-01T00:00:00Z", "2014-01-01T00:00:00Z"]]}}, "links": []})
+    dsm = dict(coll, **{"links": []})                                     # a DSM collection without tiles here
     routes = [(lambda u, p, d: u == root + "catalog.json", cat),
-              (lambda u, p, d: u == coll_url, coll), (lambda u, p, d: u == old_url, old)]
+              (lambda u, p, d: u == coll_url, coll), (lambda u, p, d: u == old_url, old),
+              (lambda u, p, d: u == root + "wellington/x/dem_1m/2193/collection.json", far),
+              (lambda u, p, d: u == root + "canterbury/canterbury_2020-2023/dsm_1m/2193/collection.json", dsm)]
     for k, it in items.items():
         routes.append((lambda u, p, d, k=k: u == root + f"canterbury/canterbury_2020-2023/dem_1m/2193/{k}.json", it))
     return root, routes
@@ -187,9 +192,7 @@ def test_build_site_end_to_end(tmp_path, monkeypatch):
     from terrain_s2.acquire import build
     from terrain_s2.acquire.site import Site
     root, routes = _fake_linz(tmp_path)
-    monkeypatch.setattr(linz_elevation, "ROOT", root)
-    orig = linz_elevation.fetch_product
-    monkeypatch.setattr(build.linz_elevation, "fetch_product", lambda *a, **k: orig(*a, **dict(k, root=root)))
+    monkeypatch.setattr(linz_elevation, "ROOT", root)                     # the shared reader's default root
     layer = "https://council/arcgis/rest/services/SW/MapServer/19"
     routes += [(lambda u, p, d: u == layer and p.get("f") == "json", {"maxRecordCount": 10, "advancedQueryCapabilities": {"supportsPagination": True}}),
                (lambda u, p, d: u == layer + "/query", {"type": "FeatureCollection", "features": [
@@ -209,7 +212,7 @@ def test_build_site_end_to_end(tmp_path, monkeypatch):
     assert meta["elevation"][0]["survey"] == "canterbury_2020-2023"
     assert {s["name"] for s in meta["sources"]} == {"waimakariri_culverts", "kiwirail_culverts"}
     assert any("skipped" in s for s in meta["sources"])
-    manifest = [json.loads(l) for l in (out / "snapshots" / "manifest.jsonl").read_text().splitlines()]
+    manifest = [json.loads(l) for l in (tmp_path / "cache" / "snapshots" / "manifest.jsonl").read_text().splitlines()]
     assert any(r["source"] == "waimakariri_culverts" for r in manifest)
 
 

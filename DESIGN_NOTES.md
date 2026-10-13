@@ -1328,6 +1328,31 @@ looks for `eddie.tasks`, `eddie.app` and Flask; `test_product_auto_and_osm_cache
 OSMPythonTools (it comes with GeoFabrics). Sandbox: 123 passed, 19 skipped, none failing. (Guards in Cowork's
 files, changed by the Stage 2 agent to unblock the merge; for Cowork's review.)
 
+**S2-9: one elevation reader** (`acquire/elevation.py`, 13 Oct). `ElevationSource(profile=None, http=,
+cache_dir=, stac_root=, mirror=True)` with `plan(bounds, product, surveys=None)`, `read(plan)` and `pair(bounds,
+priority=None)`, to the interface in `stage1/source.py`; `get_source` now returns it, and Stage 1's tests pass
+on it unchanged. Every 1 m collection meeting the area (any region: a site's or tile's region no longer picks
+the survey); profile priority, then newest capture, then most recently updated; `exclude` never; the national
+mosaic last as fill; `lidar_source` per cell; the DSM planned over the DEM's surveys in the DEM's order;
+`source_version()` (collections, `updated`, item checksums) for the generator key. Mirror: whole COG tiles under
+`TERRAIN_DATA_DIR/cog/<collection path>/`, checked against `file:checksum` (sha2-256), a JSON sidecar per tile;
+read in place for `file://` items. Stage 2 does not import Stage 1 (the record types are defined in
+`elevation.py`, with Stage 1's field names); Stage 1's `NoElevationData` is now the shared one.
+**Bundles** (`build_site`) read through it: a site's `survey` is a priority, not the only survey; writes
+`<product>.tif` and `<product>_source.tif` (lidar_source); `site.json` lists every survey with its items and
+the source version. Checked on canterbury1 served as a two-tile fake STAC: DEM and DSM identical to
+`linz_elevation.fetch_product` (grid, values), and network outputs identical; rasters now carry the compound
+CRS EPSG:2193+7839 (section 9 item 10). Fixed on the way: the item-index cache key had no product, so a DEM and
+a DSM collection without `linz:geospatial_category` could share an index; the key now includes a hash of the
+collection URL (existing index files are rebuilt once).
+
+**S2-10: one cache root.** `build_site --cache` and `partition.py --cache` default to `TERRAIN_DATA_DIR` (Stage 1's
+setting, default `~/terrain_data`): `stac/` (documents, item indexes), `cog/` (mirrored tiles), `snapshots/`
+(one snapshot store for both stages; `site.json` records its location; bundles no longer hold their own),
+`linz_collections/` (partition). `sources.yml` gains `linz_coastline` (51153) and `linz_mangrove` (50296),
+disabled for bundles (Stage 1's `land.py` fetches them through `linz_wfs` and the store). `environment.yml` gains
+xarray, netCDF4, rioxarray, SQLAlchemy and libgdal-netcdf, so both stages' tests run in one environment.
+Tests: 128 passed, 19 skipped (sandbox).
 
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 

@@ -3,7 +3,7 @@
 
     python scripts/partition.py --out D:/eddie_data/partition/nz_tiles.gpkg --cache D:/eddie_data/cache
     python scripts/partition.py --unit quadrant --out D:/eddie_data/partition/nz_quadrants.gpkg --cache D:/eddie_data/cache
-    python scripts/partition.py --check D:/eddie_data/cache/linz_stac      # grid vs cached tile footprints
+    python scripts/partition.py --check D:/eddie_data/stac/tiles          # grid vs cached tile footprints
 
 Reads the nz-elevation STAC catalogue: every ``<region>/<survey>/dem_1m/2193/collection.json`` (and
 ``dsm_1m``) lists its tiles by name, and the names are LINZ map-sheet ids, so tile footprints come
@@ -199,7 +199,7 @@ def check(cache_dir, log=print):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", help="GeoPackage to write")
-    ap.add_argument("--cache", default="data/cache", help="cache root (collections under <cache>/linz_collections)")
+    ap.add_argument("--cache", help="cache root (default: TERRAIN_DATA_DIR; collections under <cache>/linz_collections)")
     ap.add_argument("--unit", default="tile", choices=["tile", "quadrant"],
                     help="processing unit: the LINZ 1:10k tile (production) or its quadrants (testing)")
     ap.add_argument("--split", default="0.8,0.1,0.1", help="train,validation,test fractions (by 1:50k sheet)")
@@ -215,6 +215,9 @@ def main():
         ap.error("--out is required (or --check)")
     from terrain_s2.acquire.http import Http
     fr = tuple(float(v) for v in a.split.split(","))
+    if not a.cache:
+        from terrain_s2.acquire.elevation import default_data_dir
+        a.cache = str(default_data_dir())
     colls = collections(Http(), Path(a.cache) / "linz_collections", a.refresh)
     lt = linz_tiles(colls)
     import glob

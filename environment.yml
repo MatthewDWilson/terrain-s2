@@ -30,6 +30,11 @@ dependencies:
   - shapely>=2.0
   - pyogrio
   - matplotlib-base
+  - xarray                      # Stage 1 products (netCDF contract) and the store
+  - netcdf4
+  - rioxarray
+  - sqlalchemy                  # Stage 1 product registry (SQLite here, Postgres under EDDIE)
+  - libgdal-netcdf              # GDAL's netCDF driver (reads of Stage 1 .nc products)
   - pytest
   - pyflakes                    # tests/test_static.py (undefined names)
   - pip

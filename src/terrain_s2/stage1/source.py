@@ -34,8 +34,11 @@ from urllib.parse import urljoin
 import numpy as np
 
 
-class NoElevationData(LookupError):
-    """No survey covers the requested area."""
+try:                                   # the shared reader's (S2-9), so one ``except`` catches both readers
+    from ..acquire.elevation import NoElevationData
+except ImportError:                    # pragma: no cover
+    class NoElevationData(LookupError):
+        """No survey covers the requested area."""
 
 
 @dataclass

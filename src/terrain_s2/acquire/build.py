@@ -15,37 +15,31 @@ import json
 import time
 from pathlib import Path
 
-from . import arcgis, linz_elevation, linz_wfs, osm, registry
+from . import arcgis, linz_wfs, osm, registry
 from .harmonise import harmonise
 from .snapshot import SnapshotStore
 
 
-def build_site(site, sources: dict, out_root, cache_root, http=None, dry_run=False, only=None, log=print, index=None):
-    """``index``: the coverage index (registry.load_index), needed when ``site.sources`` is ``auto``."""
+def build_site(site, sources: dict, out_root, cache_root, http=None, dry_run=False, only=None, log=print, index=None,
+               mirror=True):
+    """``index``: the coverage index (registry.load_index), needed when ``site.sources`` is ``auto``.
+    ``cache_root``: the shared cache (``TERRAIN_DATA_DIR``: STAC documents and item indexes under ``stac/``,
+    mirrored COG tiles under ``cog/``, the snapshot store under ``snapshots/``). ``mirror``: keep whole COG
+    tiles locally (S2-9)."""
     from .http import Http
     out = Path(out_root) / site.id
     out.mkdir(parents=True, exist_ok=True)
-    store = SnapshotStore(out / "snapshots")
+    store = SnapshotStore(Path(cache_root) / "snapshots")      # one store for both stages (S2-10)
     http = http or Http(store)
     if getattr(http, "store", None) is None:
         http.store = store
     t0 = time.perf_counter()
     prov = dict(site=dict(id=site.id, role=site.role, bounds=site.bounds, buffer_m=site.buffer_m, window=site.window,
-                          aoi=site.aoi_path, notes=site.notes),
+                          aoi=site.aoi_path, notes=site.notes), snapshot_store=str(store.root),
                 built=_dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), dry_run=dry_run,
                 elevation=[], sources=[], errors=[])
     if only in (None, "elevation") and site.elevation:
-        for product in site.elevation.get("products", ["dem", "dsm"]):
-            try:
-                rec = linz_elevation.fetch_product(http, site.elevation["region"], product, site.window,
-                                                   out / f"{product}.tif", Path(cache_root) / "linz_stac",
-                                                   site.elevation.get("survey"), dry_run=dry_run)
-                prov["elevation"].append(rec)
-                log(f"[{site.id}] {product}: survey {rec['survey']}, {rec['n_tiles']} tile(s)"
-                    + ("" if dry_run else f", {rec['shape'][1]}x{rec['shape'][0]} cells"))
-            except Exception as e:  # noqa: BLE001 - recorded, build continues
-                prov["errors"].append(dict(step=f"elevation:{product}", error=str(e)))
-                log(f"[{site.id}] {product}: FAILED {e}")
+        _elevation(site, out, cache_root, http, dry_run, prov, log, mirror)
     layers = {}
     auto = site.sources == "auto"
     names = site.sources
@@ -146,6 +140,51 @@ def _fetch(http, store, name, spec, window, dry_run):
         return dict(meta=dict(kind=kind, path=spec["path"], count=len(g)),
                     layers={spec["layer"]: harmonise(g, spec, name, now)} if len(g) else {})
     raise ValueError(f"unknown source kind {kind!r}")
+
+
+def _elevation(site, out, cache_root, http, dry_run, prov, log, mirror=True):
+    """DEM and DSM through the shared reader (S2-9): surveys meeting the window, the site's survey first if it
+    names one, newest capture next, national fill last; the DSM over the DEM's surveys. Writes
+    ``<product>.tif`` and ``<product>_source.tif`` (lidar_source: the survey index per cell)."""
+    from . import elevation as E
+    products = site.elevation.get("products", ["dem", "dsm"])
+    bounds = E.whole_metre_bounds(site.window)
+    survey = site.elevation.get("survey")
+    try:
+        src = E.ElevationSource(http=http, cache_dir=Path(cache_root) / "stac", mirror=mirror,
+                                mirror_dir=Path(cache_root) / "cog")
+        dem_plan, dsm_plan = src.pair(bounds, priority=[survey] if survey else None)
+    except Exception as e:  # noqa: BLE001 - recorded, build continues
+        prov["errors"].append(dict(step="elevation:plan", error=str(e)))
+        log(f"[{site.id}] elevation: FAILED {e}")
+        return
+    for product, plan in (("dem", dem_plan), ("dsm", dsm_plan)):
+        if product not in products:
+            continue
+        if plan is None:
+            prov["errors"].append(dict(step=f"elevation:{product}", error="no survey covers the window"))
+            log(f"[{site.id}] {product}: FAILED no survey covers the window")
+            continue
+        rec = dict(product=product, bounds=list(bounds), surveys=[s_.record() for s_ in plan.surveys],
+                   source_version=plan.source_version(), survey=plan.surveys[0].slug,
+                   collection=plan.surveys[0].collection, title=plan.surveys[0].title,
+                   licence=plan.surveys[0].licence, capture=list(plan.surveys[0].capture),
+                   n_tiles=sum(len(s_.items) for s_ in plan.surveys))
+        try:
+            if not dry_run:
+                read = src.read(plan)
+                rec.update(E.write_read(read, out / f"{product}.tif", out / f"{product}_source.tif"))
+                rec["used"] = [s_.slug for s_ in read.used]
+                rec["tiles"] = [dict(id=i.id, href=i.href, checksum=i.checksum) for s_ in read.used for i in s_.items]
+                rec["n_tiles"] = len(rec["tiles"])
+                rec["survey"] = read.used[0].slug if read.used else rec["survey"]
+            prov["elevation"].append(rec)
+            used = rec.get("used") or [s_.slug for s_ in plan.surveys]
+            log(f"[{site.id}] {product}: survey {', '.join(used)}, {rec['n_tiles']} tile(s)"
+                + ("" if dry_run else f", {rec['shape'][1]}x{rec['shape'][0]} cells, valid {rec['valid_fraction']:.3f}"))
+        except Exception as e:  # noqa: BLE001 - recorded, build continues
+            prov["errors"].append(dict(step=f"elevation:{product}", error=str(e)))
+            log(f"[{site.id}] {product}: FAILED {e}")
 
 
 def _write_layers(out, layers, window=None):

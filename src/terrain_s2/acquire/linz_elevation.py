@@ -65,8 +65,11 @@ def tile_index(http, coll_url, coll, cache_dir, workers: int = 16):
     """Footprints of all tiles in a collection: [{id, bbox, href, checksum}], cached per collection."""
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    # the collection URL is part of the key: a survey's DEM and DSM share slug and date, and a collection
+    # without linz:geospatial_category would otherwise reuse the other's index
+    import hashlib
     key = (coll.get("linz:slug", "c") + "_" + coll.get("linz:geospatial_category", "x") + "_" +
-           str(coll.get("updated", ""))[:10]).replace(":", "-")
+           str(coll.get("updated", ""))[:10] + "_" + hashlib.sha256(coll_url.encode()).hexdigest()[:8]).replace(":", "-")
     f = cache_dir / f"tiles_{key}.json"
     if f.exists():
         return json.loads(f.read_text())
