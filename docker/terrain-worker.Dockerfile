@@ -82,12 +82,17 @@ SETUP
 COPY --from=build /venv /venv
 COPY --chmod=555 docker/terrain_worker_entrypoint.sh /app/terrain_worker_entrypoint.sh
 WORKDIR /app
+# PROJ_DATA and GDAL_DATA as the conda activation scripts set them: the worker's entrypoint activates the
+# environment, but 'docker compose exec ... python' does not, and without them GDAL printed
+# "PROJ: proj_create_from_database: Open of /venv/share/proj failed" (14 Oct 2026).
 ENV PATH=/venv/bin:$PATH \
     TERRAIN_DATA_DIR=/terrain_data \
     TERRAIN_PRODUCT_DIR=/terrain_products \
     MPLBACKEND=Agg \
     MPLCONFIGDIR=/tmp/matplotlib \
     DASK_TEMPORARY_DIRECTORY=/tmp \
-    TERRAIN_CELERY_LOGS=1
+    TERRAIN_CELERY_LOGS=1 \
+    PROJ_DATA=/venv/share/proj \
+    GDAL_DATA=/venv/share/gdal
 USER nonroot
 ENTRYPOINT ["/app/terrain_worker_entrypoint.sh"]

@@ -14,6 +14,8 @@
 #   edge              W3 survey-edge check: an AOI across a LINZ survey boundary, from the partition
 #                     (D:\eddie_data\partition\nz_tiles.gpkg), then 'e2e raster 1' on it
 #   rec1              probe the REC1 river network (ArcGIS item in the Stage 1 profile): fields and SH12 sample
+#   read <WKT file>   diagnose the elevation reader for an AOI: surveys planned, and per tile its grid, nodata
+#                     and the valid fraction of the window read (no product written)
 #   shim              W5: FReDT's calls through the compatibility shim, from the core worker
 #   branch [name]     show or set the terrain-s2 branch the WSL mirror follows (default main)
 #   task <task id>    status of a terrain task; on failure the end of its traceback (full text to /mnt/d/EDDIE)
@@ -667,6 +669,52 @@ PY
         "  gap fraction: \(.gap_fraction)", "  checksums: \([.inputs[].items[]? | select(.checksum != null)] | length) of \([.inputs[].items[]?] | length) items"' "$prov"
 }
 
+# ------------------------------------------------------------------------------------------------ read
+read_diag() {
+    local f="${1:-/mnt/d/EDDIE/w3_edge_aoi.wkt}"
+    [ -f "$f" ] || { note "usage: read <file with a WKT polygon in EPSG:4326>"; exit 2; }
+    cd "$INST" || exit 1
+    say "Elevation reader for $(basename "$f") (1 m, as the raster backend reads it)"
+    docker compose exec -T -e AOI_WKT="$(tr -d '\r' < "$f")" terrain_worker python - <<'PY' 2>&1 | sed 's/^/  /' | tee /mnt/d/EDDIE/read_diag.txt
+import os, warnings
+import numpy as np, rasterio
+from shapely.geometry import box
+from terrain_s2.settings import from_env
+from terrain_s2.stage1 import aoi as A
+from terrain_s2.stage1.profile import load
+from terrain_s2.stage1.source import get_source
+from terrain_s2.acquire.elevation import _read_item
+warnings.simplefilter("always")
+s = from_env()
+p = load(s.profile)
+g = A.to_working(os.environ["AOI_WKT"], "EPSG:2193", "EPSG:4326")
+b = A.grid_bounds(box(*g.bounds), s.buffer_m, 1)
+src = get_source(p, cache_dir=s.data_dir / "stac")
+print("reader:", type(src).__module__, "| grid bounds:", b)
+plan = src.plan(b, "dem")
+nd = p["elevation"].get("nodata")
+for sv in plan.surveys:
+    print(f"survey {sv.index} {sv.slug} capture {sv.capture} national {sv.national}: {len(sv.items)} tile(s)")
+    for it in sv.items:
+        path = src.local(it, sv)
+        with rasterio.open(path) as r:
+            t = r.transform
+            print(f"   {it.id}: bounds {tuple(round(v, 2) for v in r.bounds)} res {r.res} crs {r.crs.to_epsg()} "
+                  f"nodata {r.nodata} dtype {r.dtypes[0]} origin frac ({t.c % 1:.3f}, {t.f % 1:.3f})")
+        with warnings.catch_warnings(record=True) as w:
+            d, off = _read_item(path, b, nd)
+        if d is None:
+            print("      window: outside the tile")
+        else:
+            print(f"      window {d.shape} at {off}: valid {np.isfinite(d).mean():.1%}, "
+                  f"range {np.nanmin(d) if np.isfinite(d).any() else None} .. {np.nanmax(d) if np.isfinite(d).any() else None}"
+                  + (f" | {w[0].message}" if w else ""))
+rd = src.read(plan)
+print(f"read: {rd.z.shape}, valid {np.isfinite(rd.z).mean():.1%}, surveys used {[x.slug for x in rd.used]}")
+PY
+    note "saved: D:\\EDDIE\\read_diag.txt"
+}
+
 # ------------------------------------------------------------------------------------------------ rec1
 rec1() {
     # The river network for GeoFabrics' river stage (Stage 1 profile rivers.network): where it resolves to,
@@ -777,11 +825,12 @@ case "${1:-setup}" in
     edge) shift; edge "$@" ;;
     branch) shift; branch "$@" ;;
     rec1) rec1 ;;
+    read) shift; read_diag "$@" ;;
     shim) shim ;;
     products) products ;;
     export) shift; export_product "$@" ;;
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric] [aoi=<file>] [k=v ...]|edge|rec1|shim|branch [name]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric] [aoi=<file>] [k=v ...]|edge|read <wkt file>|rec1|shim|branch [name]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac
