@@ -1,11 +1,17 @@
-# ML-1 candidate scorer (terrain_s2.ml.train). Unlabelled candidates are weak negatives only within
-# unlabelled_scope_m of a road or railway (where council and KiwiRail registers claim completeness), with total weight
-# unlabelled_weight_ratio x the positives'; elsewhere (private and farm crossings) they get none. null: everywhere
-# (the first run, scorer_wave1). manual_weight: Matt's y / n labels (null: the label config's 0.6).
+# ML-1 candidate scorer (terrain_s2.ml.train). Unlabelled candidates are weak negatives with total weight
+# unlabelled_weight_ratio x the positives' (insensitive between 0.3 and 3 on wave 1). unlabelled_scope_m limits them to
+# candidates near roads or rail: tried on wave 1 and harmful (with no negatives far from roads the model rates every
+# such candidate highly), so null. manual_weight: Matt's y / n (null: the label config's 0.6; in wave 1 they all lie
+# in the BW24 holdout, so they only test). DESIGN_NOTES 11, "ML-1, second round".
 unlabelled_weight_ratio: 1.0
-unlabelled_scope_m: 20
+unlabelled_scope_m: null
 manual_weight: null
 importance: true
+# Features: the barrier as physical context, not whose inventory it is in. Road-specific features (distance to LINZ
+# roads, lanes, surface, the road-based candidate sources) taught the model Waimakariri's road culverts and missed
+# HBRC's scheme culverts, ~180 m from roads; one distance to any road, track, railway or OSM way generalises.
+exclude_features: [road_dist_m, "road_distance_*", "ctx_*", src_road_x_drain, src_road_end_pair]
+include_features: [ctx_dist_any_way_m]
 budgets: [50, 100, 200, 500]          # review budgets per tile for recall@K
 sheet_folds: 5                        # GroupKFold by 1:50k sheet, outside the holdout
 seed: 0

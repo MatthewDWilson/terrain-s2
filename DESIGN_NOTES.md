@@ -1496,6 +1496,41 @@ every tile). Windows' `nvidia-smi` does not list WSL processes, and with the poo
 stage, low GPU memory and utilisation between stages are expected; the batch lines' `GPU ... GB` and
 `network.json` `device` / `gpu_pool_gb` are the check.
 
+**ML-1, second round** (15 Oct; run in the sandbox on Matt's `wave1` dataset, 179,905 candidates). Folds: leave one
+council out and the BW24 holdout; recall@100 per tile (council culverts, in brackets), and the AUC on Matt's labels.
+
+| variant | HBRC out | Waimakariri out | holdout | manual AUC |
+|---|---|---|---|---|
+| tiers | 0.24 (0.22) | 0.13 (0.10) | 0.08 (0.06) | 0.81 |
+| all features, every unlabelled a weak negative | 0.34 (0.11) | 0.30 (0.27) | 0.31 (0.26) | 0.57-0.60 |
+| ... trained only within 20 m of roads / rail | 0.33 (0.10) | 0.28 (0.25) | 0.32 (0.26) | 0.53-0.59 |
+| unlabelled weight 0 beyond 20 m (`unlabelled_scope_m: 20`, Matt's run) | 0.26 (0.15) | 0.05 (0.05) | 0.06 (0.06) | 0.38-0.40 |
+| no road features | 0.37 (0.26) | 0.24 (0.23) | 0.27 (0.25) | 0.52-0.59 |
+| no road features, one distance to any way (**chosen**) | **0.43 (0.28)** | **0.30 (0.28)** | **0.30 (0.27)** | 0.60-0.61 |
+
+Unlabelled weight ratio 0.3 to 3: no difference. Findings:
+- *The scope rule was harmful*: with no negatives far from roads, every such candidate looks positive and floods
+  the top of each tile. Default back to `null`.
+- *Matt's labels never trained the model*: all 128 lie in the BW24 holdout, so `manual_weight` 3 changed nothing
+  (the two runs are identical). They only test.
+- *Councils record different structures*: HBRC's council culverts lie a median 182 m from roads (scheme drains);
+  Waimakariri's at 1.4 m (road culverts); KiwiRail's ~20 m (rail). Road-specific features (distance to LINZ roads,
+  lanes, surface, the road-based sources) let the model learn one council's kind and miss the other's; a single
+  distance to the nearest road, track, railway or OSM way (`ctx_dist_any_way_m`, derived in training) keeps the
+  physical fact (a crossing is where a way meets a channel) and generalises: HBRC council culverts 0.28 against
+  0.11, KiwiRail culverts 0.27-0.52 against 0.01-0.27.
+- *Matt's "y" are mostly small crossings*: median upstream area 2.8 ha against 25 ha for council and implied
+  positives, ~10 m from roads against ~1.5 m (driveways, side drains); they separate from his "n" by local relief
+  (`relief_med5_min5`, AUC 0.86), which the inventories hardly exercise. Matt (15 Oct): missing those is acceptable;
+  council culverts (larger) matter most.
+- *Misses*: 257 of 949 have a candidate 15-25 m away (label positions: council lines, 1:50k road centrelines),
+  so the 15 m label radius undercounts; the rest (690, of which 367 Waimakariri council culverts) have none within
+  25 m: candidate generation, ML-3.
+Chosen configuration in `ml/config/scorer.yml` (`exclude_features`, `include_features`); its full report is
+`ml/results/scorer_wave1_physical.md`: every fold 1.4-3.6 x the tiers at 100 candidates, AP 0.20-0.36 against
+0.02-0.07, bridge AUC 0.86-0.95. Permutation importance: distance to any way 0.27, upstream area 0.07, tier 0.06,
+DSM - DEM 0.05, then small contributions from the DEM features.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

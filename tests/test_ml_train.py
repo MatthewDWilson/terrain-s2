@@ -75,3 +75,14 @@ def test_pu_weights_and_roles():
     _, _, w3, keep3 = TR.design(d2, ["f"], dict(unlabelled_weight_ratio=1.0, unlabelled_scope_m=20, manual_weight=1.0))
     assert not keep3[6] and np.isclose(w3[3], 1.7) and w3[2] == 1.0        # far from roads and rail: no weight;
     #                                                                          Matt's label at manual_weight
+
+
+def test_feature_selection_patterns_and_any_way():
+    d = pd.DataFrame(dict(a=[1.0, 2], road_dist_m=[1.0, 2], road_distance_at=[1.0, 2], ctx_dist_road_m=[5.0, 600],
+                          ctx_dist_track_m=[50.0, 600], ctx_dist_osm_way_m=[np.nan, 3.0], ctx_dist_rail_m=[500.0, 500],
+                          src_road_x_drain=[0.0, 1], src_testA=[1.0, 0]))
+    d = TR.add_derived(d)
+    assert d.ctx_dist_any_way_m.tolist() == [5.0, 3.0]
+    cfg = dict(exclude_features=["road_dist_m", "road_distance_*", "ctx_*", "src_road_x_drain"],
+               include_features=["ctx_dist_any_way_m"])
+    assert TR.feature_columns(d, cfg) == ["a", "src_testA", "ctx_dist_any_way_m"]

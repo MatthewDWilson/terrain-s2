@@ -31,7 +31,8 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULTS = dict(unlabelled_weight_ratio=1.0, unlabelled_scope_m=20.0, manual_weight=None, importance=True,
+DEFAULTS = dict(unlabelled_weight_ratio=1.0, unlabelled_scope_m=None, manual_weight=None, importance=True,
+                exclude_features=[], include_features=[],
                 budgets=[50, 100, 200, 500], sheet_folds=5, seed=0,
                 model=dict(max_iter=400, learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=40, l2_regularization=1.0,
                            early_stopping=True, validation_fraction=0.1, n_iter_no_change=30))
@@ -56,16 +57,32 @@ def load_dataset(path):
 
     from .features import normalise_source_flags
     path = Path(path)
-    d = normalise_source_flags(pd.read_parquet(path / "candidates.parquet"))
+    d = add_derived(normalise_source_flags(pd.read_parquet(path / "candidates.parquet")))
     m = pd.read_parquet(path / "misses.parquet") if (path / "misses.parquet").exists() else pd.DataFrame()
     card = json.loads((path / "card.json").read_text())
     return d, m, card
 
 
-def feature_columns(d) -> list:
+def add_derived(d):
+    """Features computed from the dataset's columns: ``ctx_dist_any_way_m``, the distance to the nearest road,
+    track, railway or OSM way of any kind (500 m cap): the barrier as physical context, without saying whose
+    inventory it belongs to."""
+    parts = [c for c in ("ctx_dist_road_m", "ctx_dist_track_m", "ctx_dist_osm_way_m", "ctx_dist_rail_m") if c in d]
+    if parts and "ctx_dist_any_way_m" not in d:
+        d = d.assign(ctx_dist_any_way_m=d[parts].fillna(500.0).min(axis=1))
+    return d
+
+
+def feature_columns(d, cfg=None) -> list:
+    """Numeric, non-empty dataset columns that are not location, identifiers or labels; then the config's
+    ``exclude_features`` (names or shell patterns) are removed and ``include_features`` put back."""
+    from fnmatch import fnmatch
+
     from .dataset import NOT_FEATURES
-    cols = [c for c in d.columns if c not in NOT_FEATURES and d[c].dtype.kind in "fiub"]
-    return [c for c in cols if d[c].notna().any()]
+    cols = [c for c in d.columns if c not in NOT_FEATURES and d[c].dtype.kind in "fiub" and d[c].notna().any()]
+    cfg = cfg or {}
+    ex, inc = cfg.get("exclude_features") or [], cfg.get("include_features") or []
+    return [c for c in cols if not any(fnmatch(c, p) for p in ex) or any(fnmatch(c, p) for p in inc)]
 
 
 def roles(d):
@@ -192,7 +209,7 @@ def run(dataset, out, cfg=None, name=None, log=print):
     from . import code_version
     cfg = cfg or load_config()
     d, misses, card = load_dataset(dataset)
-    cols = feature_columns(d)
+    cols = feature_columns(d, cfg)
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     results, scores = [], []
