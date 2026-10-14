@@ -172,7 +172,8 @@ def folds(d, cfg):
 
 def run(dataset, out, cfg=None, name=None, log=print):
     """Cross-validate, train the final models on everything outside the holdout, write the report."""
-    import joblib
+    import pickle
+
     import pandas as pd
 
     from . import code_version
@@ -210,7 +211,10 @@ def run(dataset, out, cfg=None, name=None, log=print):
     meta = dict(name=name or out.name, built=_dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
                 code=code_version(), dataset=str(dataset), dataset_card=card.get("versions"), features=cols, config=cfg,
                 trained_on=dict(tiles=int(d.loc[~hold, "tile_id"].nunique()), candidates=int((~hold).sum())))
-    joblib.dump(dict(structure=final, bridge=final_b, features=cols, meta=meta), out / "model.joblib")
+    # plain pickle (protocol 5) rather than joblib: joblib < 1.6 sets array.shape when loading, deprecated in NumPy
+    # 2.5 (384 warnings in the tests on Matt's workstation, 15 Oct 2026)
+    with open(out / "model.pkl", "wb") as f:
+        pickle.dump(dict(structure=final, bridge=final_b, features=cols, meta=meta), f, protocol=5)
     if scores:
         pd.concat(scores, ignore_index=True).to_parquet(out / "fold_scores.parquet", index=False)
     rep = dict(meta=meta, folds=results)
@@ -239,3 +243,12 @@ def report_md(rep, budgets) -> str:
         L.append(f"- {r['fold']}: " + "; ".join(f"{k} {v[next(x for x in v if x.startswith('recall@'))]} "
                                                 f"({v['positives']} + {v['misses']} missed)" for k, v in r["model"]["by_kind"].items()))
     return "\n".join(L) + "\n"
+
+
+def load_model(path):
+    """The saved scorer: dict(structure=, bridge=, features=, meta=). ``path``: model.pkl or its folder."""
+    import pickle
+    path = Path(path)
+    f = path / "model.pkl" if path.is_dir() else path
+    with open(f, "rb") as fh:
+        return pickle.load(fh)

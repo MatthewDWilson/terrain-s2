@@ -1,7 +1,6 @@
 """ML-1 on a synthetic dataset: folds, PU weighting, recall against the tiers, the saved model."""
 import json
 
-import joblib
 import numpy as np
 import pandas as pd
 
@@ -53,7 +52,7 @@ def test_scorer_beats_the_tiers_and_saves_a_model(tmp_path):
         assert 0 < r["model"]["recall@500"] <= r["model"]["reachable_recall@500"] <= 1
     h = rep["folds"][-1]
     assert h["model"]["tiles"] == 1 and h["model"]["misses"] == 1
-    saved = joblib.load(tmp_path / "model" / "model.joblib")
+    saved = TR.load_model(tmp_path / "model")
     assert saved["features"] == ["f1", "f2", "tier", "tier_dem_only", "dem_h_b"] or set(saved["features"]) >= {"f1", "f2"}
     assert "x" not in saved["features"] and "struct" not in saved["features"]
     assert saved["structure"].predict_proba(np.zeros((1, len(saved["features"])), np.float32)).shape == (1, 2)

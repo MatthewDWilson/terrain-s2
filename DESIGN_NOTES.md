@@ -1456,6 +1456,13 @@ misses), by label kind; average precision (lower bound); ROC AUC on Matt's y / n
 Writes `model.joblib` (final models outside the holdout, feature list, versions), `report.md`, `report.json`,
 `fold_scores.parquet`. Synthetic test: beats the tiers on every fold.
 
+**HPC start, warnings** (15 Oct): on the RTX 6000 machine WSL reported 2 cores (`nproc`), so `batch` sized 1 worker
+(and asked for 2 GPU workers): `.wslconfig` `processors=` had not taken effect. `batch` now warns below 8 cores,
+caps GPU workers at the number of workers (also in `run_batch`) and says how to choose them. The 384 test warnings
+on Matt's workstation came from joblib's loader (`array.shape = ...`, deprecated in NumPy 2.5; fixed in joblib
+1.6.0), found in the Windows *user* site-packages (`AppData\Roaming\Python\Python312`), which shadows the conda
+environment's packages. Scorer models are now plain pickles (`model.pkl`, `train.load_model`).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

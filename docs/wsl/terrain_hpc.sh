@@ -185,11 +185,17 @@ batch() {
     local part="$TERRAIN_DATA_DIR/partition/nz_tiles.gpkg"
     [ -f "$part" ] || die "no partition at $part (run 'partition', or copy nz_tiles.gpkg there)"
     local extra=("$@") w g
+    if [ "$(nproc)" -lt 8 ]; then
+        note "WARNING: WSL sees only $(nproc) cores. Set processors= in %UserProfile%\.wslconfig to the machine's"
+        note "         logical processors (e.g. 32 or 64), run 'wsl --shutdown' in PowerShell, and reopen."
+    fi
     if [[ " ${extra[*]} " != *" --workers "* ]]; then
         w=$(workers_for); g=0
         command -v nvidia-smi >/dev/null 2>&1 && g=2
+        [ "$g" -gt "$w" ] && g=$w
         extra+=(--workers "$w" --gpu-workers "$g")
         note "workers $w ($g on the GPU), from $(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo) GB and $(nproc) cores"
+        note "(choose them yourself with: batch <manifest> --workers N --gpu-workers M)"
     fi
     local log; log="$TERRAIN_DATA_DIR/logs/batch_$(date +%Y%m%d_%H%M%S).log"
     say "Batch: $manifest -> $log"

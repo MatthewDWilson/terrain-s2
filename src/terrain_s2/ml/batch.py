@@ -145,6 +145,7 @@ def run_batch(tile_ids, cfg: BatchConfig, workers: int = 1, gpu_workers: int = 0
         s = status(t, cfg, params)
         if s == "todo" or cfg.rerun or (s == "stale" and cfg.rerun_older):
             todo.append(t)
+    gpu_workers = min(gpu_workers, workers)
     log(f"{len(tile_ids)} tiles: {len(todo)} to run, {len(tile_ids) - len(todo)} done "
         f"({workers} workers, {gpu_workers} on the GPU)")
     if not todo:

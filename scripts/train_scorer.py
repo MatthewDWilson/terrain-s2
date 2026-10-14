@@ -5,7 +5,7 @@
 
 Cross-validates (leave one council out, sheets within councils, the holdout sheets), compares with the rule-based
 tiers, trains the final models outside the holdout, and writes TERRAIN_DATA_DIR/models/<name>/ (or --out):
-model.joblib, report.md, report.json, fold_scores.parquet.
+model.pkl, report.md, report.json, fold_scores.parquet.
 """
 import argparse
 import sys
