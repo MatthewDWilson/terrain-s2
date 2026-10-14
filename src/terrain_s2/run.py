@@ -340,7 +340,7 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
                 repairs=int(rep.intersects(core).sum()) if len(rep) else 0,
                 reaches_removed_by_cleaning=int(n_removed), rivers=len(riv_g),
                 floodplain_frac=round(float(fp.mean()), 3) if fp is not None else None,
-                cells=int(w.z.size), device=res.device,
+                cells=int(w.z.size), device=res.device, gpu_pool_gb=res.gpu_pool_gb,
                 conditioned=_cond_summary(cond, core) if cond is not None else None, perf=T.report())
     (out / "network.json").write_text(json.dumps(info, indent=2))
     if prof is not None:

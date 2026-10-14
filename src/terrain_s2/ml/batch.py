@@ -115,7 +115,8 @@ def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> 
             tab, _, _ = extract(res, Path(cfg.runs) / tile_id)
             rec.update(features_s=round(time.perf_counter() - t1, 1), n_features=int(tab.shape[1]))
         rec.update(ok=True, seconds=round(time.perf_counter() - t0, 1), crossings=res.info.get("crossings"),
-                   channels_km=res.info.get("channels_km"), peak_rss_gb=res.perf.get("peak_rss_gb"))
+                   channels_km=res.info.get("channels_km"), peak_rss_gb=res.perf.get("peak_rss_gb"),
+                   gpu_pool_gb=res.info.get("gpu_pool_gb"))
         del res
         (Path(cfg.runs) / tile_id / "done.json").write_text(json.dumps(rec, indent=1, default=str))
     except Exception as e:  # noqa: BLE001 - recorded; the batch carries on
@@ -192,6 +193,7 @@ def run_batch(tile_ids, cfg: BatchConfig, workers: int = 1, gpu_workers: int = 0
 def _line(i, n, r):
     if r.get("ok"):
         c = r.get("crossings") or {}
+        g = f", GPU {r['gpu_pool_gb']} GB" if r.get("gpu_pool_gb") is not None else ""
         return (f"[{i}/{n}] {r['tile_id']} {r['device']}: {r['seconds']} s, {r.get('channels_km')} km, "
-                f"{sum(c.values())} crossings, peak {r.get('peak_rss_gb')} GB")
+                f"{sum(c.values())} crossings, peak {r.get('peak_rss_gb')} GB{g}")
     return f"[{i}/{n}] {r['tile_id']} {r['device']}: FAILED {r.get('error')}"

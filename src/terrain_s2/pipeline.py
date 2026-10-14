@@ -24,6 +24,23 @@ class Result:
     timings: dict = field(default_factory=dict)
     device: str = "cpu"
     flw: object = None          # D8 flow directions on the breached DEM (reuse: do not route twice)
+    gpu_pool_gb: float | None = None   # GPU memory the feature stage held at its end (CuPy pool), then released
+
+
+def _release_gpu(be):
+    """After the feature stage (the only GPU stage), return CuPy's cached blocks to the device, so the
+    process does not hold GPU memory for the rest of its run (several workers share one GPU). Returns the GB the
+    pool held, or None on the CPU."""
+    if be.name != "gpu":
+        return None
+    try:
+        pool = be.xp.get_default_memory_pool()
+        gb = pool.total_bytes() / 2 ** 30
+        pool.free_all_blocks()
+        be.xp.get_default_pinned_memory_pool().free_all_blocks()
+        return round(gb, 2)
+    except Exception:  # noqa: BLE001 - only bookkeeping
+        return None
 
 
 def run(z: np.ndarray, transform, params: Params | None = None, be: Backend | None = None,
@@ -38,6 +55,7 @@ def run(z: np.ndarray, transform, params: Params | None = None, be: Backend | No
     t0 = time.perf_counter()
     feats = features.feature_stack(z, cs, be, params.features)
     t["features"] = time.perf_counter() - t0
+    gpu_gb = _release_gpu(be)
 
     t0 = time.perf_counter()
     br = hydro.breach_least_cost(z, cs, params.hydro)
@@ -67,4 +85,4 @@ def run(z: np.ndarray, transform, params: Params | None = None, be: Backend | No
     t["test_a"] = time.perf_counter() - t0
     t["total"] = sum(t.values())
     return Result(feats=feats, breach=br, dep=dep, upa=upa, breaches=allb, candidates=cands,
-                  timings=t, device=be.name, network=net, test_a=a_recs, flw=flw)
+                  timings=t, device=be.name, network=net, test_a=a_recs, flw=flw, gpu_pool_gb=gpu_gb)

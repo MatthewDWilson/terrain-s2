@@ -37,6 +37,11 @@ DATA_DEFAULT="$HOME/terrain_data"          # on the distro's ext4 disk: much fas
 ENVSH="$HOME_T/env.sh"
 GB_PER_TILE=12                             # peak per LINZ tile with features (DESIGN_NOTES 7j, 11) plus margin
 
+# cores: GNU nproc honours OMP_NUM_THREADS (2 per worker in env.sh), so it reported 2 on a 64-thread machine
+cores() { getconf _NPROCESSORS_ONLN; }
+gpu_mem_gb() { nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | awk '{printf "%d", $1/1024}'; }
+GB_GPU_PER_WORKER=8                        # CuPy pool for a LINZ tile's feature stage, freed after it (pipeline)
+
 say()  { printf '\n==== %s\n' "$1"; }
 note() { printf '  %s\n' "$1"; }
 die()  { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
@@ -53,7 +58,7 @@ preflight() {
     say "Machine"
     grep -qi microsoft /proc/version || note "WARNING: not WSL (fine on plain Linux, but the GPU notes assume WSL)"
     . /etc/os-release && note "OS: $PRETTY_NAME"
-    note "CPU: $(nproc) logical cores"
+    note "CPU: $(cores) logical cores"
     local mem; mem=$(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo)
     note "memory visible to WSL: ${mem} GB"
     if [ "$mem" -lt 100 ]; then
@@ -171,7 +176,7 @@ EOF
 workers_for() {  # sized from memory: GB_PER_TILE per worker, 85 % of what WSL sees; at most cores / 2
     local mem cores w
     mem=$(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo)
-    cores=$(nproc)
+    cores=$(cores)
     w=$(( mem * 85 / 100 / GB_PER_TILE ))
     [ "$w" -gt $(( cores / 2 )) ] && w=$(( cores / 2 ))
     [ "$w" -lt 1 ] && w=1
@@ -185,16 +190,18 @@ batch() {
     local part="$TERRAIN_DATA_DIR/partition/nz_tiles.gpkg"
     [ -f "$part" ] || die "no partition at $part (run 'partition', or copy nz_tiles.gpkg there)"
     local extra=("$@") w g
-    if [ "$(nproc)" -lt 8 ]; then
-        note "WARNING: WSL sees only $(nproc) cores. Set processors= in %UserProfile%\.wslconfig to the machine's"
+    if [ "$(cores)" -lt 8 ]; then
+        note "WARNING: WSL sees only $(cores) cores. Set processors= in %UserProfile%\.wslconfig to the machine's"
         note "         logical processors (e.g. 32 or 64), run 'wsl --shutdown' in PowerShell, and reopen."
     fi
     if [[ " ${extra[*]} " != *" --workers "* ]]; then
         w=$(workers_for); g=0
-        command -v nvidia-smi >/dev/null 2>&1 && g=2
+        # the feature stage is the only GPU stage (~10 s of a ~12 min tile) and frees its memory after, so GPU
+        # workers are limited by GPU memory if several overlap: GB_GPU_PER_WORKER each, at most all workers
+        if command -v nvidia-smi >/dev/null 2>&1; then g=$(( $(gpu_mem_gb) / GB_GPU_PER_WORKER )); fi
         [ "$g" -gt "$w" ] && g=$w
         extra+=(--workers "$w" --gpu-workers "$g")
-        note "workers $w ($g on the GPU), from $(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo) GB and $(nproc) cores"
+        note "workers $w ($g on the GPU), from $(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo) GB, $(cores) cores and $(gpu_mem_gb) GB of GPU memory"
         note "(choose them yourself with: batch <manifest> --workers N --gpu-workers M)"
     fi
     local log; log="$TERRAIN_DATA_DIR/logs/batch_$(date +%Y%m%d_%H%M%S).log"

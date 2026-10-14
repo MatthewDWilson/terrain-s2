@@ -1463,6 +1463,15 @@ on Matt's workstation came from joblib's loader (`array.shape = ...`, deprecated
 1.6.0), found in the Windows *user* site-packages (`AppData\Roaming\Python\Python312`), which shadows the conda
 environment's packages. Scorer models are now plain pickles (`model.pkl`, `train.load_model`).
 
+**HPC worker sizing, again** (15 Oct): `nproc` said 64 in the shell but 2 in the script: GNU `nproc` honours
+`OMP_NUM_THREADS`, which `env.sh` sets to 2 per worker. The script counts cores with `getconf _NPROCESSORS_ONLN`.
+GPU workers: the feature stage is the only GPU stage (~10 s of a ~12-16 min tile), so the limit is GPU memory
+when stages overlap, not compute; but CuPy keeps its memory pool for the life of the process. `pipeline.run` now
+frees the pool after the feature stage and reports what it held (`gpu_pool_gb` in network.json, done.json and the
+batch lines); the script allows one GPU worker per 8 GB of GPU memory (an estimate until those numbers come in),
+up to all workers: on the RTX 6000 (96 GB), 12 of 12. Without the pool release (the code before this), 6 GPU
+workers is a safe choice (Matt's), since each process keeps its pool.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
