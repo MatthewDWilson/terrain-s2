@@ -14,6 +14,10 @@
 #   edge              W3 survey-edge check: an AOI across a LINZ survey boundary, from the partition
 #                     (D:\eddie_data\partition\nz_tiles.gpkg), then 'e2e raster 1' on it
 #   rec1              probe the REC1 river network (ArcGIS item in the Stage 1 profile): fields and SH12 sample
+#   w7 [res] [site ...]
+#                     W7 comparison: the four example AOIs (or those named) x raster | geofabrics | geofabrics with
+#                     rivers, all product=dem; then 'terrain compare' geofabrics-raster and rivers-geofabrics;
+#                     summary.csv, compare.csv and the reports in D:\EDDIE\w7_<res>m_<time>\
 #   timeline <id>     GeoFabrics stage timings for a product, from its log files (where the time went)
 #   read <WKT file>   diagnose the elevation reader for an AOI: surveys planned, and per tile its grid, nodata
 #                     and the valid fraction of the window read (no product written)
@@ -697,6 +701,88 @@ PY
         "  gap fraction: \(.gap_fraction)", "  checksums: \([.inputs[].items[]? | select(.checksum != null)] | length) of \([.inputs[].items[]?] | length) items"' "$prov"
 }
 
+# ------------------------------------------------------------------------------------------------ w7
+w7_request() {  # w7_request <wkt> <params json> <file prefix>: product id on stdout, progress on stderr
+    local api="http://localhost:${P_API}" t0 resp tid st status last=0
+    t0=$(date +%s)
+    resp=$(curl -s --max-time 60 -H 'Content-Type: application/json' \
+        -d "$(jq -nc --arg a "$1" --argjson p "$2" '{aoi: $a, params: $p}')" "$api/terrain/dem")
+    tid=$(jq -r '.taskId // empty' <<<"$resp" 2>/dev/null)
+    [ -n "$tid" ] || { echo "    !! POST failed: ${resp:-no response}" >&2; echo "$resp" > "$3.error.txt"; return 1; }
+    while :; do
+        st=$(curl -s --max-time 60 "$api/terrain/tasks/$tid"); status=$(jq -r .status <<<"$st" 2>/dev/null)
+        case "$status" in
+            SUCCESS) echo "    product $(jq -r .result <<<"$st") in $(( $(date +%s) - t0 )) s" >&2
+                     jq -r .result <<<"$st"; return 0 ;;
+            FAILURE) task_error "$st" "$3.error.txt" >&2; return 1 ;;
+        esac
+        if [ $(( $(date +%s) - t0 )) -gt $(( 6 * 3600 )) ]; then echo "    !! still $status after 6 h" >&2; return 1; fi
+        if [ $(( $(date +%s) - last )) -ge 60 ]; then last=$(date +%s); echo "    $(( last - t0 ))s $status" >&2; fi
+        sleep 10
+    done
+}
+
+w7() {
+    local res="${1:-1}"; shift || true
+    local sites=("$@")
+    [ ${#sites[@]} -gt 0 ] || sites=(aoi_whirinaki_sh12 aoi2_whirinaki_upperfloodplain aoi_canterbury1 aoi_canterbury2)
+    cd "$INST" || exit 1
+    local stamp out wdir
+    stamp="$(date +%Y%m%d_%H%M)"; out="/mnt/d/EDDIE/w7_${res}m_${stamp}"; wdir="/terrain_products/_w7/${stamp}"
+    mkdir -p "$out" "$DATA/cache/_w7" "$DATA/products/_w7/${stamp}"
+    cp -f "$TS2"/examples/*.geojson "$DATA/cache/_w7/"
+    local cfgs=("raster|{\"backend\":\"raster\",\"product\":\"dem\"}"
+                "gf|{\"backend\":\"geofabrics\",\"product\":\"dem\"}"
+                "gf_rivers|{\"backend\":\"geofabrics\",\"product\":\"dem\",\"rivers\":true}")
+    say "W7: ${#sites[@]} AOI(s) x raster | gf | gf_rivers at ${res} m -> $out"
+    echo "site,config,product_id,seconds,generator_key,gap_fraction,data_source_counts,rivers" > "$out/summary.csv"
+    echo "site,b_minus_a,n,median,p5,p95,mean,max_abs,share_abs_gt_0.2,report" > "$out/compare.csv"
+    local site c name params id t0 prov pj
+    for site in "${sites[@]}"; do
+        [ -f "$DATA/cache/_w7/$site.geojson" ] || { note "!! no examples/$site.geojson"; continue; }
+        local wkt; wkt=$(docker compose exec -T terrain_worker python -c \
+            "from terrain_s2.client.api import aoi_wkt; print(aoi_wkt('/terrain_data/_w7/$site.geojson'))" 2>/dev/null | tail -1)
+        declare -A nc=()
+        for c in "${cfgs[@]}"; do
+            name=${c%%|*}; params=$(jq -c --argjson r "$res" '. + {resolution: $r}' <<<"${c#*|}")
+            say "$site / $name $params"
+            t0=$(date +%s)
+            if id=$(w7_request "$wkt" "$params" "$out/${site}_${name}"); then
+                curl -s "http://localhost:${P_API}/terrain/products/$id" > "$out/${site}_${name}.product.json"
+                nc[$name]=$(jq -r .paths.netcdf "$out/${site}_${name}.product.json")
+                prov="$(jq -r .paths.provenance "$out/${site}_${name}.product.json")"
+                pj="${prov/#\/terrain_products/$DATA/products}"
+                cp -f "$pj" "$out/${site}_${name}.provenance.json" 2>/dev/null
+                if [ -n "${nc[$name]:-}" ] && [ -d "$(dirname "${nc[$name]/#\/terrain_products/$DATA/products}")/rivers" ]; then
+                    tar -C "$(dirname "${nc[$name]/#\/terrain_products/$DATA/products}")" -czf "$out/${site}_${name}_rivers.tgz" rivers 2>/dev/null
+                fi
+                jq -r --arg s "$site" --arg c "$name" --arg id "$id" --arg t "$(( $(date +%s) - t0 ))" \
+                    '[$s, $c, $id, $t, .generator_key, .gap_fraction, (.data_source_counts | tojson | gsub(","; ";")),
+                      ((.rivers.runs // []) | map("\(.network_id):\(if .ok then "ok" else "failed" end)") | join(" "))] | @csv' \
+                    "$out/${site}_${name}.provenance.json" >> "$out/summary.csv" 2>/dev/null
+            else
+                echo "\"$site\",\"$name\",,$(( $(date +%s) - t0 )),failed,,," >> "$out/summary.csv"
+            fi
+        done
+        local a b
+        for pair in "raster gf" "gf gf_rivers"; do
+            a=${pair% *}; b=${pair#* }
+            [ -n "${nc[$a]:-}" ] && [ -n "${nc[$b]:-}" ] || continue
+            local rpt="$wdir/${site}_${b}_minus_${a}.md"
+            docker compose exec -T terrain_worker terrain compare "${nc[$a]}" "${nc[$b]}" --out "$rpt" >/dev/null 2>&1 \
+                || { note "!! compare $site $b - $a failed"; continue; }
+            cp -f "$DATA/products/_w7/${stamp}/${site}_${b}_minus_${a}".{md,json} "$out/" 2>/dev/null
+            jq -r --arg s "$site" --arg p "${b}-${a}" --arg r "${site}_${b}_minus_${a}.md" \
+                '[$s, $p, .z_diff.n, .z_diff.median, .z_diff.p5, .z_diff.p95, .z_diff.mean, .z_diff.max_abs,
+                  .z_diff["share_abs_gt_0.2"], $r] | @csv' "$out/${site}_${b}_minus_${a}.json" >> "$out/compare.csv"
+        done
+        unset nc
+    done
+    say "Summary"; column -s, -t < "$out/summary.csv" | sed 's/^/  /'
+    say "Differences (B - A, m)"; column -s, -t < "$out/compare.csv" | cut -c1-160 | sed 's/^/  /'
+    note "all outputs: D:\\EDDIE\\$(basename "$out")"
+}
+
 # ------------------------------------------------------------------------------------------------ timeline
 timeline() {
     local id="${1:-}"; [ -n "$id" ] || { note "usage: timeline <product id>"; exit 2; }
@@ -872,11 +958,12 @@ case "${1:-setup}" in
     rec1) rec1 ;;
     read) shift; read_diag "$@" ;;
     timeline) shift; timeline "$@" ;;
+    w7) shift; w7 "$@" ;;
     shim) shim ;;
     products) products ;;
     export) shift; export_product "$@" ;;
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric] [aoi=<file>] [k=v ...]|edge|read <wkt file>|timeline <id>|rec1|shim|branch [name]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric] [aoi=<file>] [k=v ...]|edge|read <wkt file>|timeline <id>|w7 [res] [site ...]|rec1|shim|branch [name]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac

@@ -230,3 +230,10 @@ def test_product_auto_and_osm_cache(tmp_path, monkeypatch):
     CachingStrategy.set("k", {"v": 1})
     assert (d / "k").exists() and CachingStrategy.get("k") == {"v": 1}
     assert not (ro / "cache").exists()
+    from OSMPythonTools import overpass as ov
+    before = ov.Overpass.__init__.__defaults__
+    try:
+        gf.osm_cache(tmp_path / "osm2", "https://overpass.example.org/api")
+        assert ov.Overpass.__init__.__defaults__[0] == "https://overpass.example.org/api/"
+    finally:
+        ov.Overpass.__init__.__defaults__ = before

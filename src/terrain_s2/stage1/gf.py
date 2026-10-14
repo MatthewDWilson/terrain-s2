@@ -166,15 +166,27 @@ def run_geofabrics(ins: dict) -> None:
         root.setLevel(level)
 
 
-def osm_cache(folder) -> Path:
-    """Point OSMPythonTools' response cache (GeoFabrics' roughness stage downloads OSM roads through it) at a
-    writable folder. Its default is ``./cache`` in the working directory, which the worker can't create
-    (``/app`` is read-only for it); GeoFabrics then reports the PermissionError as "Did not successfully
-    download the OSM data in 3 attempts"."""
+def osm_cache(folder, overpass_url: str | None = None) -> Path:
+    """Point OSMPythonTools' response cache (GeoFabrics' roughness, waterway and river-OSM stages download OSM
+    through it) at a writable folder. Its default is ``./cache`` in the working directory, which the worker
+    can't create (``/app`` is read-only for it); GeoFabrics then reports the PermissionError as "Did not
+    successfully download the OSM data in 3 attempts".
+
+    ``overpass_url`` (``TERRAIN_OVERPASS_URL``, else the profile's ``osm.overpass_url``): another Overpass
+    instance when overpass-api.de is down. GeoFabrics creates ``Overpass()`` with no arguments, so the default
+    endpoint of OSMPythonTools' constructor is replaced."""
+    import os
+
     from OSMPythonTools.cachingStrategy import JSON, CachingStrategy
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     CachingStrategy.use(JSON, cacheDir=str(folder))
+    url = os.environ.get("TERRAIN_OVERPASS_URL") or overpass_url
+    if url:
+        from OSMPythonTools import overpass as ov
+        init = ov.Overpass.__init__
+        if init.__defaults__ and init.__defaults__[0] != url:
+            init.__defaults__ = (url if url.endswith("/") else url + "/",) + tuple(init.__defaults__[1:])
     return folder
 
 
@@ -254,14 +266,32 @@ def build(*, settings, profile: dict, aoi_geom, bounds, out_dir, name: str, key:
             f = Path(dp[k]) if Path(dp[k]).is_absolute() else Path(dp["local_cache"]) / dp["subfolder"] / dp[k]
             f.unlink(missing_ok=True)
     if settings.product == "geofabric" or getattr(settings, "rivers", False) or getattr(settings, "waterways", False):
-        osm_cache(Path(cache_dir) / "osm")
+        osm_cache(Path(cache_dir) / "osm", ((profile.get("osm") or {}).get("overpass_url")))
     bed = bed_stages(ins, settings=settings, profile=profile, out_dir=out_dir, rivers_plan=rivers_plan,
                      runner=runner or run_geofabrics, log=log)
     if bed["dem_paths"]:
         ins["dem"]["data_paths"] = dict(ins["dem"].get("data_paths") or {}, **bed["dem_paths"])
+        rc = profile.get("rivers") or {}
         if "rivers" in bed["dem_paths"]:
-            z = ((profile.get("rivers") or {}).get("z_label")) or "bed_elevation_Rupp_and_Smart"
+            z = rc.get("z_label") or "bed_elevation_Rupp_and_Smart"
             ins["dem"].setdefault("general", {}).setdefault("z_labels", {})["rivers"] = z
+            if rc.get("interpolation"):
+                ins["dem"]["general"].setdefault("interpolation", {})["rivers"] = rc["interpolation"]
+        # GeoFabrics burns rivers and waterways chunk by chunk, evaluating every cell of each chunk the polygons
+        # touch (dem.elevation_over_chunk_from_nearest), so with the 800-cell chunks the whole 1 m grid went
+        # through its per-cell RBF loop (SH12: 721,000 cells, 27 min). Small chunks for the hydrologic stage
+        # limit that to the cells near the channels. The raw DEM is made first with the usual chunks (it reads
+        # the LAZ tiles chunk by chunk), as its own call: with result_dem named as the raw DEM, the runner skips
+        # the hydrologic stage there.
+        burn = max(25, int(float(rc.get("burn_chunk_m", 50)) // int(settings.resolution)))
+        if burn < int(ins["default"]["processing"]["chunk_size"]):
+            raw_ins = copy.deepcopy(ins)
+            raw_ins["default"]["data_paths"].pop("result_geofabric", None)
+            raw_ins["default"]["data_paths"]["result_dem"] = raw_ins["default"]["data_paths"]["raw_dem"]
+            for k in ("rivers", "waterways"):
+                raw_ins["dem"]["data_paths"].pop(k, None)
+            (runner or run_geofabrics)(raw_ins)
+            ins["dem"].setdefault("processing", {})["chunk_size"] = burn
         (out_dir / "instructions.json").write_text(json.dumps(ins, indent=1))
     (runner or run_geofabrics)(ins)
     t_gf = time.perf_counter() - t0

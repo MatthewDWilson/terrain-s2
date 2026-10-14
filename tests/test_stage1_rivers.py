@@ -188,7 +188,13 @@ def test_make_with_rivers(tmp_path):
     r = make(aoi, s.replace(rivers=True, waterways=True), gf_runner=_fake_runner(calls), **kw)
     assert r.key != base.key                                        # rivers and waterways are in the key
     assert r.info["source_version"]["rivers"]["rivers"][0]["network_id"] == 9000001
-    assert [next(iter(c)) for c in calls] == ["rivers", "waterways", "default"]   # bed stages before the DEM
+    # bed stages, then the raw DEM on its own (usual chunks; result_dem named as the raw DEM so the hydrologic
+    # stage is skipped there), then the DEM with small chunks for the burn
+    assert [next(iter(c)) for c in calls] == ["rivers", "waterways", "default", "default"]
+    raw, main = calls[2], calls[3]
+    assert raw["default"]["data_paths"]["result_dem"] == raw["default"]["data_paths"]["raw_dem"]
+    assert "rivers" not in raw["dem"].get("data_paths", {}) and "result_geofabric" not in raw["default"]["data_paths"]
+    assert main["dem"]["processing"]["chunk_size"] == 25 < main["default"]["processing"]["chunk_size"]
     ins = json.loads(Path(r.paths["instructions"]).read_text())
     dp = ins["dem"]["data_paths"]
     assert dp["rivers"] == [{"extents": "rivers/9000001/river_polygon.geojson",

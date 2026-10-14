@@ -140,6 +140,13 @@ RBF is GeoFabrics' default interpolation for rivers (and the ocean), so a DEM wi
 hydrologic stage (first live river run, SH12, 14 Oct 2026). Proposal: return `[0]`, as
 `calculate_interpolate_griddata` does. We pin `numpy<2.4` in the terrain worker meanwhile.
 
+**GeoFabrics 8. River and waterway burns evaluate whole chunks.** `dem.elevation_over_chunk_from_nearest` (and
+`elevation_over_chunk` for waterways) builds the meshgrid of the whole chunk and runs the per-cell interpolation
+on every cell. The result is clipped to the river polygon only afterwards, and chunks are skipped only when the
+polygon misses them entirely. On SH12 at 1 m, 721,000 cells were interpolated for 10,706 river cells: 26 of the
+28 minutes. Proposal: pass only the cells inside the polygon (as `region_to_rasterise` already defines) to
+`elevation_from_nearest_points`. We use small hydrologic-stage chunks meanwhile.
+
 Items GeoFabrics 1 and 4 matter only if raster input ever goes back through GeoFabrics; P-3 avoids that.
 
 Not an issue to raise, but worth knowing: the runner skips any stage whose output file already exists, so a

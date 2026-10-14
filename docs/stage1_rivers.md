@@ -162,6 +162,44 @@ carry `data_source` 3.
   and in burning points cell by cell; one vectorised interpolation call does 10,706 cells in 0.3 s here.
   GeoFabrics is GPL-3.0, so Stage 2 should implement the formulas from the papers, not copy GeoFabrics' code.
 
+## 4c. Where the 28 minutes went, and the fix (15 Oct 2026)
+
+The stage logs (`bash $S timeline 11`) for product 11:
+
+| Stage | Time |
+|---|---|
+| River stage (corridor DEMs, alignment, 359 cross-sections, depths) | 70 s |
+| Raw DEM, 1 m | 44 s |
+| Hydrologic DEM | 26 min 38 s |
+| Roughness, 1 m | 46 s |
+
+Inside the hydrologic DEM, almost all of the time is the river burn.
+`dem.elevation_over_chunk_from_nearest` evaluates **every cell of every chunk the river polygon touches**, and
+only clips to the polygon afterwards. With 800-cell chunks, that is the whole 995 × 725 grid: about 721,000 cells.
+Each goes through a per-cell RBF fit to up to 200 points (100 bathymetry and 100 edge), about 2.2 ms a cell.
+721,000 × 2.2 ms is about 26 minutes, the time measured. At a full 1:10k tile (35 M cells) this would take hours.
+
+**Fix (Stage 1, no change to GeoFabrics).**
+
+- **Small chunks for the burn.** When rivers or waterways are on, the hydrologic stage runs with small chunks
+  (`rivers.burn_chunk_m`, 50 m), so only chunks near the channel are evaluated.
+- **Raw DEM made separately.** The raw DEM is first made in its own GeoFabrics call with the usual chunks, because
+  it reads the LAZ tiles chunk by chunk. In that call `result_dem` is named as the raw DEM, so the runner skips
+  the hydrologic stage.
+- **Interpolation option.** `rivers.interpolation` can switch the burn from RBF (GeoFabrics' default) to `idw`,
+  about 0.03 ms a cell against about 2 ms, at some cost in smoothness. It stays on RBF to match GeoFabrics.
+- **Drafted upstream:** GeoFabrics 8.
+
+Roughness at 1 m took 46 s, so it is not the cost. Leaving it out by default is a design choice for after
+Stage 2: roughness is needed at the model's resolution, and could come from the 1 m DEM and DSM rather than the
+point cloud (Matt).
+
+**Overpass.** The waterways stage, and roughness, need the Overpass API. While overpass-api.de was down (15 Oct
+2026) the waterways run failed: GeoFabrics reports any download failure as "Did not successfully download the OSM
+data in 3 attempts". Another instance can be named: `TERRAIN_OVERPASS_URL` in `.env`, or the profile's
+`osm.overpass_url`. For example `https://overpass.kumi.systems/api/` or
+`https://maps.mail.ru/osm/tools/overpass/api/`.
+
 ## 5. Open
 
 1. **REC1 topology.** Built from the geometry (section 3). On the first live run, check the junction count in

@@ -256,6 +256,24 @@ makes a new product (products 1 to 5). A changed land source is tested in the sa
 
 ## 5. GeoFabrics backend (W4), and the otCatalog date check
 
+**W7 comparison** (the four example AOIs, each as raster, GeoFabrics and GeoFabrics with rivers, all
+`product=dem`, then `terrain compare` for GeoFabrics minus raster and rivers minus GeoFabrics):
+
+```bash
+bash $S w7 1 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w7_1m.txt            # all four AOIs at 1 m
+bash $S w7 8 aoi_whirinaki_sh12 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w7_8m_sh12.txt   # one AOI at 8 m
+```
+
+The results go to `D:\EDDIE\w7_<res>m_<time>\`:
+
+- `summary.csv`: product, time, gaps, data-source counts and river runs, one row per AOI and configuration;
+- `compare.csv`: B − A statistics;
+- the `terrain compare` reports (`.md` and `.json`);
+- each product's provenance and record;
+- the `rivers/` folders, as `.tgz`.
+
+A failed run is recorded and the script carries on.
+
 River and waterway bed estimation (`rivers=true`, `waterways=true`) are in `docs/stage1_rivers.md`.
 
 ```bash
