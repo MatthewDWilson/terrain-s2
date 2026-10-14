@@ -1567,6 +1567,15 @@ the holdout; reports the CNN, the gradient-boosting fold scores (`--scorer`), th
 percentile ranks) and the tiers. Not run in the sandbox (no PyTorch, no patches here): the data handling is tested,
 the network runs first on Matt's workstation.
 
+**First runs of step 9, the probes and the CNN** (16 Oct). Scored quadrant BW24_10000_0402_SE: 13 candidates matched
+to recorded structures, 2 recorded structures added. `diagnose_misses.py` found no runs and the CNN wrote to
+`C:\Users\mwi104\terrain_data`: `TERRAIN_DATA_DIR` was not set in that PowerShell session, so every default path
+pointed at the home folder. Scripts now say so (once, on stderr), and `diagnose_misses.py` names the folder it looked
+in. The CNN ran on the CPU: a CPU build of PyTorch (2.7.0+cpu) in the Windows user site-packages shadowed the
+environment, and pip saw it as installed. `train_cnn.py` now stops when it has a CPU build and an NVIDIA GPU is present
+(`--cpu` to go on). Smoke run (2 epochs, CPU): CNN recall@100 0.13-0.25, between the tiers and the scorer; the
+ensemble below the scorer alone; manual AUC 0.60-0.64. To be judged on the GPU with 15 epochs.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

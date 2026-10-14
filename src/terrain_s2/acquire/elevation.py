@@ -130,9 +130,22 @@ def whole_metre_bounds(bounds) -> tuple:
     return (float(np.floor(x0)), float(np.floor(y0)), float(np.ceil(x1)), float(np.ceil(y1)))
 
 
+_WARNED = []
+
+
 def default_data_dir() -> Path:
+    """TERRAIN_DATA_DIR, else Stage 1's default (~/terrain_data). Says so once, on stderr, when the variable is not
+    set in this process: a terminal opened before it was set (or a shell that does not read the user's
+    environment) silently looks for runs, datasets and models in the home folder (14 Oct 2026)."""
+    import os
+    import sys
+
     from ..settings import from_env
-    return Path(from_env().data_dir)
+    d = Path(from_env().data_dir)
+    if not os.environ.get("TERRAIN_DATA_DIR") and not _WARNED:
+        _WARNED.append(True)
+        print(f"note: TERRAIN_DATA_DIR is not set in this process; using {d}", file=sys.stderr)
+    return d
 
 
 class ElevationSource:

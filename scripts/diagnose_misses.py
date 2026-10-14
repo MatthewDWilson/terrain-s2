@@ -52,7 +52,9 @@ def main():
             tables.append(pd.read_parquet(f).assign(tile_id=t.tile_id, council=t.council))
         elif (runs / t.tile_id / "done.json").exists():
             todo.append(t)
-    print(f"{len(tables)} tiles with probes; {len(todo)} without")
+    print(f"{len(tables)} tiles with probes; {len(todo)} run but without probes (runs: {runs})")
+    if not tables and not todo:
+        sys.exit(f"none of the manifest's tiles has a run under {runs}: is TERRAIN_DATA_DIR set (or give --runs)?")
     if a.compute:
         todo = todo[:a.limit] if a.limit else todo
         for i, t in enumerate(todo):
@@ -66,7 +68,7 @@ def main():
             tables.append(pr.assign(tile_id=t.tile_id, council=t.council))
             print(f"[{i + 1}/{len(todo)}] {t.tile_id}: " + ", ".join(f"{k} {v}" for k, v in pr.reason.value_counts().items()))
     if not tables:
-        sys.exit("no probes yet (run with --compute, or rerun tiles with the batch runner)")
+        sys.exit("no probes yet: add --compute to make them for tiles run before the probes existed")
     allp = pd.concat(tables, ignore_index=True)
     s = probes.summarise([allp])
     name = Path(a.manifest).stem

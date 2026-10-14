@@ -23,6 +23,7 @@ def main():
     ap.add_argument("--scorer", help="a scorer run folder (fold_scores.parquet) for the comparison and ensemble")
     ap.add_argument("--config", default=str(ROOT / "ml" / "config" / "cnn.yml"))
     ap.add_argument("--epochs", type=int)
+    ap.add_argument("--cpu", action="store_true", help="train on the CPU even when a GPU is present")
     a = ap.parse_args()
     try:
         import torch
@@ -35,8 +36,17 @@ def main():
         cfg["scorer"] = a.scorer
     if a.epochs:
         cfg["epochs"] = a.epochs
-    print(f"PyTorch {torch.__version__}; device {cnn._device(cfg)}"
+    print(f"PyTorch {torch.__version__} from {Path(torch.__file__).parent}; device {cnn._device(cfg)}"
           + (f" ({torch.cuda.get_device_name(0)})" if torch.cuda.is_available() else ""))
+    if not torch.cuda.is_available():
+        import shutil
+        if torch.version.cuda is None and shutil.which("nvidia-smi"):
+            print("WARNING: this PyTorch is a CPU build and there is an NVIDIA GPU. Install the CUDA build into the "
+                  "environment: python -m pip install --force-reinstall torch --index-url "
+                  "https://download.pytorch.org/whl/cu128 (with PYTHONNOUSERSITE=1 if a CPU torch sits in the "
+                  "user site-packages, AppData\\Roaming\\Python).")
+            if not a.cpu:
+                sys.exit("stopping (add --cpu to train on the CPU anyway)")
     out = Path(a.out) if a.out else default_data_dir() / "models" / a.name
     cnn.run(a.dataset, out, cfg, name=a.name)
     print((out / "report.md").read_text())
