@@ -59,7 +59,7 @@ NetworkRun = NetworkResult                      # the name in the first S2-1 com
 
 OPTIONS = dict(stream_model=None, buffer=200.0, max_hand=10.0, clean=True, aoi_crs=None, assume_crs=None,
                device="auto", height_model="rem", conditioned=True, burn_m=0.25, context=None, rasters="all",
-               profile=False, keep=False)
+               profile=False, keep=False, crossing_model=None, record_sources=None)
 
 
 def _paths(p):
@@ -356,6 +356,23 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     if gpkg.exists():
         import pyogrio
         written = {n: gpd.read_file(gpkg, layer=n) for n, _ in pyogrio.list_layers(gpkg)}
+    if opts.get("crossing_model"):                       # ML-1 step 9: p_structure, p_bridge, recorded structures
+        from .ml.apply import score_run
+        tmp = NetworkResult(info=info, out=out, layers=written,
+                            state=dict(w=w, dsm=dsm, res=res, net=net, sk=sk, fp=fp, rem=hand if fp is not None else None,
+                                       rd=rd, cond=cond, ch=ch, cr=cr, aoi=aoi, crs=hcrs))
+        rs = opts.get("record_sources")
+        if rs is None:
+            from .ml.labels import load_config as _lc
+            lc = Path(__file__).resolve().parents[2] / "ml" / "config" / "labels.yml"
+            c = _lc(lc if lc.exists() else None)
+            rs = list(c.get("council_sources") or []) + list(c.get("asset_sources") or [])
+        scored = score_run(tmp, opts["crossing_model"], Path(a.dem[0]).parent, rs)
+        scored.to_file(gpkg, layer="crossings", driver="GPKG")
+        written["crossings"] = scored
+        info["scored"] = dict(model=scored["model_version"].iloc[0] if len(scored) else None,
+                              recorded=int(scored["recorded"].sum()), added_records=int((scored["tier"] == "recorded").sum()))
+        (out / "network.json").write_text(json.dumps(info, indent=2))
     paths = {k: out / f for k, f in (("network", "network.gpkg"), ("summary", "network.json"), ("features", "features.tif"),
                                      ("hydro", "hydro.tif"), ("conditioned", "conditioned.tif"),
                                      ("rasters_json", "rasters.json")) if (out / f).exists()}
@@ -413,10 +430,12 @@ def main(argv=None):
     ap.add_argument("--rasters", choices=["all", "hydro", "none"], default="all",
                     help="write features.tif (DEM feature stack) and hydro.tif (HAND, upstream area, ...), cropped "
                          "to the AOI, with rasters.json describing the bands (all: both; hydro: hydro.tif only)")
+    ap.add_argument("--crossing-model", help="score the crossings with a trained scorer (model.pkl or its folder): "
+                                             "p_structure, p_bridge, recorded structures (ML-1 step 9)")
     a = ap.parse_args(argv if argv is not None else sys.argv[1:])
     res = network(a.dem, a.dsm, a.aoi, roads=a.roads, out=a.out, stream_model=a.stream_model, buffer=a.buffer,
                   max_hand=a.max_hand, clean=not a.no_clean, aoi_crs=a.aoi_crs, assume_crs=a.assume_crs,
                   device=a.device, height_model=a.height_model, conditioned=not a.no_conditioned, burn_m=a.burn_m,
-                  context=a.context, rasters=a.rasters, profile=a.profile)
+                  context=a.context, rasters=a.rasters, profile=a.profile, crossing_model=a.crossing_model)
     print(json.dumps(res.info))
     return 0

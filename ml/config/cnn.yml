@@ -1,0 +1,12 @@
+# ML-1b patch CNN (terrain_s2.ml.cnn). Folds: council (leave one out) and holdout (BW24); add "sheets" for all.
+epochs: 15
+batch_size: 256
+lr: 0.001
+weight_decay: 0.0001
+unlabelled_weight_ratio: 1.0        # as the scorer
+unlabelled_per_positive: 10         # unlabelled rows sampled per positive, each epoch
+val_fraction: 0.1                   # training tiles kept for choosing the epoch
+folds: [council, holdout]
+budgets: [50, 100, 200, 500]
+seed: 0
+device: auto

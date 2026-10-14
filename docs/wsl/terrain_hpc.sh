@@ -20,6 +20,7 @@
 #   status            progress (tiles done, failed, running), the last log lines, peak memory per tile, and
 #                     out-of-memory kills if the kernel log shows any
 #   stop              stop a detached batch
+#   torch             install PyTorch (CUDA 12.8 build: Blackwell GPUs need it) into the environment, for ML-1b
 #   dataset <manifest...> --name N
 #                     build_labels + build_dataset for the manifest(s)
 #
@@ -328,6 +329,12 @@ stop() {
     fi
 }
 
+torch_install() {
+    say "PyTorch (CUDA 12.8 build) for the patch CNN"
+    in_env python -m pip install -q torch --index-url https://download.pytorch.org/whl/cu128 || die "pip install torch failed"
+    in_env python -c 'import torch; print("  torch", torch.__version__, "| CUDA", torch.cuda.is_available(), "|", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "")'
+}
+
 dataset() {
     load_env
     local manifests=() name=""
@@ -366,9 +373,10 @@ case "$mode" in
     start) start "$@" ;;
     _supervise) _supervise ;;
     status) status ;;
+    torch) torch_install ;;
     stop) stop ;;
     dataset) dataset "$@" ;;
     labels) labels "$@" ;;
     partition) partition ;;
-    *) die "unknown mode '$mode' (setup | update | check | labels | partition | batch | start | status | stop | dataset)" ;;
+    *) die "unknown mode '$mode' (setup | update | check | labels | partition | batch | start | status | stop | torch | dataset)" ;;
 esac

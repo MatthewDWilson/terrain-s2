@@ -1539,6 +1539,34 @@ restarted after an interruption until every tile is done, at most 5 attempts; Wi
 `SetThreadExecutionState` while it runs; out-of-memory kills from the kernel log recorded), `status` and `stop`, and
 warns when the workers would need more than 85 % of WSL's memory.
 
+**HPC, the overnight stop** (16 Oct): no Windows restart or sleep in the event log for that night, so the WSL session
+itself ended (the terminal, or the VM). `start` (detached, restarted) is the guard; if it recurs, the supervisor log
+says whether the kernel killed processes for memory.
+
+**ML-1 step 9: scores in the run** (`ml/apply.py`; `run.network(..., crossing_model=...)`, `run_network.py
+--crossing-model`). The candidates' features are computed as in training (the run's arrays, the bundle's context,
+the derived distance to any way); the `crossings` layer gains `p_structure`, `p_bridge` and `model_version`; register
+structures (council and asset sources of `ml/config/labels.yml`, or `record_sources`) in the AOI are matched to a
+candidate within 15 m (`recorded`, `record`), and those without one are added as rows (`source` = `record:<source>`,
+`tier` = `recorded`, `p_structure` = 1), so every recorded structure is in the product. The tiers stay.
+
+**Misses, automated** (`ml/probes.py`, `scripts/diagnose_misses.py`). Inside the run, every register structure,
+bridge and implied crossing in the core is sampled at its crest (the candidate features, distance to the nearest
+candidate, to the channel map, to the network centreline, floodplain) and given the step where the chain lost it:
+`found` (a candidate within 15 m), `position` (within 30 m), `outside_floodplain`, `no_channel` (no channel map
+within 10 m), `not_in_network` (channel map but no centreline: cleaned away), `no_crossing_test` (the network passes
+but no test fired). The batch writes `ml_probes.parquet` for every tile from now on (outside the done.json hash, so no
+reruns); `diagnose_misses.py --compute` reruns the network for tiles run before (outputs unchanged) to add it, and
+reports the reasons by council and label kind with the crest medians of lost against found labels.
+
+**ML-1b: the patch CNN** (`ml/cnn.py`, `scripts/train_cnn.py`, `ml/config/cnn.yml`). PyTorch; the 14 oriented bands
+plus a valid-cell band, robust scaling; flips along both axes; four convolution blocks (32-128 channels), global
+pooling, one logit. Training as the scorer (label weights, Matt's "n", unlabelled as weak negatives), unlabelled
+re-sampled each epoch (10 per positive), the epoch chosen on validation tiles by AP. Folds: leave one council out and
+the holdout; reports the CNN, the gradient-boosting fold scores (`--scorer`), their ensemble (mean of per-tile
+percentile ranks) and the tiers. Not run in the sandbox (no PyTorch, no patches here): the data handling is tested,
+the network runs first on Matt's workstation.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

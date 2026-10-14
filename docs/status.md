@@ -18,7 +18,10 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 | ML-0 step 5 | Dataset assembly: features + labels + folds, misses, card (`build_dataset.py`) | 11 |
 | HPC install | `docs/wsl/terrain_hpc.sh` (WSL, no Docker): setup, update, check, batch, dataset | 11 |
 | Wave 1 | 80 of 83 tiles run; dataset `wave1` (173,284 candidates, 1,522 positives, 73 negatives, 941 misses); the 3 failures fixed | 11 |
-| ML-1 scorer | Gradient boosting, weighted PU, fold evaluation against the tiers (`train_scorer.py`) | 11 |
+| ML-1 scorer | Gradient boosting, weighted PU; chosen configuration 1.4-3.6 x the tiers (`ml/results/`) | 11 |
+| ML-1 step 9 | Scores in the run (`--crossing-model`): `p_structure`, `p_bridge`, recorded structures always included | 11 |
+| Miss diagnosis | Probes at every labelled structure; reasons per council (`diagnose_misses.py`) | 11 |
+| ML-1b | Patch CNN (`train_cnn.py`), with the ensemble against the scorer; first run pending (needs PyTorch) | 11 |
 
 ## In progress
 

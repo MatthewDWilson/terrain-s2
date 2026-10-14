@@ -68,6 +68,12 @@ def status(tile_id: str, cfg: BatchConfig, params: dict) -> str:
     return "done" if d.get("version") == _version() else "stale"
 
 
+def _label_cfg():
+    from .labels import load_config
+    f = Path(__file__).resolve().parents[3] / "ml" / "config" / "labels.yml"
+    return load_config(f if f.exists() else None)
+
+
 def _bundle_ok(bundle: Path) -> bool:
     """A usable bundle: site.json without elevation errors, and a DEM (a build that failed on elevation
     still writes site.json: BJ39_10000_0303 in wave 1 was skipped as built and then had no DEM)."""
@@ -114,6 +120,12 @@ def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> 
             t1 = time.perf_counter()
             tab, _, _ = extract(res, Path(cfg.runs) / tile_id)
             rec.update(features_s=round(time.perf_counter() - t1, 1), n_features=int(tab.shape[1]))
+            try:                                  # why labelled structures get no candidate (not in the hash)
+                from . import probes
+                pr = probes.write(res, bundle, Path(cfg.runs) / tile_id, _label_cfg())
+                rec["probes"] = {k: int(v) for k, v in pr.reason.value_counts().items()}
+            except Exception as e:  # noqa: BLE001 - diagnostics only
+                rec["probes_error"] = f"{type(e).__name__}: {e}"
         rec.update(ok=True, seconds=round(time.perf_counter() - t0, 1), crossings=res.info.get("crossings"),
                    channels_km=res.info.get("channels_km"), peak_rss_gb=res.perf.get("peak_rss_gb"),
                    gpu_pool_gb=res.info.get("gpu_pool_gb"))

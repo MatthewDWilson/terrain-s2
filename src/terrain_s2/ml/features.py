@@ -207,8 +207,9 @@ def patches(cands, bands, T, sk, cs, size=64, step_m=1.0, chunk=256):
     return out
 
 
-def extract(res, out_dir, size=64, write=True):
-    """Features and patches for the run's written candidates (``res`` from run.network(..., keep=True))."""
+def extract(res, out_dir, size=64, write=True, with_patches=True):
+    """Features and patches for the run's written candidates (``res`` from run.network(..., keep=True)).
+    ``with_patches=False``: the table only (scoring inside a run)."""
     if res.state is None:
         raise ValueError("features need the run's arrays: run.network(..., keep=True)")
     st = res.state
@@ -221,12 +222,13 @@ def extract(res, out_dir, size=64, write=True):
     bands = _bands(st)
     cond = st.get("cond")
     tab = tabular(cands, bands, T, cs, outlets=getattr(cond, "outlets", None) if cond is not None else None)
-    pat = patches(cands, bands, T, st["sk"], cs, size=size)
+    pat = patches(cands, bands, T, st["sk"], cs, size=size) if with_patches else None
     meta = dict(version=FEATURES_VERSION, bands=PATCH_BANDS, size=size, cell_m=1.0, n=int(len(tab)),
                 columns=list(tab.columns), dtype="float16", order="rows of ml_features.parquet")
     if write:
         out_dir = Path(out_dir)
         tab.to_parquet(out_dir / "ml_features.parquet", index=False)
-        np.save(out_dir / "ml_patches.npy", pat)
-        (out_dir / "ml_patches.json").write_text(json.dumps(meta, indent=1))
+        if pat is not None:
+            np.save(out_dir / "ml_patches.npy", pat)
+            (out_dir / "ml_patches.json").write_text(json.dumps(meta, indent=1))
     return tab, pat, meta

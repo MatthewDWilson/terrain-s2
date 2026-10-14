@@ -79,4 +79,6 @@ PowerShell lists restarts and sleeps); then `start` again.
   sandbox (no conda-forge access there). The report from `setup` is the first check.
 - Per-worker threads are capped (`OMP_NUM_THREADS`, `NUMBA_NUM_THREADS` = 2 in `env.sh`), because the parallelism is
   across tiles.
-- Training (ML-1b) adds PyTorch with CUDA; it will be added to `setup` with that step.
+- The patch CNN (ML-1b) needs PyTorch: `bash ~/terrain/terrain_hpc.sh torch` installs the CUDA 12.8 build (the
+  RTX PRO 6000, a Blackwell GPU, needs 12.8 or later). On Windows: `python -m pip install torch --index-url
+  https://download.pytorch.org/whl/cu128` in the conda environment.

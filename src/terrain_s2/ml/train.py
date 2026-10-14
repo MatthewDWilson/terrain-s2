@@ -131,7 +131,10 @@ def fit(d, cols, cfg, target="structure"):
         X, y, w = X[keep], y[keep], w[keep]
     if len(np.unique(y)) < 2:
         return None
-    m = HistGradientBoostingClassifier(random_state=cfg["seed"], **cfg["model"])
+    params = dict(cfg["model"])
+    if params.get("early_stopping") and min(np.bincount(y)) < 20:     # too few of a class for a validation split
+        params["early_stopping"] = False
+    m = HistGradientBoostingClassifier(random_state=cfg["seed"], **params)
     m.fit(X, y, sample_weight=w)
     return m
 
