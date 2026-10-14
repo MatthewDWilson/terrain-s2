@@ -644,17 +644,44 @@ sj = strict if len(strict) else sj
 if sj.empty:
     raise SystemExit("no neighbouring tiles with different latest surveys")
 a = t.set_index("tile_id")
-r = sj.sort_values(["tile_id_left", "tile_id_right"]).iloc[len(sj) // 2]          # a stable, mid-list pair
-edge = a.loc[r.tile_id_left].geometry.intersection(a.loc[r.tile_id_right].geometry)
-if edge.length == 0:                                                              # corner contact: try another
-    sj = sj[[a.loc[x].geometry.intersection(a.loc[y].geometry).length > 0
-             for x, y in zip(sj.tile_id_left, sj.tile_id_right)]]
-    r = sj.iloc[len(sj) // 2]
+# Candidates spread through the list; each is read (window reads, no mirroring) and kept only if the AOI is
+# fully covered and at least two surveys (not the national mosaic) were read: a tile listed for a survey may
+# be partly empty (14 Oct: BN34_10000_0102 | 0202 had no LiDAR at the shared edge, not even in the mosaic).
+import numpy as np
+from terrain_s2.acquire.elevation import ElevationSource
+from terrain_s2.settings import from_env
+from terrain_s2.stage1 import aoi as A
+from terrain_s2.stage1.profile import load
+s = from_env()
+src = ElevationSource(load(s.profile), cache_dir=s.data_dir / "stac", mirror=False)
+sj = sj.sort_values(["tile_id_left", "tile_id_right"]).reset_index(drop=True)
+order = [int(k * len(sj) / 15) for k in range(15)] if len(sj) > 15 else range(len(sj))
+found = None
+for k in order:
+    r = sj.iloc[k]
     edge = a.loc[r.tile_id_left].geometry.intersection(a.loc[r.tile_id_right].geometry)
-c = edge.interpolate(0.5, normalized=True)
-x0, y0, x1, y1 = edge.bounds
-hx, hy = (600, 400) if (y1 - y0) > (x1 - x0) else (400, 600)                     # long side across the edge
-aoi = gpd.GeoSeries([box(c.x - hx, c.y - hy, c.x + hx, c.y + hy)], crs=2193).to_crs(4326).iloc[0]
+    if edge.length == 0:                                                          # corner contact
+        continue
+    c = edge.interpolate(0.5, normalized=True)
+    x0, y0, x1, y1 = edge.bounds
+    hx, hy = (600, 400) if (y1 - y0) > (x1 - x0) else (400, 600)                 # long side across the edge
+    g = box(c.x - hx, c.y - hy, c.x + hx, c.y + hy)
+    try:
+        rd = src.read(src.plan(A.grid_bounds(g, s.buffer_m, 1), "dem"))
+    except Exception as e:  # noqa: BLE001
+        print(f"  skip {r.tile_id_left}|{r.tile_id_right}: {e}")
+        continue
+    used = [x.slug for x in rd.used if not x.national]
+    ok = np.isfinite(rd.z).mean()
+    print(f"  {r.tile_id_left} ({r.latest_survey_left}) | {r.tile_id_right} ({r.latest_survey_right}): "
+          f"valid {ok:.1%}, surveys read {used}")
+    if ok >= 0.99 and len(used) >= 2:
+        found = (r, g)
+        break
+if found is None:
+    raise SystemExit("no candidate with full coverage from two surveys; widen the search")
+r, g = found
+aoi = gpd.GeoSeries([g], crs=2193).to_crs(4326).iloc[0]
 print(f"tiles {r.tile_id_left} ({r.latest_survey_left}) | {r.tile_id_right} ({r.latest_survey_right}); "
       f"{len(strict)} pairs where neither latest survey covers the other tile")
 print("WKT " + aoi.wkt)

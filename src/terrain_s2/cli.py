@@ -1,11 +1,16 @@
 """``terrain`` command line (W6).
 
     terrain dem --aoi examples/aoi_whirinaki_sh12.geojson --resolution 8 [--backend geofabrics] [--register]
+    terrain api dem --aoi examples/aoi_whirinaki_sh12.geojson --resolution 1 [--url http://localhost:5500]
+    terrain api task <task id>  |  terrain api product <product id>
     terrain compare A.nc B.nc [--out report.md]        # regression harness
     terrain network ...                                # Stage 2 (delegates to run.py, S2-1, or the script)
     terrain condition ...                              # Stage 2 conditioning (S2-6, when present)
 
-Settings default to the ``TERRAIN_*`` environment (see :mod:`terrain_s2.settings`); options override them.
+Two ways in. ``terrain dem`` runs Stage 1 here, with the library only (no EDDIE install): settings default to
+the ``TERRAIN_*`` environment (see :mod:`terrain_s2.settings`) and options override them. ``terrain api`` sends
+the same request to an EDDIE instance's terrain API (``eddie_terrain``), whose worker makes the product and whose
+deployment settings are the defaults; it needs only the standard library.
 """
 from __future__ import annotations
 
@@ -28,6 +33,10 @@ def _dem(a) -> int:
         over["spatial_reuse"] = True
     if a.allow_fallback:
         over["allow_fallback"] = True
+    if a.rivers:
+        over["rivers"] = True
+    if a.waterways:
+        over["waterways"] = True
     if a.lidar_classes:
         over["lidar_classes"] = tuple(int(c) for c in a.lidar_classes.split(","))
     s = from_env(**over)
@@ -45,6 +54,63 @@ def _dem(a) -> int:
                "backend": r.backend, "gap_fraction": r.gap_fraction, "grid_bounds": r.grid_bounds}
     text = json.dumps(out, indent=1, default=str)
     if a.out_json:
+        Path(a.out_json).write_text(text)
+    print(text)
+    return 0
+
+
+def _api_params(a) -> dict:
+    """Request parameters from the options (only those given: the deployment's settings fill the rest)."""
+    p = {k: v for k, v in dict(backend=a.backend, resolution=a.resolution, product=a.product,
+                               land_source=a.land_source, buffer_m=a.buffer, aoi_mode=a.aoi_mode).items()
+         if v is not None}
+    if a.lidar_classes:
+        p["lidar_classes"] = [int(c) for c in a.lidar_classes.split(",")]
+    for flag in ("rivers", "waterways", "spatial_reuse", "allow_fallback"):
+        if getattr(a, flag):
+            p[flag] = True
+    for kv in a.param or []:
+        k, _, v = kv.partition("=")
+        try:
+            p[k] = json.loads(v)
+        except ValueError:
+            p[k] = v
+    return p
+
+
+def _api(a) -> int:
+    from .client.api import TerrainApi, TerrainApiError, aoi_wkt
+    api = TerrainApi(a.url)
+    out = None
+    try:
+        if a.api_cmd == "task":
+            out = api.task(a.id)
+            if out.get("status") == "FAILURE" and not a.json:
+                print(out.get("error", ""), file=sys.stderr)
+        elif a.api_cmd == "product":
+            out = api.product(int(a.id))
+        else:
+            wkt = aoi_wkt(a.aoi, a.aoi_crs)
+            params = _api_params(a)
+            tid = api.submit(wkt, params)
+            log = (lambda *x: print(*x, file=sys.stderr)) if not a.quiet else (lambda *x: None)
+            log(f"task {tid} at {api.url} with {json.dumps(params)}")
+            if a.no_wait:
+                out = {"taskId": tid}
+            else:
+                last = [0.0]
+
+                def progress(status, t):
+                    if t - last[0] >= 15:
+                        last[0] = t
+                        log(f"  {t:5.0f} s  {status}")
+                pid = api.wait(tid, timeout_s=a.timeout, progress=progress)
+                out = api.product(pid)
+    except TerrainApiError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    text = json.dumps(out, indent=1, default=str)
+    if getattr(a, "out_json", None):
         Path(a.out_json).write_text(text)
     print(text)
     return 0
@@ -158,9 +224,41 @@ def parser() -> argparse.ArgumentParser:
     d.add_argument("--db", help="registry URL (with --register)")
     d.add_argument("--spatial-reuse", action="store_true")
     d.add_argument("--allow-fallback", action="store_true")
+    d.add_argument("--rivers", action="store_true", help="GeoFabrics river bed estimation (docs/stage1_rivers.md)")
+    d.add_argument("--waterways", action="store_true", help="GeoFabrics OSM waterway bed elevations")
     d.add_argument("--register", action="store_true", help="use the product registry (ensure_dem)")
     d.add_argument("--out-json")
     d.add_argument("--quiet", action="store_true")
+    api = sub.add_parser("api", help="the same request through an EDDIE instance's terrain API")
+    asub = api.add_subparsers(dest="api_cmd", required=True)
+    url_help = "API base URL (default TERRAIN_API_URL, else http://localhost:5500; v5 may need .../api)"
+    ad = asub.add_parser("dem", help="request a Stage 1 DEM and wait for it (prints the product's registry row)")
+    ad.add_argument("--aoi", required=True, help="vector file, WKT or GeoJSON (sent as WKT in EPSG:4326)")
+    ad.add_argument("--aoi-crs", help="CRS of a WKT AOI (default EPSG:4326) or of a file without one")
+    ad.add_argument("--resolution", type=int)
+    ad.add_argument("--backend", choices=["raster", "geofabrics"])
+    ad.add_argument("--product", choices=["auto", "dem", "geofabric"])
+    ad.add_argument("--land-source", choices=["coverage", "topo50", "topo50_mangrove", "file"])
+    ad.add_argument("--lidar-classes", help="comma-separated, e.g. 2,9")
+    ad.add_argument("--buffer", type=float, help="AOI buffer in metres")
+    ad.add_argument("--aoi-mode", choices=["bbox", "polygon"])
+    ad.add_argument("--rivers", action="store_true")
+    ad.add_argument("--waterways", action="store_true")
+    ad.add_argument("--spatial-reuse", action="store_true")
+    ad.add_argument("--allow-fallback", action="store_true")
+    ad.add_argument("--param", action="append", metavar="KEY=VALUE", help="any other request parameter (JSON value)")
+    ad.add_argument("--no-wait", action="store_true", help="print the task id and return")
+    ad.add_argument("--timeout", type=float, default=6 * 3600, help="seconds to wait (default 6 h)")
+    ad.add_argument("--out-json")
+    ad.add_argument("--quiet", action="store_true")
+    ad.add_argument("--url", help=url_help)
+    at = asub.add_parser("task", help="a task's status, product id or traceback")
+    at.add_argument("id")
+    at.add_argument("--json", action="store_true", help="print the traceback inside the JSON only")
+    at.add_argument("--url", help=url_help)
+    ap_ = asub.add_parser("product", help="a product's registry row (paths, key, resolution, extent)")
+    ap_.add_argument("id")
+    ap_.add_argument("--url", help=url_help)
     c = sub.add_parser("compare", help="regression harness: B minus A")
     c.add_argument("a")
     c.add_argument("b")
@@ -175,7 +273,7 @@ def main(argv=None) -> int:
     if argv and argv[0] in ("network", "condition"):
         return (_network if argv[0] == "network" else _condition)(argv[1:])
     a = parser().parse_args(argv)
-    return {"dem": _dem, "compare": _compare}[a.cmd](a)
+    return {"dem": _dem, "compare": _compare, "api": _api}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -60,7 +60,11 @@ def build(plan: SourcePlan, src, *, settings, profile: dict, aoi_geom, bounds, o
     ds = np.where(valid, contract.DATA_SOURCE["coarse DEM"], contract.NO_DATA)
     gap = float(1.0 - valid.mean()) if valid.size else 1.0
     if not valid.any():
-        raise RuntimeError(f"no valid DEM cells in {tuple(round(b) for b in bounds)} after reading and land clip")
+        considered = ", ".join(sv.slug for sv in plan.surveys)
+        why = ("the tiles listed for it hold no data there (no LiDAR coverage)" if not rd.used
+               else "nothing is left after the land clip")
+        raise RuntimeError(f"no valid DEM cells in {tuple(round(b) for b in bounds)}: {why}; surveys considered: "
+                           f"{considered}")
     from ..key import provenance
     inputs = [s.record() for s in rd.used]
     prov = provenance(key, info, inputs=inputs,

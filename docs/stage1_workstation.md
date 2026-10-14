@@ -219,6 +219,20 @@ curl -s -H 'Content-Type: application/json' \
   http://localhost:5500/terrain/dem
 ```
 
+**From the command line** (any machine with `terrain-s2` installed, standard library only for this part;
+`TERRAIN_API_URL` or `--url` names the instance):
+
+```bash
+terrain api dem --aoi my_aoi.geojson --resolution 1 [--backend geofabrics] [--rivers] [--param buffer_m=200]
+terrain api task <task id>        # status, product id, or the traceback
+terrain api product <product id>  # the registry row
+```
+
+`terrain api dem` sends the AOI as WKT in EPSG:4326 (from a vector file, WKT or GeoJSON) with only the options
+given, so the deployment's settings fill the rest. It waits for the task and prints the product's registry row;
+`--no-wait` prints the task id instead. `terrain dem` takes the same options but runs Stage 1 here, with the
+library alone and no EDDIE.
+
 Inside EDDIE, FReDT and Smart Ideas don't use HTTP: they call `terrain_s2.client.compat.get_dem_by_geometry`,
 which sends the same task and reads the registry. Under v5 the same request is also the OGC process `terrain.dem`.
 
