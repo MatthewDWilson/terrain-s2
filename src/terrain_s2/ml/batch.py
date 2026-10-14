@@ -147,6 +147,13 @@ def run_batch(tile_ids, cfg: BatchConfig, workers: int = 1, gpu_workers: int = 0
         if s == "todo" or cfg.rerun or (s == "stale" and cfg.rerun_older):
             todo.append(t)
     gpu_workers = min(gpu_workers, workers)
+    if gpu_workers:
+        try:                                  # a GPU worker without a usable GPU would fail every tile
+            from ..backend import get_backend
+            get_backend("gpu")
+        except Exception as e:  # noqa: BLE001
+            log(f"WARNING: no usable GPU ({type(e).__name__}: {e}); running every worker on the CPU")
+            gpu_workers = 0
     log(f"{len(tile_ids)} tiles: {len(todo)} to run, {len(tile_ids) - len(todo)} done "
         f"({workers} workers, {gpu_workers} on the GPU)")
     if not todo:

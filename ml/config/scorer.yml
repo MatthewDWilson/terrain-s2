@@ -1,6 +1,11 @@
-# ML-1 candidate scorer (terrain_s2.ml.train). Unlabelled candidates are weak negatives: their total weight is
-# unlabelled_weight_ratio x the total positive weight (biased positive-unlabelled; scores rank, not probabilities).
+# ML-1 candidate scorer (terrain_s2.ml.train). Unlabelled candidates are weak negatives only within
+# unlabelled_scope_m of a road or railway (where council and KiwiRail registers claim completeness), with total weight
+# unlabelled_weight_ratio x the positives'; elsewhere (private and farm crossings) they get none. null: everywhere
+# (the first run, scorer_wave1). manual_weight: Matt's y / n labels (null: the label config's 0.6).
 unlabelled_weight_ratio: 1.0
+unlabelled_scope_m: 20
+manual_weight: null
+importance: true
 budgets: [50, 100, 200, 500]          # review budgets per tile for recall@K
 sheet_folds: 5                        # GroupKFold by 1:50k sheet, outside the holdout
 seed: 0

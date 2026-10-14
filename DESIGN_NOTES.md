@@ -1472,6 +1472,30 @@ batch lines); the script allows one GPU worker per 8 GB of GPU memory (an estima
 up to all workers: on the RTX 6000 (96 GB), 12 of 12. Without the pool release (the code before this), 6 GPU
 workers is a safe choice (Matt's), since each process keeps its pool.
 
+**ML-1, first results** (`scorer_wave1`, 15 Oct; dataset `wave1` with all 83 tiles: 179,905 candidates, +1,541,
+-73, 949 misses; features v2, 124 columns). Against the tier ordering, on every fold: recall at 100 candidates per
+tile 0.29-0.57 against 0.08-0.30; average precision 6-9 x (holdout 0.37 against 0.056); leave-one-council-out
+recall@100 HBRC 0.35 (tiers 0.24), Waimakariri 0.29 (0.13); bridge against culvert AUC 0.86-0.95. But on Matt's
+labels (y against n, Waimakariri and the BW24 holdout) the model is near chance (AUC 0.54 and 0.56) where the tiers
+reach 0.81, and it ranks his "y" low (recall@100 0.04-0.07). Reading: with every unlabelled candidate a weak
+negative, the model learns what the inventories record (council road culverts, bridges, implied road crossings),
+not what a structure looks like; Matt's "y" include private and farm crossings that no inventory holds, so it
+scores them as non-structures. Also: KiwiRail culverts in HBRC are rarely found (recall@100 0.01): the features
+have no distance to rail (roads.gpkg is roads only). Recall is bounded by the misses: in Waimakariri 786 of 1,716
+positive labels have no candidate (ML-3).
+Changes (15 Oct): context features at the dataset level (`ctx_*`: distance to LINZ road, its lanes and surface, to
+rail, to tracks, to any OSM way, to buildings, buildings within 50 m; no rerun of the tiles); scope-aware PU:
+unlabelled candidates are weak negatives only within `unlabelled_scope_m` (20 m) of a road or railway, where the
+registers claim completeness, and get no weight elsewhere; `manual_weight` to raise Matt's labels; permutation
+importance on the holdout in the report. The manual-label AUC is the measure to watch.
+
+**HPC, cont.** (15 Oct): `update` refreshed the mirror but not `~/terrain/terrain_hpc.sh`, the copy that runs, so
+the core-count fix never reached it. `update` now replaces the copy from the mirror. The batch checks that the GPU
+is usable before starting GPU workers, and runs them on the CPU otherwise (a GPU worker without CuPy would fail
+every tile). Windows' `nvidia-smi` does not list WSL processes, and with the pool released after the ~10 s feature
+stage, low GPU memory and utilisation between stages are expected; the batch lines' `GPU ... GB` and
+`network.json` `device` / `gpu_pool_gb` are the check.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

@@ -142,6 +142,10 @@ sync_mirror() {
 update() {
     say "Update"
     sync_mirror
+    # this script itself: the copy in ~/terrain is what runs, so refresh it from the mirror (a new file, so the
+    # running shell keeps reading the old one); before 15 Oct 2026 'update' left it as installed
+    tr -d '\r' < "$TS2/docs/wsl/terrain_hpc.sh" > "$HOME_T/terrain_hpc.sh.new" && mv "$HOME_T/terrain_hpc.sh.new" "$HOME_T/terrain_hpc.sh" \
+        && note "script refreshed from the mirror ($HOME_T/terrain_hpc.sh)"
     local now; now=$(sha256sum "$TS2/environment.yml" | cut -d' ' -f1)
     if [ "$now" != "$(cat "$HOME_T/.environment.sha" 2>/dev/null)" ]; then
         note "environment.yml changed: updating the environment"

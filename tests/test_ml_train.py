@@ -62,7 +62,16 @@ def test_scorer_beats_the_tiers_and_saves_a_model(tmp_path):
 def test_pu_weights_and_roles():
     d = pd.DataFrame(dict(struct=[1, 1, 0, np.nan, np.nan, np.nan], n_labels=[1, 1, 1, 0, 0, 1],
                           near_positive=[False, False, False, False, True, False], weight=[1.0, 0.7, 0.6, 0, 0, 0],
-                          f=[1, 2, 3, 4, 5, 6.0]))
+                          f=[1, 2, 3, 4, 5, 6.0], label_kind=["council", "council", "manual", "", "", "manual"]))
     X, y, w, keep = TR.design(d, ["f"], dict(unlabelled_weight_ratio=1.0))
     assert keep.tolist() == [True, True, True, True, False, False]        # near-positive and unsure left out
     assert y.tolist()[:4] == [1, 1, 0, 0] and np.isclose(w[3], 1.7)         # one unlabelled carries the positives' 1.7
+    # scope: unlabelled weak negatives only near roads or rail
+    d2 = pd.concat([d, d.iloc[[3]]], ignore_index=True).assign(ctx_dist_road_m=[0, 0, 0, 5, 0, 0, 300.0],
+                                                               ctx_dist_rail_m=[500.0] * 6 + [10.0])
+    _, _, w2, keep2 = TR.design(d2, ["f"], dict(unlabelled_weight_ratio=1.0, unlabelled_scope_m=20))
+    assert keep2.tolist() == [True, True, True, True, False, False, True] and np.isclose(w2[3], 0.85)  # rail counts
+    d2.loc[6, "ctx_dist_rail_m"] = 400.0
+    _, _, w3, keep3 = TR.design(d2, ["f"], dict(unlabelled_weight_ratio=1.0, unlabelled_scope_m=20, manual_weight=1.0))
+    assert not keep3[6] and np.isclose(w3[3], 1.7) and w3[2] == 1.0        # far from roads and rail: no weight;
+    #                                                                          Matt's label at manual_weight

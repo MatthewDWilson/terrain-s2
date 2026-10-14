@@ -10,6 +10,11 @@ For every tile of the manifest with a finished run (``done.json`` with features)
    gets ``cand_id`` (``<tile>:<row>``) and its patch (``patch_file``, ``patch_row``: the tile's
    ``ml_patches.npy``, not copied; open with ``np.load(f, mmap_mode="r")``).
 
+4. context features from the bundle's vector layers (``ctx_*``: distance to the nearest LINZ road, its lanes and
+   whether it is sealed, to rail, to tracks, to any OSM way with a highway tag (driveways, farm tracks), to the
+   nearest building and the number within 50 m; capped at 500 m). They need no rerun of the tiles, and define the
+   inventory scope used in training (council registers cover road culverts; KiwiRail, rail).
+
 Writes ``<out>/candidates.parquet``, ``<out>/misses.parquet`` (labels with no candidate in reach: the
 recall denominator), ``<out>/tiles.csv`` and ``<out>/card.json`` / ``card.md``: counts per council, fold and
 label kind, the feature columns (location and identifiers excluded), and the versions (code, features,
@@ -65,6 +70,7 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
         D[k] = C[k].to_numpy() if k in C else np.nan
     for k in TILE_COLUMNS:
         D[k] = getattr(tile, k, None)
+    D = context_features(bundle_dir, D)
     D["cand_id"] = [f"{tile.tile_id}:{i}" for i in range(len(D))]
     D["patch_file"] = str(run_dir / "ml_patches.npy")
     D["patch_row"] = np.arange(len(D))
@@ -78,6 +84,63 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
     rec.update(status="ok", candidates=len(D), positives=int((D.struct == 1).sum()), negatives=int((D.struct == 0).sum()),
                misses=0 if M is None else len(M))
     return D, M, rec
+
+
+CTX_CAP_M = 500.0
+
+
+def context_features(bundle_dir: Path, D):
+    """``ctx_*`` columns from the bundle's context.gpkg and roads.gpkg (see the module docstring)."""
+    import geopandas as gpd
+    import pyogrio
+    from scipy.spatial import cKDTree
+    ctx = Path(bundle_dir) / "context.gpkg"
+    have = {n for n, _ in pyogrio.list_layers(ctx)} if ctx.exists() else set()
+    xy = np.column_stack([D.x.to_numpy(float), D.y.to_numpy(float)])
+
+    def layer(name):
+        return gpd.read_file(ctx, layer=name) if name in have else None
+
+    def nearest(g, cap=CTX_CAP_M):
+        """distance to the nearest geometry and its row index (-1 beyond the cap)."""
+        if g is None or not len(g) or not len(xy):
+            return np.full(len(xy), cap), np.full(len(xy), -1)
+        pts = gpd.GeoSeries(gpd.points_from_xy(xy[:, 0], xy[:, 1]), crs=g.crs)
+        j = gpd.sjoin_nearest(gpd.GeoDataFrame(geometry=pts).reset_index(names="i"), g[["geometry"]].reset_index(names="k"),
+                              max_distance=cap, distance_col="d").drop_duplicates("i").set_index("i")
+        d = j.d.reindex(range(len(xy))).fillna(cap).to_numpy()
+        k = j.k.reindex(range(len(xy))).fillna(-1).astype(int).to_numpy()
+        return np.minimum(d, cap), k
+    out = {}
+    roads = layer("roads")
+    d, k = nearest(roads)
+    out["ctx_dist_road_m"] = d
+    if roads is not None and len(roads):
+        lanes = pd_num(roads.get("lanes"))
+        sealed = roads["surface"].astype(str).str.lower().eq("sealed").to_numpy() if "surface" in roads else None
+        out["ctx_road_lanes"] = np.where(k >= 0, lanes[np.maximum(k, 0)], np.nan) if lanes is not None else np.nan
+        out["ctx_road_sealed"] = np.where(k >= 0, sealed[np.maximum(k, 0)].astype(float), np.nan) if sealed is not None else np.nan
+    else:
+        out["ctx_road_lanes"], out["ctx_road_sealed"] = np.nan, np.nan
+    out["ctx_dist_rail_m"] = nearest(layer("rail"))[0]
+    out["ctx_dist_track_m"] = nearest(layer("tracks"))[0]
+    osm = layer("osm_roads")
+    out["ctx_dist_osm_way_m"] = nearest(osm)[0]
+    b = layer("buildings")
+    out["ctx_dist_building_m"] = nearest(b)[0]
+    if b is not None and len(b) and len(xy):
+        c = b.geometry.centroid
+        tree = cKDTree(np.column_stack([c.x, c.y]))
+        out["ctx_n_buildings_50m"] = np.array([len(v) for v in tree.query_ball_point(xy, 50.0)], float)
+    else:
+        out["ctx_n_buildings_50m"] = np.zeros(len(xy))
+    import pandas as pd
+    return pd.concat([D.reset_index(drop=True), pd.DataFrame(out)], axis=1)
+
+
+def pd_num(s):
+    import pandas as pd
+    return None if s is None else pd.to_numeric(s, errors="coerce").to_numpy(float)
 
 
 def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale", name=None, log=print) -> dict:

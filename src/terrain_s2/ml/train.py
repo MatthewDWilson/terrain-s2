@@ -2,9 +2,12 @@
 
 Targets, from the dataset (``ml.dataset``):
 - ``p_structure``: a structure (culvert or bridge) at the candidate. Positives: council and asset registers,
-  bridges, implied crossings, Matt's "y"; negatives: Matt's "n"; unlabelled candidates are kept as weak negatives
-  (weight ``unlabelled_weight_ratio`` x the total positive weight, spread over them: a biased-PU baseline, so
-  scores rank rather than give probabilities). ``near_positive`` (a second candidate of one structure) and
+  bridges, implied crossings, Matt's "y"; negatives: Matt's "n"; unlabelled candidates are weak negatives only
+  inside the inventories' scope (``unlabelled_scope_m`` of a road or railway: council registers hold road culverts,
+  KiwiRail rail ones), with total weight ``unlabelled_weight_ratio`` x the positives'; elsewhere (farm and private
+  crossings, which no inventory records) they get no weight, so the model is not taught that an unrecorded
+  structure is no structure (scope-aware PU; ``unlabelled_scope_m: null`` treats every unlabelled candidate as a
+  weak negative, the first run). ``manual_weight`` overrides the weight of Matt's labels. ``near_positive`` (a second candidate of one structure) and
   "unsure" are left out of training;
 - ``p_bridge``: bridge rather than culvert, among positives of known class.
 
@@ -28,7 +31,8 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULTS = dict(unlabelled_weight_ratio=1.0, budgets=[50, 100, 200, 500], sheet_folds=5, seed=0,
+DEFAULTS = dict(unlabelled_weight_ratio=1.0, unlabelled_scope_m=20.0, manual_weight=None, importance=True,
+                budgets=[50, 100, 200, 500], sheet_folds=5, seed=0,
                 model=dict(max_iter=400, learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=40, l2_regularization=1.0,
                            early_stopping=True, validation_fraction=0.1, n_iter_no_change=30))
 
@@ -84,6 +88,15 @@ def design(d, cols, cfg):
     w = np.zeros(len(d))
     w[pos] = d.weight.to_numpy(float)[pos]
     w[neg] = d.weight.to_numpy(float)[neg]
+    if cfg.get("manual_weight") is not None:
+        man = (d.label_kind == "manual").to_numpy() & (pos | neg)
+        w[man] = cfg["manual_weight"]
+    scope = cfg.get("unlabelled_scope_m")
+    if scope is not None and "ctx_dist_road_m" in d:
+        road = d.ctx_dist_road_m.fillna(np.inf).to_numpy()
+        rail = d.ctx_dist_rail_m.fillna(np.inf).to_numpy() if "ctx_dist_rail_m" in d else np.full(len(d), np.inf)
+        near = np.minimum(road, rail) <= scope
+        unl = unl & near
     if unl.any():
         w[unl] = cfg["unlabelled_weight_ratio"] * w[pos].sum() / unl.sum()
     keep = (pos | neg | unl) & ~excl & (w > 0)
@@ -207,6 +220,9 @@ def run(dataset, out, cfg=None, name=None, log=print):
             + (f"; manual AUC {r['model'].get('manual_auc')} vs {r['baseline'].get('manual_auc')}" if "manual_auc" in r["model"] else ""))
     hold = d.holdout.fillna(False).to_numpy(bool)
     final = fit(d[~hold], cols, cfg)
+    importance = None
+    if cfg.get("importance") and final is not None and hold.any():
+        importance = permutation_importance(final, d[hold], cols, cfg)
     final_b = fit(d[~hold], cols, cfg, target="bridge")
     meta = dict(name=name or out.name, built=_dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
                 code=code_version(), dataset=str(dataset), dataset_card=card.get("versions"), features=cols, config=cfg,
@@ -217,15 +233,45 @@ def run(dataset, out, cfg=None, name=None, log=print):
         pickle.dump(dict(structure=final, bridge=final_b, features=cols, meta=meta), f, protocol=5)
     if scores:
         pd.concat(scores, ignore_index=True).to_parquet(out / "fold_scores.parquet", index=False)
-    rep = dict(meta=meta, folds=results)
+    rep = dict(meta=meta, folds=results, importance=importance)
     (out / "report.json").write_text(json.dumps(rep, indent=1, default=str))
     (out / "report.md").write_text(report_md(rep, cfg["budgets"]))
     return rep
 
 
+def permutation_importance(model, d, cols, cfg, n=20000, repeats=3, top=25):
+    """Drop in average precision (labelled positives against the rest) when one feature is shuffled, on the
+    holdout (at most ``n`` candidates); the ``top`` features."""
+    from sklearn.metrics import average_precision_score
+    rng = np.random.default_rng(cfg["seed"])
+    pos, _, _, excl = roles(d)
+    idx = np.flatnonzero(~excl)
+    if len(idx) > n:
+        idx = np.sort(rng.choice(idx, n, replace=False))
+    X = d.iloc[idx][cols].to_numpy(np.float32)
+    y = pos[idx]
+    if y.sum() < 5:
+        return None
+    base = average_precision_score(y, model.predict_proba(X)[:, 1])
+    out = []
+    for j, c in enumerate(cols):
+        drops = []
+        for _ in range(repeats):
+            Xp = X.copy()
+            Xp[:, j] = Xp[rng.permutation(len(Xp)), j]
+            drops.append(base - average_precision_score(y, model.predict_proba(Xp)[:, 1]))
+        out.append((c, float(np.mean(drops))))
+    out.sort(key=lambda t: -t[1])
+    return dict(metric="average precision on the holdout", base=round(float(base), 4),
+                top=[dict(feature=c, drop=round(v, 4)) for c, v in out[:top]])
+
+
 def report_md(rep, budgets) -> str:
     m = rep["meta"]
+    c = m["config"]
     L = [f"# Candidate scorer {m['name']}", "", f"Built {m['built']}; code {m['code']}; {len(m['features'])} features; "
+         f"unlabelled weight ratio {c['unlabelled_weight_ratio']}, scope {c.get('unlabelled_scope_m')} m, manual weight "
+         f"{c.get('manual_weight') or 'as labelled'}; "
          f"final model on {m['trained_on']['tiles']} tiles ({m['trained_on']['candidates']:,} candidates, holdout excluded).", "",
          "Recall: positives captured in the top K candidates of each tile, over positives plus misses (labels without a "
          "candidate). Tiers = the rule-based ordering.", "",
@@ -238,6 +284,10 @@ def report_md(rep, budgets) -> str:
                  + " | ".join(f"{a[f'recall@{k}']} / {b[f'recall@{k}']}" for k in budgets)
                  + f" | {a.get('average_precision')} / {b.get('average_precision')} | "
                  f"{a.get('manual_auc', '')} / {b.get('manual_auc', '')} | {r.get('bridge_auc', '')} |")
+    imp = rep.get("importance")
+    if imp:
+        L += ["", f"Permutation importance ({imp['metric']}, base {imp['base']}): "
+              + ", ".join(f"{t['feature']} {t['drop']}" for t in imp["top"][:15]) + "."]
     L += ["", "Recall by label kind (model, at the second budget):", ""]
     for r in rep["folds"]:
         L.append(f"- {r['fold']}: " + "; ".join(f"{k} {v[next(x for x in v if x.startswith('recall@'))]} "
