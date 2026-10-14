@@ -105,6 +105,16 @@ bash $S e2e geofabrics 1 auto rivers=true waterways=true         # rivers and OS
 - **Data source:** `data_source_counts` should show 3 (rivers) and, with waterways, 4.
 - **In QGIS:** `rivers/<id>/river_polygon.geojson` over the DEM, and the aligned centreline against the channel.
 
+## 4a. First live run (SH12, 1 m, 14 Oct 2026)
+
+- **Selection:** 28 reaches in the window; one river above 10 km², reach 1011466.
+- **River stage:** ok in 106 s.
+- **Failure:** the hydrologic DEM then failed while interpolating the river bathymetry:
+  `ValueError: setting an array element with a sequence` in `elevation_from_nearest_points`. GeoFabrics'
+  default river interpolation (RBF) returns a 1-element array per cell, which NumPy 2.4 no longer accepts as a
+  scalar.
+- **Fix:** the worker pins `numpy<2.4`, and the build checks it. Drafted as upstream issue GeoFabrics 7.
+
 ## 5. Open
 
 1. **REC1 topology.** Built from the geometry (section 3). On the first live run, check the junction count in

@@ -133,6 +133,13 @@ checks the next reach *id* against that list. When a reach id equals an index la
 connections" for a valid network. REC ids (seven digits) never collide, so it is latent for NZ data. Proposal:
 compare ids with ids. Found while matching our river selection to GeoFabrics' trace (`tests/test_stage1_rivers.py`).
 
+**GeoFabrics 7. RBF interpolation fails with NumPy 2.4.** `dem.calculate_rbf` returns
+`RBFInterpolator(...)([point])`, a 1-element array, and `elevation_from_nearest_points` assigns it to
+`z_out[i]`. NumPy 2.4 made that an error ("setting an array element with a sequence"); before, it was deprecated.
+RBF is GeoFabrics' default interpolation for rivers (and the ocean), so a DEM with river bathymetry fails at the
+hydrologic stage (first live river run, SH12, 14 Oct 2026). Proposal: return `[0]`, as
+`calculate_interpolate_griddata` does. We pin `numpy<2.4` in the terrain worker meanwhile.
+
 Items GeoFabrics 1 and 4 matter only if raster input ever goes back through GeoFabrics; P-3 avoids that.
 
 Not an issue to raise, but worth knowing: the runner skips any stage whose output file already exists, so a

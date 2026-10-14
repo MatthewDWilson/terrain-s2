@@ -49,6 +49,7 @@ RUN <<BUILD
     done
     # Build-time checks: the pin, and that the library, GeoFabrics and the module import together, quietly
     python -c "import importlib.metadata as m; v = m.version('geofabrics'); print('geofabrics', v); assert v == '1.1.30', v"
+    python -c "import numpy as n; v = tuple(int(x) for x in n.__version__.split('.')[:2]); print('numpy', n.__version__); assert v < (2, 4), 'GeoFabrics 1.1.30 needs numpy < 2.4'"
     python -c "import pdal, rasterio, terrain_s2, eddie_terrain; from geofabrics import runner; print('terrain_s2', terrain_s2.__version__, 'GDAL', rasterio.__gdal_version__)" 2>&1 | tee /tmp/imports.txt
     if grep -q "PDAL Error" /tmp/imports.txt; then echo "PDAL plugin load errors remain"; exit 1; fi
     # the worker command imports the core's tasks module, which discovers this module (dummy settings: the core
