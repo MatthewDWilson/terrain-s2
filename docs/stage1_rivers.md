@@ -115,6 +115,53 @@ bash $S e2e geofabrics 1 auto rivers=true waterways=true         # rivers and OS
   scalar.
 - **Fix:** the worker pins `numpy<2.4`, and the build checks it. Drafted as upstream issue GeoFabrics 7.
 
+## 4b. Second run: end to end (SH12, 1 m, geofabric, 14 Oct 2026; product 11)
+
+**Network.** 28 REC1 reaches were fetched. The topology built from the geometry checks out: at all 23 junctions
+the downstream reach is the larger, 0 reaches were reversed, and 2 isolated reaches (clipped at the window edge)
+were left undecided. One main stem was traced: reaches 1011677, 1011577 and 1011466; 32.5 to 43.0 km²;
+`H_C18_MAF` 76 to 81 m³/s.
+
+**River stage, 72 s.** 359 cross-sections, of which 312 have results. Width 7 to 21 m (median 10.8), bank height
+median 2.5 m. Depths:
+
+| Method | Median depth | Maximum depth | Bed elevation range |
+|---|---|---|---|
+| Rupp and Smart | 3.2 m | 7.1 m | −4.5 to 7.0 m |
+| Neal et al. | 3.0 m | 9.1 m | −6.3 to 7.9 m |
+
+The river polygon covers 22,600 m² in 3 parts (gaps where cross-sections failed); 10,706 cells in the grid
+carry `data_source` 3.
+
+**Assessment (Matt and Cowork).**
+
+- **The method works end to end.** Against the NIWA `8m_geofabric.nc` the result is somewhat better, but the
+  same data-driven errors appear:
+  - *A meander bend is cut off.* REC1's centreline is a 30 m staircase, and the bend lies further from it than
+    `network_alignment_tolerance` (40 m).
+  - *The side channel is missing.* It isn't in REC1, or doesn't connect under SH12 in REC1. The waterways stage
+    (OSM) may add it if OSM maps it.
+
+  These are what Stage 2 is for. In Stage 1 the remedies are an OSM alignment per river (`rivers.osm`) and the
+  waterways stage.
+- **Depths are probably too deep for this lowland, tidal reach.** The mean annual flood is routed through an
+  11 m channel at a slope of at most 0.0001, whereas floodplain flow carries part of it. W7 sensitivity: a
+  smaller flow (e.g. a bank-full fraction), and the `area_adjusted_depth_*` columns, which GeoFabrics also writes
+  (median about 2 m).
+- **Slow: 1,759 s in GeoFabrics in total, against 72 s for the river stage.** Where the rest went is to be read
+  from the stage logs (`bash $S timeline 11`). GeoFabrics grids, burns rivers and computes roughness with
+  per-cell Python loops (`dem.elevation_from_points`, `elevation_from_nearest_points`, `roughness_from_points`:
+  a KD-tree query, then a loop over output cells).
+  - *River burn:* per cell, an RBF fit to up to 200 points (100 bathymetry and 100 edge). Benchmarked here at
+    about 2 ms a cell, so about 25 s for 10,706 cells. That alone doesn't explain 28 minutes.
+  - *Next candidates:* the 1 m roughness stage, which had not been run at 1 m before, and the edge-height
+    interpolation.
+  - The dask heartbeat errors in the log come from a worker held by such a loop for minutes; they are harmless.
+- **For Stage 2.** The depth formulas themselves (Neal et al. uniform flow; Rupp and Smart) are a few
+  vectorised lines over the cross-sections and cost nothing. The cost is in building the corridor DEMs from LAZ
+  and in burning points cell by cell; one vectorised interpolation call does 10,706 cells in 0.3 s here.
+  GeoFabrics is GPL-3.0, so Stage 2 should implement the formulas from the papers, not copy GeoFabrics' code.
+
 ## 5. Open
 
 1. **REC1 topology.** Built from the geometry (section 3). On the first live run, check the junction count in

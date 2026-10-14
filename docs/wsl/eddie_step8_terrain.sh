@@ -14,6 +14,7 @@
 #   edge              W3 survey-edge check: an AOI across a LINZ survey boundary, from the partition
 #                     (D:\eddie_data\partition\nz_tiles.gpkg), then 'e2e raster 1' on it
 #   rec1              probe the REC1 river network (ArcGIS item in the Stage 1 profile): fields and SH12 sample
+#   timeline <id>     GeoFabrics stage timings for a product, from its log files (where the time went)
 #   read <WKT file>   diagnose the elevation reader for an AOI: surveys planned, and per tile its grid, nodata
 #                     and the valid fraction of the window read (no product written)
 #   shim              W5: FReDT's calls through the compatibility shim, from the core worker
@@ -696,6 +697,23 @@ PY
         "  gap fraction: \(.gap_fraction)", "  checksums: \([.inputs[].items[]? | select(.checksum != null)] | length) of \([.inputs[].items[]?] | length) items"' "$prov"
 }
 
+# ------------------------------------------------------------------------------------------------ timeline
+timeline() {
+    local id="${1:-}"; [ -n "$id" ] || { note "usage: timeline <product id>"; exit 2; }
+    cd "$INST" || exit 1
+    local nc; nc=$(docker compose exec -T db_postgres psql -U postgres -d db -At -c \
+        "select paths->>'netcdf' from terrain_product where id = $((id))" 2>/dev/null)
+    [ -n "$nc" ] || { note "!! no product $id"; exit 1; }
+    local dir; dir="$(dirname "${nc/#\/terrain_products/$DATA/products}")"
+    local out="/mnt/d/EDDIE/timeline_${id}.txt"
+    say "GeoFabrics timeline, product $id ($dir)"
+    find "$dir" -name 'geofabrics_*.log' | sort | sed 's/^/  log: /'
+    find "$dir" -name 'geofabrics_*.log' -print0 | xargs -0 grep -h -E \
+        "Run [A-Za-z]+ at|Execution time is|Total execution time|Incorporating|Save temp DEM|Generating (ground|vegetation) DEM|Estimating|haracteris|Align|roughness|Preparing \[|Running over dataset|Dask client" 2>/dev/null \
+        | grep -v "celery.redirected" | sort | sed -E 's/ - (INFO|DEBUG|WARNING) - geofabrics\./ /' | cut -c1-200 | tee "$out" | sed 's/^/  /'
+    note "saved: D:\\EDDIE\\timeline_${id}.txt"
+}
+
 # ------------------------------------------------------------------------------------------------ read
 read_diag() {
     local f="${1:-/mnt/d/EDDIE/w3_edge_aoi.wkt}"
@@ -853,11 +871,12 @@ case "${1:-setup}" in
     branch) shift; branch "$@" ;;
     rec1) rec1 ;;
     read) shift; read_diag "$@" ;;
+    timeline) shift; timeline "$@" ;;
     shim) shim ;;
     products) products ;;
     export) shift; export_product "$@" ;;
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric] [aoi=<file>] [k=v ...]|edge|read <wkt file>|rec1|shim|branch [name]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric] [aoi=<file>] [k=v ...]|edge|read <wkt file>|timeline <id>|rec1|shim|branch [name]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac
