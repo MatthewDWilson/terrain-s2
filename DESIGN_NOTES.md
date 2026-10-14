@@ -1531,6 +1531,14 @@ Chosen configuration in `ml/config/scorer.yml` (`exclude_features`, `include_fea
 0.02-0.07, bridge AUC 0.86-0.95. Permutation importance: distance to any way 0.27, upstream area 0.07, tier 0.06,
 DSM - DEM 0.05, then small contributions from the DEM features.
 
+**Wave 2 stopped overnight** (16 Oct, RTX 6000 machine): 77 of 266 tiles done, no `failed.json`; the batch ran in the
+foreground of a WSL terminal, which was gone in the morning (a Windows sleep or restart, a closed terminal, or the
+VM's memory: 14 workers were then started, ~170 GB at ~12 GB each against 173 GB). GPU pool per tile 4.0-4.4 GB,
+so the 8 GB per GPU worker estimate is safe. `terrain_hpc.sh` now has `start` (detached with `setsid nohup`,
+restarted after an interruption until every tile is done, at most 5 attempts; Windows kept awake through
+`SetThreadExecutionState` while it runs; out-of-memory kills from the kernel log recorded), `status` and `stop`, and
+warns when the workers would need more than 85 % of WSL's memory.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

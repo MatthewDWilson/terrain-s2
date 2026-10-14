@@ -56,14 +56,22 @@ downloads them into `~/terrain_data/cog` once. Copying `D:\eddie_data\cog` and `
 ## 4. Running
 
 ```bash
-bash ~/terrain/terrain_hpc.sh batch ~/terrain/terrain-s2/ml/manifests/wave2.csv
+bash ~/terrain/terrain_hpc.sh start ~/terrain/terrain-s2/ml/manifests/wave2.csv     # detached
+bash ~/terrain/terrain_hpc.sh status                                                 # progress, memory, last lines
+bash ~/terrain/terrain_hpc.sh stop
 bash ~/terrain/terrain_hpc.sh dataset ~/terrain/terrain-s2/ml/manifests/wave1.csv ~/terrain/terrain-s2/ml/manifests/wave2.csv --name waves12
 ```
 
-`batch` sizes the workers from memory (about 12 GB per LINZ tile with features) and cores, two of them on the
-GPU; add `--workers N --gpu-workers N` to choose. It resumes where it stopped, and logs to
-`~/terrain_data/logs`. Results are readable from Windows at `\\wsl.localhost\terrain\home\<user>\terrain_data`.
-Use `tmux` (or a second terminal) for long runs: closing the terminal stops the batch.
+`start` sizes the workers from memory (about 12 GB per LINZ tile with features) and cores, and the GPU workers
+from GPU memory; add `--workers N --gpu-workers N` to choose (a warning says when the workers would need more than
+85 % of the memory WSL has). It runs detached from the terminal, restarts the batch after an interruption until
+every tile is done (at most 5 attempts; finished tiles are skipped), keeps Windows from sleeping while it runs, and
+records out-of-memory kills in `~/terrain/run/supervisor.log`. `batch` runs the same in the terminal (closing the
+terminal stops it). Results are readable from Windows at `\\wsl.localhost\terrain\home\<user>\terrain_data`.
+
+If a batch stops on its own: `status` shows the last log lines and any out-of-memory kills; a Windows restart (for
+updates) stops WSL too (`Get-WinEvent -FilterHashtable @{LogName='System'; Id=1074,6006,6008,42} -MaxEvents 10` in
+PowerShell lists restarts and sleeps); then `start` again.
 
 ## Notes
 

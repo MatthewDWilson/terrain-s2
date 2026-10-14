@@ -12,8 +12,14 @@
 #   labels <dir>      copy Matt's review files from a Windows folder (e.g. /mnt/d/eddie_data/labels/manual)
 #   partition         build the national partition and the source coverage index on this machine (once, ~1 h)
 #   batch <manifest> [run_tiles options]
-#                     the batch runner with workers sized from memory and cores (override with --workers N
-#                     --gpu-workers N); logs to $TERRAIN_DATA_DIR/logs
+#                     the batch runner in this terminal, workers sized from memory and cores (override with
+#                     --workers N --gpu-workers N); logs to $TERRAIN_DATA_DIR/logs. Stops if the terminal closes.
+#   start <manifest> [run_tiles options]
+#                     the same, detached from the terminal, restarted after an interruption until every tile is
+#                     done (at most 5 attempts), and keeping Windows awake while it runs; see 'status', 'stop'
+#   status            progress (tiles done, failed, running), the last log lines, peak memory per tile, and
+#                     out-of-memory kills if the kernel log shows any
+#   stop              stop a detached batch
 #   dataset <manifest...> --name N
 #                     build_labels + build_dataset for the manifest(s)
 #
@@ -193,24 +199,133 @@ batch() {
     [ -n "$manifest" ] || die "usage: batch <manifest> [run_tiles options]"
     local part="$TERRAIN_DATA_DIR/partition/nz_tiles.gpkg"
     [ -f "$part" ] || die "no partition at $part (run 'partition', or copy nz_tiles.gpkg there)"
-    local extra=("$@") w g
     if [ "$(cores)" -lt 8 ]; then
-        note "WARNING: WSL sees only $(cores) cores. Set processors= in %UserProfile%\.wslconfig to the machine's"
+        note "WARNING: WSL sees only $(cores) cores. Set processors= in %UserProfile%\\.wslconfig to the machine's"
         note "         logical processors (e.g. 32 or 64), run 'wsl --shutdown' in PowerShell, and reopen."
     fi
-    if [[ " ${extra[*]} " != *" --workers "* ]]; then
-        w=$(workers_for); g=0
-        # the feature stage is the only GPU stage (~10 s of a ~12 min tile) and frees its memory after, so GPU
-        # workers are limited by GPU memory if several overlap: GB_GPU_PER_WORKER each, at most all workers
-        if command -v nvidia-smi >/dev/null 2>&1; then g=$(( $(gpu_mem_gb) / GB_GPU_PER_WORKER )); fi
-        [ "$g" -gt "$w" ] && g=$w
-        extra+=(--workers "$w" --gpu-workers "$g")
-        note "workers $w ($g on the GPU), from $(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo) GB, $(cores) cores and $(gpu_mem_gb) GB of GPU memory"
-        note "(choose them yourself with: batch <manifest> --workers N --gpu-workers M)"
-    fi
+    local extra; mapfile -t extra < <(sizing "$@")
+    note "options: ${extra[*]} (from $(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo) GB, $(cores) cores, $(gpu_mem_gb) GB of GPU memory)"
+    note "in this terminal: closing it stops the batch ('start' runs it detached)"
     local log; log="$TERRAIN_DATA_DIR/logs/batch_$(date +%Y%m%d_%H%M%S).log"
     say "Batch: $manifest -> $log"
     (cd "$TS2" && in_env python scripts/run_tiles.py --manifest "$manifest" --partition "$part" "${extra[@]}") 2>&1 | tee "$log"
+}
+
+RUN="$HOME_T/run"                           # pid files and the supervisor log of a detached batch
+
+sizing() {  # the run_tiles options for "$@" (workers, GPU workers), with a memory check
+    local extra=("$@") w=0 g mem i
+    mem=$(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo)
+    if [[ " ${extra[*]} " != *" --workers "* ]]; then
+        w=$(workers_for); g=0
+        if command -v nvidia-smi >/dev/null 2>&1; then g=$(( $(gpu_mem_gb) / GB_GPU_PER_WORKER )); fi
+        [ "$g" -gt "$w" ] && g=$w
+        extra+=(--workers "$w" --gpu-workers "$g")
+    else
+        for i in "${!extra[@]}"; do [ "${extra[$i]}" = "--workers" ] && w="${extra[$((i + 1))]}"; done
+    fi
+    if [ $(( w * GB_PER_TILE )) -gt $(( mem * 85 / 100 )) ]; then
+        echo "  WARNING: $w workers x ~$GB_PER_TILE GB is more than 85 % of the ${mem} GB WSL has: a worker (or the batch)" >&2
+        echo "           may be killed for memory. $(( mem * 85 / 100 / GB_PER_TILE )) workers fit." >&2
+    fi
+    printf '%s\n' "${extra[@]}"
+}
+
+keep_awake() {  # Windows stays awake while this runs (WSL interop; nothing happens without it)
+    command -v powershell.exe >/dev/null 2>&1 || return 0
+    # shellcheck disable=SC2016
+    powershell.exe -NoProfile -NonInteractive -Command '$s = Add-Type -MemberDefinition "[DllImport(\"kernel32.dll\")] public static extern uint SetThreadExecutionState(uint f);" -Name K -Namespace W -PassThru; while ($true) { [void]$s::SetThreadExecutionState(0x80000001); Start-Sleep 60 }' \
+        >/dev/null 2>&1 &
+    echo $! > "$RUN/awake.pid"
+}
+
+start() {
+    load_env
+    local manifest="${1:-}"; shift || true
+    [ -n "$manifest" ] && [ -f "$manifest" ] || die "usage: start <manifest> [run_tiles options]"
+    mkdir -p "$RUN"
+    if [ -f "$RUN/batch.pid" ] && kill -0 "$(cat "$RUN/batch.pid")" 2>/dev/null; then
+        die "a batch is already running (pid $(cat "$RUN/batch.pid")): 'status' or 'stop'"
+    fi
+    local opts; mapfile -t opts < <(sizing "$@")
+    printf '%s\n' "$manifest" "${opts[@]}" > "$RUN/batch.args"
+    setsid nohup bash "$0" _supervise >> "$RUN/supervisor.log" 2>&1 < /dev/null &
+    echo $! > "$RUN/batch.pid"
+    say "Started (pid $(cat "$RUN/batch.pid")): $manifest ${opts[*]}"
+    note "detached: closing this terminal does not stop it. 'status' for progress, 'stop' to end it."
+    note "supervisor log: $RUN/supervisor.log; batch logs: $TERRAIN_DATA_DIR/logs/"
+}
+
+_supervise() {  # (internal) run the batch until every tile is done, at most 5 attempts
+    load_env
+    local args manifest attempt rc log
+    mapfile -t args < "$RUN/batch.args"
+    manifest="${args[0]}"
+    keep_awake
+    for attempt in 1 2 3 4 5; do
+        echo "$(date '+%F %T') attempt $attempt: $manifest ${args[*]:1}"
+        log="$TERRAIN_DATA_DIR/logs/batch_$(date +%Y%m%d_%H%M%S).log"
+        (cd "$TS2" && in_env python scripts/run_tiles.py --manifest "$manifest" \
+            --partition "$TERRAIN_DATA_DIR/partition/nz_tiles.gpkg" "${args[@]:1}") > "$log" 2>&1
+        rc=$?
+        echo "$(date '+%F %T') attempt $attempt ended: exit $rc; $(tail -1 "$log")"
+        oom_report | sed 's/^/    /'
+        if [ "$rc" -eq 0 ] || grep -q " 0 to run," "$log"; then break; fi   # all done (exit 1 = some tiles failed)
+        sleep 60
+    done
+    [ -f "$RUN/awake.pid" ] && kill "$(cat "$RUN/awake.pid")" 2>/dev/null
+    rm -f "$RUN/batch.pid" "$RUN/awake.pid"
+    echo "$(date '+%F %T') finished"
+}
+
+oom_report() {
+    local k
+    k=$( { dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null; } | grep -iE "out of memory|oom-kill|killed process" | tail -5)
+    [ -n "$k" ] && echo "kernel: $k"
+    echo "memory now: $(free -g | awk '/Mem:/ {print $3 " GB used, " $7 " GB available"}')"
+}
+
+status() {
+    load_env
+    local manifest="" last
+    [ -f "$RUN/batch.args" ] && manifest=$(head -1 "$RUN/batch.args")
+    say "Batch status"
+    if [ -f "$RUN/batch.pid" ] && kill -0 "$(cat "$RUN/batch.pid")" 2>/dev/null; then
+        note "running (supervisor pid $(cat "$RUN/batch.pid")): $manifest"
+    else
+        note "not running"
+    fi
+    if [ -n "$manifest" ] && [ -f "$manifest" ]; then
+        local n ndone nfail t
+        n=$(( $(wc -l < "$manifest") - 1 )); ndone=0; nfail=0
+        while IFS=, read -r t _; do
+            [ -f "$TERRAIN_DATA_DIR/runs/$t/done.json" ] && ndone=$((ndone + 1))
+            [ -f "$TERRAIN_DATA_DIR/runs/$t/failed.json" ] && nfail=$((nfail + 1))
+        done < <(tail -n +2 "$manifest")
+        note "tiles: $ndone of $n done; $nfail with failed.json (retried by the next attempt)"
+    fi
+    last=$(ls -t "$TERRAIN_DATA_DIR"/logs/batch_*.log 2>/dev/null | head -1)
+    [ -n "$last" ] && { note "last lines of $last:"; tail -5 "$last" | sed 's/^/    /'; }
+    in_env python -c '
+import json, sys
+from pathlib import Path
+p = sorted(x for x in (json.loads(f.read_text()).get("peak_rss_gb") for f in Path(sys.argv[1]).glob("*/done.json")) if x)
+if p:
+    print(f"  peak memory per tile: median {p[len(p) // 2]:.1f} GB, max {p[-1]:.1f} GB ({len(p)} tiles)")
+' "$TERRAIN_DATA_DIR/runs"
+    oom_report | sed 's/^/  /'
+    [ -f "$RUN/supervisor.log" ] && { note "supervisor:"; tail -4 "$RUN/supervisor.log" | sed 's/^/    /'; }
+}
+
+stop() {
+    if [ -f "$RUN/batch.pid" ] && kill -0 "$(cat "$RUN/batch.pid")" 2>/dev/null; then
+        kill -- -"$(cat "$RUN/batch.pid")" 2>/dev/null || kill "$(cat "$RUN/batch.pid")"
+        [ -f "$RUN/awake.pid" ] && kill "$(cat "$RUN/awake.pid")" 2>/dev/null
+        rm -f "$RUN/batch.pid" "$RUN/awake.pid"
+        note "stopped; finished tiles are kept, and 'start' resumes"
+    else
+        note "no batch running"
+    fi
 }
 
 dataset() {
@@ -248,8 +363,12 @@ case "$mode" in
     update) update ;;
     check) check ;;
     batch) batch "$@" ;;
+    start) start "$@" ;;
+    _supervise) _supervise ;;
+    status) status ;;
+    stop) stop ;;
     dataset) dataset "$@" ;;
     labels) labels "$@" ;;
     partition) partition ;;
-    *) die "unknown mode '$mode' (setup | update | check | labels | partition | batch | dataset)" ;;
+    *) die "unknown mode '$mode' (setup | update | check | labels | partition | batch | start | status | stop | dataset)" ;;
 esac
