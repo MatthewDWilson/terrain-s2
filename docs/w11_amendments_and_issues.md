@@ -70,6 +70,11 @@ each document.
   open it directly. Stage 2's 1 m check reads the product's resolution, not the presence of the COG.
 - **6.1 settings.** `TERRAIN_PRODUCT` gains `auto` (the default): `geofabric` with the GeoFabrics backend,
   `dem` with raster.
+- **Section 10 (consumers).** Reading the products with `rioxarray.open_rasterio`, as FReDT and NewZeaLiDAR
+  do, needs GDAL's netCDF driver. conda-forge ships it as `libgdal-netcdf` from GDAL 3.9, and the v5 core's
+  environment (`rasterio==1.5.2` from conda-forge) lacks it: the W5 shim check failed there on 14 Oct 2026.
+  FReDT's and Smart Ideas' environments need `libgdal-netcdf` when they move to the v5 stack. The shim now
+  says so instead of failing in GDAL.
 - **6.6 table.** Add `config_key` (text, indexed) and `grid` (geometry). They support spatial reuse when only the
   inputs differ (DESIGN_NOTES §10, decision 2).
 - **6.3 template.**

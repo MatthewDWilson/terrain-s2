@@ -64,19 +64,30 @@ REC2 has upstream area but no flows per reach, so the network is REC1. It is the
 `548b3bfcff8f4728b0f64caf6f815233` (Matt, 14 Oct 2026). Its reaches are approximate, which is what the
 alignment step is for.
 
-**To be confirmed on the workstation.** Run `bash $S rec1`. It shows:
+**Confirmed by the probe** (`bash $S rec1`, 14 Oct 2026).
 
-- whether the item is a service (queried per AOI) or a file (download it once and point
-  `rivers.network.source` at `{kind: file, path: /terrain_data/rec1/<file>}`);
-- its fields with sample values;
-- the reaches around SH12, saved for QGIS.
+- **Layer.** The item is NIWA's public Feature Service "NZ Flood Statistics (Henderson Collins) on REC1", layer
+  `Flood_Statistics_2018_REC1` (polylines, 2,000 records per page). Stage 1 queries it per AOI. 136 reaches lie
+  within about 4 km of SH12.
+- **Fields.**
+  - `NZREACH`: the REC1 reach id;
+  - `Areakm2`: upstream area in km², converted to m² for GeoFabrics;
+  - `H_C18_MAF`, then `H_C18_5_yr` to `H_C18_1000`: Henderson and Collins (2018) flood estimates in m³/s;
+  - `HCse_*`: their standard errors;
+  - `q100_reach`, `Strm_Order`, `Rivername`.
+- **No node fields.** The layer has no `FROM_NODE` or `TO_NODE`, so the topology is built from the geometry
+  (`rivers.topology()`):
+  - reach ends within 1 m share a node;
+  - each reach is turned to run downstream, judged from the upstream areas at its two ends;
+  - the counts go into the key record: reversed, undecided, and junctions where the downstream reach is the
+    larger. This checks the direction rule on real data.
+- **Mapping** (profile): `id: NZREACH`, `area: Areakm2` (`area_units: km2`), `flow: H_C18_MAF`, with
+  Manning's n a constant 0.035.
 
-The profile then needs the field for `flow`, and for Manning's n if the layer has one; otherwise a constant
-0.035 is used. Until `flow` is set, a rivers request stops and lists the layer's fields.
-
-**Which flow.** GeoFabrics' depth estimate is for bank-full conditions. Its Waikanae test network
-(`rec1_flow_and_friction.geojson`: `NZREACH`, `CATCHAREA`, `to_node`, `from_node`, `flow`, `n`) carries one
-`flow` per reach. The mean annual flood is the usual bank-full proxy, so choose that if the layer has it.
+**Which flow.** GeoFabrics' depth estimate is for bank-full conditions. The mean annual flood (`H_C18_MAF`) is
+the usual bank-full proxy. GeoFabrics' own Waikanae test network carries one `flow` per reach in the same way
+(`rec1_flow_and_friction.geojson`: `NZREACH`, `CATCHAREA` in m², `to_node`, `from_node`, `flow`, `n`). W7 can try
+`H_C18_5_yr` as a sensitivity check.
 
 ## 4. Running it
 
@@ -96,7 +107,8 @@ bash $S e2e geofabrics 1 auto rivers=true waterways=true         # rivers and OS
 
 ## 5. Open
 
-1. **REC1 fields and flow** (section 3), from `bash $S rec1`.
+1. **REC1 topology.** Built from the geometry (section 3). On the first live run, check the junction count in
+   the provenance (`rivers.network.connections_downstream_larger` against `connections`).
 2. **OSM alignment.** GeoFabrics needs the OSM id per river (profile `rivers.osm: {<network_id>: {type, id}}`).
    Choosing it automatically (the OSM waterway that best overlaps the REC stem) is a small addition once we have
    seen the DEM-only alignment on SH12.

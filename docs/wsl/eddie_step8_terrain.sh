@@ -140,8 +140,10 @@ setup() {
     grep -q -- '- python=3.13' "$INST/.local/environment.yml" || { note "!! python pin not applied - core environment.yml changed"; exit 1; }
     grep -q -- '- redis-py==5.0.3' "$INST/.local/environment.yml" || { note "!! redis fix not applied - core environment.yml changed"; exit 1; }
     # terrain-s2 base install (light): what eddie_terrain needs in the backend to validate requests
-    sed -i -E 's/^(\s*)- pip\s*$/\1- xarray\n\1- rioxarray\n\1- netcdf4\n\1- pyyaml\n&/' "$INST/.local/environment.yml"
-    grep -q -- '- rioxarray' "$INST/.local/environment.yml" && note "environment: python 3.13, redis-py, + xarray rioxarray netcdf4 pyyaml"
+    # libgdal-netcdf: conda-forge ships GDAL's netCDF driver separately (GDAL >= 3.9); without it rioxarray can't
+    # open the products through GDAL (FReDT's read path; W5 shim, 14 Oct 2026)
+    sed -i -E 's/^(\s*)- pip\s*$/\1- xarray\n\1- rioxarray\n\1- netcdf4\n\1- libgdal-netcdf\n\1- pyyaml\n&/' "$INST/.local/environment.yml"
+    grep -q -- '- libgdal-netcdf' "$INST/.local/environment.yml" && note "environment: python 3.13, redis-py, + xarray rioxarray netcdf4 libgdal-netcdf pyyaml"
     cat > "$INST/.local/core.Dockerfile" <<'EOF'
 # .local/core.Dockerfile - core harness for the terrain slot (local only, not committed).
 # Step 5's vanilla-core harness (see eddie_step5_core.sh for the five documented differences from core's own
@@ -448,6 +450,12 @@ PY
         echo "  OSM Overpass (roughness roads): $(curl -s -o /dev/null -w "%{http_code}" --max-time 20 http://overpass-api.de/api/status) (expect 200)"
         echo "  registry: $(python -c "from eddie_terrain.tables import get_store; s = get_store(); print(\"terrain_product ready on\", s.engine.url.render_as_string(hide_password=True))" 2>&1 | grep -v "|" | tail -1)"
         echo "  ping: $(celery -A eddie.tasks inspect ping -d terrain@$HOSTNAME 2>&1 | grep -c pong) pong"
+        echo "  PROJ: PROJ_DATA=${PROJ_DATA:-unset} PROJ_LIB=${PROJ_LIB:-unset}; $(ls /venv/share/proj/proj.db 2>&1)"
+        for t in "import pyproj; pyproj.CRS(2193); print(\"pyproj\", pyproj.datadir.get_data_dir())" \
+                 "import rasterio.crs; rasterio.crs.CRS.from_epsg(2193); print(\"rasterio\")" \
+                 "import pyogrio, geopandas as g; g.GeoSeries.from_xy([1.6e6], [5e6], crs=2193).to_crs(4326).to_file(\"/tmp/p.gpkg\"); g.read_file(\"/tmp/p.gpkg\"); print(\"pyogrio\")"; do
+            echo "    $(python -c "$t" 2>&1 | tr "\n" " " | cut -c1-200)"
+        done
         celery -A eddie.tasks inspect registered -d terrain@$HOSTNAME 2>/dev/null | grep -o "eddie_terrain[a-z_.]*" | sed "s/^/  task: /"
         echo "  queues: $(celery -A eddie.tasks inspect active_queues -d terrain@$HOSTNAME 2>/dev/null | grep -oE "name.: .[a-z_]+" | sort -u | tr "\n" " ")"
     ' 2>&1
@@ -625,6 +633,12 @@ t = t[t["latest_survey"].notna()].reset_index(drop=True)
 sj = gpd.sjoin(t[["tile_id", "latest_survey", "geometry"]], t[["tile_id", "latest_survey", "geometry"]],
                predicate="touches")
 sj = sj[(sj["latest_survey_left"] != sj["latest_survey_right"]) & (sj["tile_id_left"] < sj["tile_id_right"])]
+# A real edge: each tile's latest survey does not cover the other tile, so newest-first must switch survey
+# across the boundary (14 Oct: a pair whose newer survey covered both read one survey only).
+cov = {r.tile_id: set(str(r.surveys).split(",")) for r in t.itertuples()}
+strict = sj[[a not in cov[y] and b not in cov[x] for x, y, a, b in
+             zip(sj.tile_id_left, sj.tile_id_right, sj.latest_survey_left, sj.latest_survey_right)]]
+sj = strict if len(strict) else sj
 if sj.empty:
     raise SystemExit("no neighbouring tiles with different latest surveys")
 a = t.set_index("tile_id")
@@ -639,7 +653,8 @@ c = edge.interpolate(0.5, normalized=True)
 x0, y0, x1, y1 = edge.bounds
 hx, hy = (600, 400) if (y1 - y0) > (x1 - x0) else (400, 600)                     # long side across the edge
 aoi = gpd.GeoSeries([box(c.x - hx, c.y - hy, c.x + hx, c.y + hy)], crs=2193).to_crs(4326).iloc[0]
-print(f"tiles {r.tile_id_left} ({r.latest_survey_left}) | {r.tile_id_right} ({r.latest_survey_right})")
+print(f"tiles {r.tile_id_left} ({r.latest_survey_left}) | {r.tile_id_right} ({r.latest_survey_right}); "
+      f"{len(strict)} pairs where neither latest survey covers the other tile")
 print("WKT " + aoi.wkt)
 PY
     grep '^WKT ' /tmp/w3_edge.txt | sed 's/^WKT //' > "$wkt"
@@ -649,7 +664,7 @@ PY
     say "W3 exit: both surveys recorded, no gaps"
     local prov; prov=$(ls -t /mnt/d/EDDIE/terrain_e2e_raster_1m_*/*.provenance.json 2>/dev/null | head -1)
     [ -n "$prov" ] && jq -r '"  inputs: \([.inputs[] | (.survey // .name)] | unique | join(", "))",
-        "  gap fraction: \(.gap_fraction)", "  checksums: \([.inputs[] | select(.checksum != null or ."file:checksum" != null)] | length) of \(.inputs | length) inputs"' "$prov"
+        "  gap fraction: \(.gap_fraction)", "  checksums: \([.inputs[].items[]? | select(.checksum != null)] | length) of \([.inputs[].items[]?] | length) items"' "$prov"
 }
 
 # ------------------------------------------------------------------------------------------------ rec1

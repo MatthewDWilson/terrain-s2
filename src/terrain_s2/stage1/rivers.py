@@ -106,7 +106,10 @@ def fetch_network(http, win, profile: dict, *, h_epsg: int = 2193):
 def map_columns(raw, profile: dict):
     """Rename the network's columns to GeoFabrics' (``id, to_node, from_node, flow, mannings_n, area``).
     ``rivers.network.columns`` maps each to a source field; ``mannings_n`` may instead be a constant
-    (``rivers.network.mannings_n``). A missing field raises, listing the fields the layer has."""
+    (``rivers.network.mannings_n``); ``area_units`` (``m2`` or ``km2``) converts the area to m2, the unit of
+    GeoFabrics' ``area_threshold``. With no ``from_node``/``to_node`` fields (NIWA's flood-statistics REC1 layer
+    has none), the topology is built from the reach geometry (:func:`topology`). A missing field raises, listing
+    the fields the layer has."""
     import geopandas as gpd
     net = config(profile).get("network") or {}
     cols = dict(net.get("columns") or {})
@@ -124,11 +127,17 @@ def map_columns(raw, profile: dict):
         raise RiverNetworkError(f"river network field {f!r} (for {name}) not found; the layer has: {have}")
 
     out = {}
-    for name in ("id", "to_node", "from_node", "area", "flow"):
+    for name in ("id", "area", "flow"):
         f = find(name)
         if f is None:
             raise RiverNetworkError(f"rivers.network.columns.{name} is not set in the profile; the layer has: {have}")
         out[name] = raw[f]
+    nodes = [find("from_node"), find("to_node")]
+    if all(nodes):
+        out["from_node"], out["to_node"] = raw[nodes[0]], raw[nodes[1]]
+    elif any(nodes):
+        raise RiverNetworkError("set both rivers.network.columns.from_node and to_node, or neither (topology from "
+                                "the geometry)")
     f = find("mannings_n")
     if f is not None:
         out["mannings_n"] = raw[f]
@@ -137,11 +146,91 @@ def map_columns(raw, profile: dict):
     else:
         raise RiverNetworkError("set rivers.network.columns.mannings_n or a constant rivers.network.mannings_n")
     g = gpd.GeoDataFrame(out, geometry=raw.geometry.values, crs=raw.crs)
-    for c in ("id", "to_node", "from_node"):
-        g[c] = g[c].astype("int64")
-    for c in ("area", "flow", "mannings_n"):
+    units = str(net.get("area_units", "m2")).lower()
+    if units not in ("m2", "km2"):
+        raise RiverNetworkError(f"rivers.network.area_units must be m2 or km2, got {units!r}")
+    g["area"] = g["area"].astype("float64") * (1e6 if units == "km2" else 1.0)
+    g["id"] = g["id"].astype("int64")
+    for c in ("flow", "mannings_n"):
         g[c] = g[c].astype("float64")
-    return g[list(GF_COLUMNS) + ["geometry"]]
+    g = g.drop_duplicates("id").reset_index(drop=True)
+    info = {"topology": "fields"}
+    if "from_node" not in g:
+        g, info = topology(g, float(net.get("node_tolerance_m", 1.0)))
+    for c in ("to_node", "from_node"):
+        g[c] = g[c].astype("int64")
+    g = g[list(GF_COLUMNS) + ["geometry"]]
+    g.attrs["topology"] = info
+    return g
+
+
+def _line(geom):
+    from shapely.geometry import LineString
+    from shapely.ops import linemerge
+    if geom.geom_type == "LineString":
+        return geom
+    m = linemerge(geom)
+    return m if m.geom_type == "LineString" else LineString([c for part in geom.geoms for c in part.coords])
+
+
+def topology(g, tol: float = 1.0):
+    """``from_node``/``to_node`` from the reach geometry, with every reach turned to run upstream to downstream
+    (GeoFabrics' default ``sampling_direction``). Reach ends within ``tol`` m share a node. Direction from the
+    upstream areas: at a reach's downstream end the next reach is at least as large, at its upstream end every
+    joining reach is smaller; an end with no neighbour is a source (if the other end leads downstream) or the
+    outlet (if the tributaries are at the other end). Reaches it cannot decide (isolated, or equal areas at both
+    ends) take the majority direction. Returns (network, record of the counts)."""
+    from collections import defaultdict
+    lines = [_line(x) for x in g.geometry]
+    k = lambda xy: (round(xy[0] / tol), round(xy[1] / tol))  # noqa: E731
+    s_key = [k(ln.coords[0]) for ln in lines]
+    e_key = [k(ln.coords[-1]) for ln in lines]
+    at = defaultdict(list)
+    for i, (a, b) in enumerate(zip(s_key, e_key)):
+        at[a].append(i)
+        at[b].append(i)
+    area = g["area"].to_numpy()
+    flip = []
+    for i in range(len(lines)):
+        sn = [area[j] for j in at[s_key[i]] if j != i]
+        en = [area[j] for j in at[e_key[i]] if j != i]
+        s, e, a = (max(sn) if sn else None), (max(en) if en else None), area[i]
+        if e is not None and e >= a and (s is None or s < a):
+            f = False                      # leads downstream at its end: as digitised
+        elif s is not None and s >= a and (e is None or e < a):
+            f = True                       # leads downstream at its start: reverse
+        elif e is None and s is not None:
+            f = False                      # outlet, tributaries at the start
+        elif s is None and e is not None:
+            f = True                       # outlet, tributaries at the end
+        else:
+            f = None
+        flip.append(f)
+    decided = [f for f in flip if f is not None]
+    majority = bool(decided) and sum(decided) > len(decided) / 2
+    flip = [majority if f is None else f for f in flip]
+    out = g.copy()
+    from shapely.geometry import LineString
+    geoms, frm, to = [], [], []
+    ids = {}
+    for ln, f, a, b in zip(lines, flip, s_key, e_key):
+        if f:
+            ln, a, b = LineString(list(ln.coords)[::-1]), b, a
+        geoms.append(ln)
+        frm.append(ids.setdefault(a, len(ids) + 1))
+        to.append(ids.setdefault(b, len(ids) + 1))
+    out["from_node"], out["to_node"] = frm, to
+    out = out.set_geometry(geoms, crs=g.crs)
+    # check: at each junction the downstream reach is the largest
+    down = {}
+    for i, n in enumerate(frm):
+        down.setdefault(n, []).append(i)
+    pairs = [(i, j) for i, n in enumerate(to) for j in down.get(n, [])]
+    ok = sum(area[j] >= area[i] for i, j in pairs)
+    info = {"topology": "geometry", "node_tolerance_m": tol, "reaches": len(lines), "reversed": int(sum(flip)),
+            "undecided": len(flip) - len(decided), "majority_reversed": majority,
+            "connections": len(pairs), "connections_downstream_larger": int(ok)}
+    return out, info
 
 
 def clip(network, win):
@@ -212,7 +301,9 @@ def plan(http, grid_bounds, profile: dict, log=print) -> RiverPlan:
     if len(raw) == 0:
         log("rivers: no network reaches in the window")
         return RiverPlan(network=raw, rivers=[], source=dict(src, digest=None))
-    net = clip(map_columns(raw, profile), win)
+    mapped = map_columns(raw, profile)
+    topo = dict(mapped.attrs.get("topology", {}))
+    net = clip(mapped, win)
     thr = float(c.get("area_threshold_m2", 1e7))
     rivers = select_rivers(net, grid_bounds, thr, int(c.get("max_rivers", 5)))
     osm = c.get("osm") or {}                     # {network_id: {type, id}} for rivers aligned to OSM
@@ -220,7 +311,7 @@ def plan(http, grid_bounds, profile: dict, log=print) -> RiverPlan:
         o = osm.get(r.network_id) or osm.get(str(r.network_id))
         r.osm = dict(o) if o else None
     content = json.loads(net.to_json(drop_id=True))
-    src = dict(src, digest=digest(content, 64), area_threshold_m2=thr)
+    src = dict(src, digest=digest(content, 64), area_threshold_m2=thr, **topo)
     log(f"rivers: {len(net)} reaches in the window, {len(rivers)} river(s) above {thr / 1e6:g} km2: "
         f"{[r.network_id for r in rivers]}")
     return RiverPlan(network=net, rivers=rivers, source=src)

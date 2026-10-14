@@ -22,20 +22,25 @@ X0, Y1 = 1_641_800.0, 6_076_100.0
 GRID = (X0, Y1 - 160, X0 + 160, Y1)
 
 
-def _network(raw_names=True):
+def _network(raw_names=True, reverse=()):
     """River A crosses the grid (A3 -> A2 -> A1, outlet A1, tributary T1 below the threshold); river B lies
-    in the margin but not on the grid. Reaches digitised upstream to downstream."""
+    in the margin but not on the grid. Reaches digitised upstream to downstream, except those in ``reverse``.
+    ``raw_names``: as NIWA's flood-statistics REC1 layer (NZREACH, Areakm2, H_C18_MAF; no node fields);
+    otherwise GeoFabrics' names with nodes."""
     x, xb = X0 + 80, X0 + 900
-    rows = [  # id, from, to, area, flow, geometry
+    rows = [  # id, from, to, area m2, flow, geometry
         (9000003, 1, 2, 30e6, 12.0, LineString([(x, Y1 + 800), (x, Y1 + 400)])),
         (9000002, 2, 3, 32e6, 13.0, LineString([(x, Y1 + 400), (x, Y1 + 100)])),
         (9000009, 9, 3, 2e6, 1.0, LineString([(x - 300, Y1 + 300), (x, Y1 + 100)])),
         (9000001, 3, 4, 35e6, 14.5, LineString([(x, Y1 + 100), (x, Y1 - 700)])),
         (9000021, 20, 21, 50e6, 20.0, LineString([(xb, Y1 + 500), (xb, Y1 - 500)])),
     ]
-    names = ("NZREACH", "FROM_NODE", "TO_NODE", "CATCHAREA", "MAF") if raw_names else \
-        ("id", "from_node", "to_node", "area", "flow")
-    return gpd.GeoDataFrame([dict(zip(names, r[:5])) for r in rows], geometry=[r[5] for r in rows], crs=2193)
+    geoms = [LineString(list(r[5].coords)[::-1]) if r[0] in reverse else r[5] for r in rows]
+    if raw_names:
+        return gpd.GeoDataFrame([{"NZREACH": float(r[0]), "Areakm2": r[3] / 1e6, "H_C18_MAF": r[4], "Strm_Order": 1}
+                                 for r in rows], geometry=geoms, crs=2193)
+    return gpd.GeoDataFrame([dict(zip(("id", "from_node", "to_node", "area", "flow"), r[:5])) for r in rows],
+                            geometry=geoms, crs=2193)
 
 
 def _nz():
@@ -48,7 +53,6 @@ def _nz():
 def _profile(tmp_path, src_path, **rivers):
     p = _nz()
     p["rivers"]["network"]["source"] = {"kind": "file", "path": str(src_path)}
-    p["rivers"]["network"]["columns"]["flow"] = "MAF"
     p["rivers"].update(rivers)
     f = tmp_path / "nz_test.yml"
     f.write_text(yaml.safe_dump(p))
@@ -57,15 +61,35 @@ def _profile(tmp_path, src_path, **rivers):
 
 def test_map_columns():
     p = _nz()
-    with pytest.raises(R.RiverNetworkError, match="columns.flow is not set.*MAF"):
-        R.map_columns(_network(), p)                                 # flow not configured yet: lists fields
-    p["rivers"]["network"]["columns"]["flow"] = "maf"               # case differs from the layer: still found
-    g = R.map_columns(_network(), p)
+    g = R.map_columns(_network(), p)                                # the profile's REC1 mapping
     assert list(g.columns) == ["id", "to_node", "from_node", "flow", "mannings_n", "area", "geometry"]
     assert (g["mannings_n"] == 0.035).all() and g["flow"].tolist()[0] == 12.0   # constant n while no field
-    p["rivers"]["network"]["columns"]["mannings_n"] = "N_FIELD"
-    with pytest.raises(R.RiverNetworkError, match="'N_FIELD'.*not found"):
+    assert g["area"].tolist()[0] == pytest.approx(30e6)               # km2 -> m2
+    assert g.attrs["topology"]["topology"] == "geometry"
+    p["rivers"]["network"]["columns"]["flow"] = "h_c18_maf"         # case differs from the layer: still found
+    R.map_columns(_network(), p)
+    p["rivers"]["network"]["columns"]["flow"] = "MALF"
+    with pytest.raises(R.RiverNetworkError, match="'MALF'.*not found.*H_C18_MAF"):
+        R.map_columns(_network(), p)                                 # names the layer's fields
+    p["rivers"]["network"]["columns"]["flow"] = None
+    with pytest.raises(R.RiverNetworkError, match="columns.flow is not set"):
         R.map_columns(_network(), p)
+
+
+@pytest.mark.parametrize("reverse", [(), (9000002, 9000009), (9000001,), (9000003, 9000002, 9000001, 9000009, 9000021)])
+def test_topology_from_geometry(reverse):
+    """Nodes and direction from the geometry, whatever the digitising direction: the trace is the same as with
+    the source's own nodes, and every reach ends up running downstream."""
+    A1, A2, A3, T1, B = 9000001, 9000002, 9000003, 9000009, 9000021
+    g = R.map_columns(_network(reverse=reverse), _nz())
+    assert R.upstream(g, A1, 1e6) == [A1, A2, A3]
+    assert R.upstream(g, T1, 1e6) == [T1]
+    t = g.attrs["topology"]
+    assert t["connections"] == 3 and t["connections_downstream_larger"] == 3
+    ys = {int(r.id): (r.geometry.coords[0][1], r.geometry.coords[-1][1]) for r in g.itertuples()}
+    assert all(ys[i][0] > ys[i][1] for i in (A1, A2, A3, B))       # all run south (downstream)
+    assert t["undecided"] == 1                                       # B, isolated: the majority direction
+    assert t["reversed"] - (B in reverse) == len([i for i in reverse if i != B])
 
 
 def test_select_rivers_and_upstream_trace():
