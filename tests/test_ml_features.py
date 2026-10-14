@@ -41,3 +41,14 @@ def test_axis_angle_of_a_straight_channel():
     T = Affine(1, 0, 0, 0, -1, 100)
     a = F.axis_angles(sk, T, np.array([50.5]), np.array([49.5]), 1.0)
     assert np.isclose(abs(np.tan(a[0])), 1.0, atol=0.1)
+
+
+def test_v1_source_combinations_become_one_flag_per_test():
+    df = pd.DataFrame({"x": [0, 1, 2], "src_bump+gap+testA": [1.0, 0.0, 0.0], "src_testB": [0.0, 1.0, 0.0],
+                       "src_road_x_drain+testB": [0.0, 1.0, 1.0], "rem_at": [1.0, 2.0, 3.0]})
+    out = F.normalise_source_flags(df)
+    assert [c for c in out if c.startswith("src_")] == [f"src_{s}" for s in F.SOURCE_FLAGS]
+    assert out.src_testB.tolist() == [0, 1, 1] and out.src_bump.tolist() == [1, 0, 0]
+    assert out.src_road_x_drain.tolist() == [0, 1, 1] and out.rem_at.tolist() == [1, 2, 3]
+    assert F.normalise_source_flags(out) is out                                  # v2: unchanged
+    assert F.split_sources("bump+gap,testA") == ["bump", "gap", "testA"]

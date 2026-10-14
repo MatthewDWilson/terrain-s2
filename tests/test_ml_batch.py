@@ -35,3 +35,17 @@ def test_failure_is_recorded_and_workers_spawn(tmp_path):
     ok = {x["tile_id"]: x["ok"] for x in r}
     assert ok == {"A": True, "B": True, "missing": False}
     assert (tmp_path / "runs" / "missing" / "failed.json").exists()
+
+
+def test_bundle_without_dem_or_with_elevation_errors_is_rebuilt(tmp_path):
+    from terrain_s2.ml.batch import _bundle_ok
+    b = tmp_path / "b"
+    b.mkdir()
+    (b / "site.json").write_text(json.dumps({"errors": []}))
+    assert not _bundle_ok(b)                                                     # no DEM
+    (b / "dem.tif").write_bytes(b"x")
+    assert _bundle_ok(b)
+    (b / "site.json").write_text(json.dumps({"errors": [{"step": "elevation:dsm", "error": "x"}]}))
+    assert not _bundle_ok(b)
+    (b / "site.json").write_text(json.dumps({"errors": [{"step": "source:osm", "error": "504"}]}))
+    assert _bundle_ok(b)                                                         # a vector source is not fatal

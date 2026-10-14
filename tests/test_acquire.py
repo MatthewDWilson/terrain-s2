@@ -366,3 +366,17 @@ def test_implied_crossings_where_channels_cross_roads_and_rail():
     assert sorted(g.barrier.tolist()) == ["rail", "road"]                   # the two carriageways merge (5 m)
     assert g.set_index("barrier").recorded.to_dict() == {"road": False, "rail": True}
     assert implied_crossings({"channels": [ch]}).empty
+
+
+def test_overpass_tries_mirrors_and_waits(monkeypatch):
+    from terrain_s2.acquire import osm
+    calls, waits = [], []
+
+    class H:
+        def get(self, url, params=None, source=None, ext="json", method="GET", data=None):
+            calls.append(url)
+            if len(calls) < 4:
+                raise IOError("HTTP 504")
+            return b'{"elements": []}'
+    parts, meta = osm.query(H(), WINDOW, mirrors=["https://m1/api/interpreter"], sleep=waits.append)
+    assert calls[:2] == [osm.OVERPASS, "https://m1/api/interpreter"] and len(calls) == 4 and waits == [osm.WAITS_S[0]]

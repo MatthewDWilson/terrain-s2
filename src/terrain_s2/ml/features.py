@@ -24,12 +24,39 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage as ndi
 
-FEATURES_VERSION = "1"
+FEATURES_VERSION = "2"     # 2: one flag per proposing test (v1 had one per combination, e.g. src_bump+gap+testA)
 PATCH_BANDS = ["z_rel", "dsm_minus_dem", "rem", "log10_upa", "breach_depth", "depression_depth",
                "residual_depression", "channel_mask", "centreline", "road_distance", "relief_med11",
                "tophat_white21", "tophat_black21", "openness_pos"]
 MASK_BANDS = {"channel_mask", "centreline"}
 TIERS = {"low": 1, "medium": 2, "high": 3, "bridge_or_open": 4, "bridge": 5}
+# the tests and sources that propose candidates (products.crossings, crossings.candidates); a fixed set, so every
+# tile has the same columns
+SOURCE_FLAGS = ["testA", "testB", "bump", "gap", "road_x_drain", "road_end_pair"]
+
+
+def split_sources(v) -> list:
+    """'bump+gap+testA' or 'testA,testB' -> the individual names."""
+    import re
+    return [s for s in re.split(r"[+,;]", str(v or "")) if s]
+
+
+def normalise_source_flags(df):
+    """Features v1 (one column per combination, ``src_bump+gap+testA``) -> v2 flags (``src_bump``, ``src_gap``,
+    ``src_testA``, ...); v2 frames are returned unchanged. Works on a frame or a dataset."""
+    combos = [c for c in df.columns if c.startswith("src_") and "+" in c]
+    singles_v1 = [c for c in df.columns if c.startswith("src_") and c[4:] in SOURCE_FLAGS]
+    if not combos:
+        return df
+    out = df.drop(columns=combos + singles_v1)
+    flags = {s: np.zeros(len(df)) for s in SOURCE_FLAGS}
+    for c in combos + singles_v1:
+        v = np.nan_to_num(df[c].to_numpy(float))
+        for s in split_sources(c[4:]):
+            if s in flags:
+                flags[s] = np.maximum(flags[s], v)
+    import pandas as pd
+    return pd.concat([out, pd.DataFrame({f"src_{s}": flags[s] for s in SOURCE_FLAGS}, index=df.index)], axis=1)
 
 
 def _bands(state) -> dict:
@@ -104,10 +131,10 @@ def tabular(cands, bands, T, cs, outlets=None):
         f[k] = cands[k].map(TIERS).astype(float).to_numpy() if k in cands else np.nan
     srcs = cands["sources"].fillna("").astype(str) if "sources" in cands else pd.Series([""] * len(cands))
     prim = cands["source"].fillna("").astype(str) if "source" in cands else pd.Series([""] * len(cands))
-    names = sorted({s for v in list(srcs) + list(prim) for s in str(v).replace(";", ",").split(",") if s})
-    for s in names:
-        f[f"src_{s}"] = [float(s in str(a).replace(";", ",").split(",") or s == b) for a, b in zip(srcs, prim)]
-    f["n_sources"] = [len({s for s in str(a).replace(";", ",").split(",") if s}) for a in srcs]
+    sets = [set(split_sources(a)) | set(split_sources(b)) for a, b in zip(srcs, prim)]
+    for s in SOURCE_FLAGS:
+        f[f"src_{s}"] = np.array([float(s in st) for st in sets])
+    f["n_sources"] = np.array([float(len(st)) for st in sets])
     r5, r10 = max(int(round(5 / cs)), 1), max(int(round(10 / cs)), 1)
     for k, a in bands.items():
         if k == "z":

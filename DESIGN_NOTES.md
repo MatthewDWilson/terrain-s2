@@ -1429,6 +1429,33 @@ cores, two on the GPU; logs) and `dataset`. Windows side: `.wslconfig` (WSL take
 for the 192 GB machine) and the distro moved to the data drive. Passes `bash -n` and ShellCheck; untested on the
 target (the sandbox cannot reach conda-forge).
 
+**Wave 1 finished** (15 Oct): 80 of 83 tiles; median 797 s on the GPU, 1,074 s on the CPU; features 50-122 s;
+peak 9.5-10.3 GB. Dataset `wave1`: 173,284 candidates, +1,522 (council 619, implied 474, bridge 216, asset 158,
+manual 55), -73 (manual only; HBRC has no negatives), 925 near a positive; misses 941 (Waimakariri culverts 468,
+implied 319, KiwiRail 72, bridges 49, HBRC culverts 33): the chain proposes no candidate near roughly half of the
+Waimakariri council culverts, the recall gap for ML-3. Three failures, all fixed:
+- *two workers placing the same mirrored tile* (BL37_10000_0204, BW23_10000_0201: WinError 5 and 32 on a shared
+  `.part` name; neighbouring tiles share COGs for their buffers): each writer now uses its own temporary name, and
+  a tile another worker placed first is accepted;
+- *a bundle whose build had failed counted as built* (BJ39_10000_0303: `site.json` exists, no DEM): the batch
+  rebuilds a bundle without `dem.tif` or with elevation errors;
+- *OSM: Overpass 504* (BW23_10000_0201, non-fatal): Overpass now falls back to two public mirrors and retries
+  after 20, 60 and 120 s.
+Also: source flags were one column per combination (`src_bump+gap+testA`: 179 feature columns, different per
+tile); features v2 has one flag per test (`SOURCE_FLAGS`), and `normalise_source_flags` converts v1, so wave 1
+needs no rerun. The code version in `done.json` and the card was the editable install's, fixed at install time
+(every tile `0.1.1.dev16+ga6a32dcb3`); it is now `git describe` of the checkout.
+
+**ML-1, step 6-7: the scorer** (`ml/train.py`, `scripts/train_scorer.py`, `ml/config/scorer.yml`, 15 Oct).
+HistGradientBoosting on the feature columns; `p_structure` with positives from every label kind (their weights),
+Matt's "n" as negatives, unlabelled candidates as weak negatives (total weight = the positives', spread evenly:
+biased PU, a ranking), near-positives and "unsure" left out; `p_bridge` among positives of known class. Folds:
+leave one council out, GroupKFold by sheet outside the holdout, and the holdout (BW24). Metrics, for the model and
+for the tier ordering: recall at 50 / 100 / 200 / 500 candidates per tile over positives plus misses (and without
+misses), by label kind; average precision (lower bound); ROC AUC on Matt's y / n where present; bridge AUC.
+Writes `model.joblib` (final models outside the holdout, feature list, versions), `report.md`, `report.json`,
+`fold_scores.parquet`. Synthetic test: beats the tiers on every fold.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

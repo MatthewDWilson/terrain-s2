@@ -1,0 +1,15 @@
+# ML-1 candidate scorer (terrain_s2.ml.train). Unlabelled candidates are weak negatives: their total weight is
+# unlabelled_weight_ratio x the total positive weight (biased positive-unlabelled; scores rank, not probabilities).
+unlabelled_weight_ratio: 1.0
+budgets: [50, 100, 200, 500]          # review budgets per tile for recall@K
+sheet_folds: 5                        # GroupKFold by 1:50k sheet, outside the holdout
+seed: 0
+model:                                # sklearn HistGradientBoostingClassifier
+  max_iter: 400
+  learning_rate: 0.05
+  max_leaf_nodes: 31
+  min_samples_leaf: 40
+  l2_regularization: 1.0
+  early_stopping: true
+  validation_fraction: 0.1
+  n_iter_no_change: 30

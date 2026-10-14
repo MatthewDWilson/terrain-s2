@@ -132,3 +132,24 @@ def test_whole_metre_bounds_and_stage1_uses_the_shared_reader(tmp_path):
 def test_stage1_catches_the_shared_readers_no_data():
     from terrain_s2.stage1 import source
     assert source.NoElevationData is E.NoElevationData
+
+
+def test_mirror_accepts_a_tile_another_worker_placed_first(tmp_path, monkeypatch):
+    import os
+    http = _catalogue(tmp_path, [("canterbury", "c_2020", "2020-12-31T00:00:00Z", ["dem"],
+                                  [("C", X0, Y1, 200, 200, 3.0)], False)], http_items=True)
+    src = E.ElevationSource(_profile(), http=http, cache_dir=tmp_path / "data" / "stac")
+    plan = src.plan((X0 + 10, Y1 - 100, X0 + 60, Y1 - 50))
+    it, sv = plan.surveys[0].items[0], plan.surveys[0]
+    real = os.replace
+
+    def busy(a, b):                       # Windows: the target is being written or read by another worker
+        if str(a).endswith(".part") and str(b).endswith(".tiff"):
+            real(a, str(b) + ".other")
+            real(str(b) + ".other", b)    # the other worker's copy is now in place
+            raise PermissionError("in use")
+        return real(a, b)
+    monkeypatch.setattr(os, "replace", busy)
+    path = src.local(it, sv)
+    assert (src.read(plan).z == 3.0).all() and not list((tmp_path / "data" / "cog").rglob("*.part"))
+    assert path.endswith(".tiff")

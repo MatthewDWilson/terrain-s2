@@ -54,7 +54,8 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
     elif stale:
         rec["status"] = "labels older than the run (relabel='never')"
         return None, None, rec
-    F = pd.read_parquet(feats)
+    from .features import normalise_source_flags
+    F = normalise_source_flags(pd.read_parquet(feats))           # features v1 and v2 give the same columns
     C = gpd.read_file(lab, layer="candidates")
     if len(F) != len(C) or not (np.allclose(F.x, C.x) and np.allclose(F.y, C.y)):
         rec["status"] = f"features ({len(F)}) and labels ({len(C)}) do not match: rebuild the tile"
@@ -83,7 +84,7 @@ def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale"
     """Assemble the dataset (see the module docstring); returns the card."""
     import pandas as pd
 
-    from .. import __version__
+    from . import code_version
     from .features import FEATURES_VERSION
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +114,7 @@ def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale"
         return {str(k): int(v) for k, v in df.groupby(by).size().items()} if len(df) else {}
     card = dict(
         name=name or out.name, built=_dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-        versions=dict(code=str(__version__), features=FEATURES_VERSION,
+        versions=dict(code=code_version(), features=FEATURES_VERSION,
                       label_config=hashlib.sha256(json.dumps(label_cfg, sort_keys=True, default=str).encode()).hexdigest()[:16],
                       manifests={str(m): _sha(m) for m in manifests}),
         tiles=dict(manifest=int(len(man)), included=len(parts), skipped=[r["tile_id"] for r in recs if r.get("status") != "ok"]),

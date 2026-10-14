@@ -53,11 +53,8 @@ def _hashed(params: dict, cfg) -> dict:
 
 
 def _version() -> str:
-    try:
-        from .. import __version__
-        return str(__version__)
-    except Exception:  # noqa: BLE001
-        return "unknown"
+    from . import code_version
+    return code_version()
 
 
 def status(tile_id: str, cfg: BatchConfig, params: dict) -> str:
@@ -69,6 +66,19 @@ def status(tile_id: str, cfg: BatchConfig, params: dict) -> str:
     if d.get("params_hash") != params_hash(_hashed(params, cfg)):
         return "todo"
     return "done" if d.get("version") == _version() else "stale"
+
+
+def _bundle_ok(bundle: Path) -> bool:
+    """A usable bundle: site.json without elevation errors, and a DEM (a build that failed on elevation
+    still writes site.json: BJ39_10000_0303 in wave 1 was skipped as built and then had no DEM)."""
+    f = bundle / "site.json"
+    if not f.exists() or not (bundle / "dem.tif").exists():
+        return False
+    try:
+        errs = json.loads(f.read_text()).get("errors", [])
+    except ValueError:
+        return False
+    return not any(str(e.get("step", "")).startswith("elevation") for e in errs)
 
 
 def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> dict:
@@ -85,7 +95,7 @@ def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> 
                version=_version(), features=cfg.features)
     bundle = Path(cfg.bundles) / tile_id
     try:
-        if cfg.build and not (bundle / "site.json").exists():
+        if cfg.build and not _bundle_ok(bundle):
             sources_path = cfg.sources or str(root / "sites" / "sources.yml")
             idx_path = Path(cfg.index) if cfg.index else registry.default_index_path(sources_path)
             site = tile_site(tile_id, cfg.partition, params.get("buffer", 200.0))

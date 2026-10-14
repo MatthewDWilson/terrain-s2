@@ -268,11 +268,33 @@ class ElevationSource:
         if ok is False:
             raise IOError(f"{href}: content does not match file:checksum {item.checksum}")
         d.mkdir(parents=True, exist_ok=True)
-        tmp = f.with_suffix(f.suffix + ".part")
+        # Parallel workers often need the same neighbouring tile: each writes its own temporary file, and if
+        # the rename fails because another worker has (or is reading) the finished tile, that tile is used.
+        # Seen on Windows in wave 1 (WinError 5 and 32 on a shared '.part' name, 14 Oct 2026).
+        import os
+        import uuid
+        tmp = f.with_name(f"{f.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.part")
         tmp.write_bytes(content)
-        tmp.replace(f)
-        side.write_text(json.dumps({"href": href, "checksum": item.checksum, "verified": ok, "bytes": len(content),
-                                    "item": item.id, "survey": survey.slug}))
+        meta = json.dumps({"href": href, "checksum": item.checksum, "verified": ok, "bytes": len(content),
+                           "item": item.id, "survey": survey.slug})
+        for attempt in range(5):
+            try:
+                os.replace(tmp, f)
+                break
+            except PermissionError:
+                if f.exists() and f.stat().st_size == len(content):
+                    tmp.unlink(missing_ok=True)
+                    break
+                time.sleep(0.5 * (attempt + 1))
+        else:
+            tmp.unlink(missing_ok=True)
+            raise IOError(f"could not place {f} (in use by another process)")
+        stmp = side.with_name(f"{side.name}.{os.getpid()}.part")
+        stmp.write_text(meta)
+        try:
+            os.replace(stmp, side)
+        except PermissionError:
+            stmp.unlink(missing_ok=True)
         return str(f)
 
     def read(self, plan: SourcePlan) -> ElevationRead:
