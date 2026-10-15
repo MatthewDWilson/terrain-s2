@@ -1744,6 +1744,26 @@ the default snapping until their first pass is checked; `wrc_floodgates` added t
 (through stopbanks, not under roads: report them apart). Ownership: this thread keeps `sources.yml`, `ml/` and the
 scripts; the council-data thread keeps `sites/candidates/` (licences, tranche 2, and visual checks of wave 3's
 snapping from a brief).
+**Wave 3 manifest** (17 Oct; Matt on the workstation): the six sources indexed (LiDAR tiles with features:
+Waikato 113, ECan 115, Gisborne 44, Hauraki 28, Otago 28; floodgates 58), then `select_tiles.py`: 220 tiles, none in
+waves 1 + 2 (349 excluded): ECan 60 of 115 (14 sheets), Waikato 60 of 113 (11 sheets), Gisborne 44 (9 sheets, all
+held out), Hauraki 28 and Otago 28 (all). Every tile has a DSM. Council lines per tile: median 23 (Waikato), 28
+(Hauraki), 11.5 (Otago), 5 (ECan), 1 (Gisborne: the held-out set is thin, 422 lines over 44 tiles). Floodgates in
+the tiles: Waikato 256, Hauraki 125. ECan's tiles are mostly at survey edges (87 %; eight Canterbury surveys).
+
+**ML-3a step 4: label rasters** (17 Oct; `ml/channel_rasters.py`, `scripts/build_channel_labels.py`, run by
+`terrain_hpc.sh channels` after the snapping): `ml_channel_labels.tif` per run, on the saved rasters' grid, bands
+`label` (1 / 0 / 255 ignored) and `weight`. Rules in order: positives are the footprints of snapped lines at their
+line's weight (overlaps take the larger); an unsnapped line's corridor is ignored rather than positive (a departure
+from the design's "down-weighted": a line the snapping could not put on a bed is drawn beyond the corridor or not
+visible in the DEM, so a positive at its council position would be wrong either way; `labels.unsnapped: positive`
+restores the design); a 3 m ring around positives ignored; unrecorded physics channel cells ignored; everything else
+negative at the council's weight (0.05), except under `negatives: flat` (Auckland), where incised ground (11 m
+top-hat >= 0.05 m or 21 m >= 0.10 m) is ignored; cells with no data ignored. Matt's channel reviews (hard negatives)
+are not in yet: their files are site runs, not tiles. On the three clips: Waimakariri positive 2.9 %, ignored 3.6 %;
+Environment Southland 0.24 % and 1.3 %; Auckland 0.9 % and 40.6 % (the flat rule ignores most urban ground). The
+positive : negative weight ratio, 0.07-0.6, is left to the loss (class weighting in ML-3b). Brief for the
+council-data thread's visual check of wave 3's snapping: `docs/qa_wave3_snapping.md`.
 
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 

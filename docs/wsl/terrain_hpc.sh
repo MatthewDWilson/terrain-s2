@@ -21,7 +21,7 @@
 #                     out-of-memory kills if the kernel log shows any
 #   stop              stop a detached batch
 #   torch             install PyTorch (CUDA 12.8 build: Blackwell GPUs need it) into the environment, for ML-1b
-#   channels <manifest...> [--workers N]  council channel lines snapped to the bed (ML-3a), tiles with rasters
+#   channels <manifest...> [--workers N]  council channel lines snapped to the bed, then label rasters (ML-3a)
 #   dataset <manifest...> --name N
 #                     build_labels + build_dataset for the manifest(s)
 #
@@ -391,12 +391,13 @@ dataset() {
         && in_env python scripts/build_dataset.py --manifest "${manifests[@]}" --name "$name")
 }
 
-channels() {  # ML-3a step 3: council channel lines snapped to the bed, for the tiles with saved rasters
+channels() {  # ML-3a steps 3-4: council channel lines snapped to the bed, then the label rasters (tiles with rasters)
     load_env
-    [ $# -gt 0 ] || die "usage: channels <manifest...> [snap_channels options, e.g. --workers 16 --rerun]"
+    [ $# -gt 0 ] || die "usage: channels <manifest...> [--workers N] [--rerun]"
     local manifests=() opts=()
     while [ $# -gt 0 ]; do case "$1" in --*) opts+=("$@"); break ;; *) manifests+=("$1"); shift ;; esac; done
-    (cd "$TS2" && in_env python scripts/snap_channels.py --manifest "${manifests[@]}" "${opts[@]}")
+    (cd "$TS2" && in_env python scripts/snap_channels.py --manifest "${manifests[@]}" "${opts[@]}" \
+        && in_env python scripts/build_channel_labels.py --manifest "${manifests[@]}" "${opts[@]}")
 }
 
 labels() {

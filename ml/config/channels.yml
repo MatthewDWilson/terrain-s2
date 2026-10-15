@@ -25,6 +25,11 @@ councils:
   ecan:                   {sources: [ecan_drains],            positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
 negative_weight: 0.05
 ignore_ring_m: 3.0
+# Label rasters (terrain_s2.ml.channel_rasters, ML-3a step 4).
+labels:
+  unsnapped: ignore          # lines the snapping left at their council position: their corridor is ignored, not
+                             # positive (positive: footprints at their halved weight)
+  flat_depth_m: 0.05         # `negatives: flat`: negatives only where the 11 m black top-hat is below this (21 m: 2x)
 # Forms (Auckland's SW_ASSET_TYPE; others have none): a multiplier on the positive weight. Swales are broad, shallow,
 # grassed: weak in the DEM. To be confirmed with Matt (17 Oct).
 form_weights: {unlined: 1.0, lined: 1.0, flume: 1.0, swale: 0.5, other: 1.0}

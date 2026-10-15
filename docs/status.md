@@ -36,8 +36,8 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 
 ## Next
 
-1. ML-3a: snapping (step 3) done on all 349 tiles (DESIGN_NOTES 11); next the label rasters with per-council
-   weights (step 4);
+1. ML-3a: snapping (step 3) done on all 349 tiles; label rasters (step 4) built, to run on the RTX 6000 machine
+   (`terrain_hpc.sh channels`); next the chips (step 5);
    chips from the saved rasters; review sets for Matt. Step 1 (widths) done: no council records widths usably, so
    widths come from the fallbacks in `ml/config/channels.yml` (DESIGN_NOTES 11).
 2. ML-3b-d: the U-Net, its integration into the run, the end-to-end check on found labels, the stream/drain head.
@@ -69,7 +69,7 @@ Smart Ideas used for `8m_geofabric.nc` (run offline, not recorded: 4e).
 
 ## Wave 3 (first tranche, 17 Oct)
 
-Sources enabled and `ml/config/wave3.yml` written (DESIGN_NOTES 11). To run: on the workstation, index the six
+Sources enabled, indexed and selected: 220 tiles (`ml/manifests/wave3.csv`, DESIGN_NOTES 11). To run: on the workstation, index the six
 sources (`index_sources.py --only ...`) and select (`select_tiles.py --config ml/config/wave3.yml`), commit
 `sites/sources_coverage.geojson` and `ml/manifests/wave3.csv`; on the RTX 6000 machine, after the disk move,
 `update`, then `start ml/manifests/wave3.csv --param rasters=all`, then `channels` for the manifest.
