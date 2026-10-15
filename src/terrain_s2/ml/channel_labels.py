@@ -158,7 +158,7 @@ def resolve_widths(lines, cfg: dict, edt=None, transform=None, rivers=None):
     return out
 
 
-SNAP_VERSION = 1
+SNAP_VERSION = 2              # 2: the bed check accepts a line in the lowest quarter of a banked cross-section
 
 
 def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):

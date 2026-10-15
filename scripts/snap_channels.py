@@ -96,6 +96,7 @@ def main():
         out = Path(a.summary) if a.summary else runs / "channels_summary.csv"
         df.to_csv(out, index=False)
         ok = df[df.get("km", pd.Series(dtype=float)).notna()] if "km" in df else df.iloc[0:0]
+        ok = ok.fillna({c: 0.0 for c in ok.columns if c.startswith("width_")})   # a source absent from a tile is 0 %
         if len(ok):
             print("\nper council (length-weighted):")
             for c, g in ok.groupby("council"):

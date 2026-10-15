@@ -60,6 +60,17 @@ load_env() {
     [ -f "$ENVSH" ] || die "run 'setup' first ($ENVSH missing)"
     # shellcheck disable=SC1090
     . "$ENVSH"
+    data_dir_check
+}
+
+data_dir_check() {  # the data may live on their own ext4 disk (a VHDX attached with 'wsl --mount'; terrain_hpc.md
+                    # section 5), linked from $TERRAIN_DATA_DIR. A WSL restart detaches it: stop rather than write
+                    # into an empty folder on the system disk.
+    if [ -L "$TERRAIN_DATA_DIR" ] && [ ! -e "$TERRAIN_DATA_DIR" ]; then
+        die "$TERRAIN_DATA_DIR links to $(readlink "$TERRAIN_DATA_DIR"), which is not attached (WSL restarted?).
+       In PowerShell: schtasks /run /tn \"WSL terrain_data disk\"   (or, as administrator:
+       wsl --mount --vhd <the data .vhdx> --name terrain_data), then run this again. terrain_hpc.md section 5."
+    fi
 }
 
 preflight() {

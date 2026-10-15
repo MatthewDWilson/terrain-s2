@@ -12,15 +12,18 @@ stay small whatever the line's length. The path's share of cells on a bed (11 m 
 BW24_10000_0402, 0.10 m is the 90th percentile off the drains) decides whether the line counts as snapped; lines that are not keep their council geometry and are flagged (the label
 rasters down-weight them).
 
-The check (``bed_check``) is independent of the cost: at points along a line, the lowest point of the DEM across it
-(+-``check_half_m``) should lie within ``check_tolerance_m`` of the line.
+The check (``bed_check``) is independent of the cost: at points along a line, across it (+-``check_half_m``), the
+DEM's lowest point should lie within ``check_tolerance_m`` of the line, or, where the cross-section has real banks
+(relief >= ``check_relief_m``), the line should lie in its lowest quarter (a wide, flat bed has no single lowest
+point: Environment Southland's scheme drains, 17 Oct).
 """
 from __future__ import annotations
 
 import numpy as np
 
 DEFAULTS = dict(corridor_m=15.0, piece_m=200.0, base=0.02, depth_scale_m=0.15, lateral=0.3, bed_depth_m=0.10,
-                min_bed_frac=0.6, simplify_m=0.75, check_step_m=5.0, check_half_m=6.0, check_tolerance_m=2.0)
+                min_bed_frac=0.6, simplify_m=0.75, check_step_m=5.0, check_half_m=6.0, check_tolerance_m=2.0,
+                check_relief_m=0.2, check_low_share=0.25)
 DEPTH_BANDS = ("tophat_black11", "tophat_black21")
 
 
@@ -150,8 +153,9 @@ def snap_lines(lines, depth, transform, params=None, bed=None):
 
 
 def bed_check(line, dem, transform, params=None):
-    """Share of a line's check points whose lowest DEM point across the line (+-check_half_m) lies within
-    check_tolerance_m of it; NaN when no point is on the grid. Independent of the snapping cost."""
+    """Share of a line's check points on the bed: across the line (+-check_half_m), the DEM's lowest point lies within
+    check_tolerance_m of it, or the cross-section has relief >= check_relief_m and the line lies in its lowest
+    check_low_share of that relief. NaN when no point is on the grid. Independent of the snapping cost."""
     from scipy.ndimage import map_coordinates
     P = dict(DEFAULTS, **(params or {}))
     cs = abs(transform.a)
@@ -173,5 +177,9 @@ def bed_check(line, dem, transform, params=None):
         z = map_coordinates(dem, [r, c], order=1, mode="constant", cval=np.nan)
         if not np.isfinite(z).all():
             continue
-        hits.append(abs(offs[int(np.argmin(z))]) <= P["check_tolerance_m"])
+        lo, hi = float(z.min()), float(z.max())
+        near = abs(offs[int(np.argmin(z))]) <= P["check_tolerance_m"]
+        z0 = float(z[int(np.argmin(np.abs(offs)))])
+        low = (hi - lo) >= P["check_relief_m"] and (z0 - lo) <= P["check_low_share"] * (hi - lo)
+        hits.append(near or low)
     return float(np.mean(hits)) if hits else np.nan

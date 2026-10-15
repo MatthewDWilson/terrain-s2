@@ -1675,6 +1675,27 @@ half weight. The check is independent of the cost: at points every 5 m, is the D
 Swales (Auckland): Matt (17 Oct) wants them in at reduced weight provided they do not harm the model, so ML-3b compares
 swale weight 0.5 against swales ignored on Auckland's held-out blocks.
 
+**Snapping, first full pass** (17 Oct; 217 tiles with finished rasters, `channels_summary.csv`; length-weighted;
+"check" is over non-river lines that snapped, council geometry -> snapped geometry):
+
+| Council | Tiles | km | Snapped | Check | Median move | Widths: physics / default / river |
+|---|---|---|---|---|---|---|
+| Waimakariri | 43 | 1,088 | 85 % | 0.50 -> 0.79 | 2.6 m | 41 / 49 / 10 % |
+| HBRC | 30 | 690 | 82 % | 0.82 -> 0.89 | 0.3 m | 47 / 25 / 28 % |
+| Environment Southland | 41 | 258 | 91 % | 0.25 -> 0.61 | 4.3 m | 19 / 67 / 14 % |
+| Auckland | 101 | 805 | 84 % | 0.52 -> 0.72 | 1.3 m | 14 / 19 / 66 % (council 1 %) |
+
+The check never got worse except on 4 Auckland tiles. HBRC's lines are drawn on the bed already. Questions, before the
+label rasters: (1) Auckland's 66 % "river" (36 of 101 tiles over half): constructed stormwater channels lying mostly
+inside the physics wide-channel polygons, which would make the polygons Auckland positives; tidal flats or broad
+urban channels in the polygons? (2) Environment Southland's scheme drains are moved furthest (4.3 m) and mostly take
+the 1 m default width, though they are large drains: are they outside the physics channel mask? (3) Its check stays
+low: on a wide flat bed the DEM has no single lowest point, so the check now also accepts a line lying in the lowest
+quarter of a cross-section with at least 0.2 m of relief (SNAP_VERSION 2; on BW24_10000_0402, 0.49 -> 0.86). Clips of
+BA31_10000_0305 and CD08_10000_0502 (`scripts/clip_run.py`) to look at (1) and (2). The summary's per-council width
+shares averaged over the tiles that had each source (they summed past 100 %); now a missing source counts as 0 %.
+Running the snapping beside the batch stopped WSL again (memory): run them one after the other.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

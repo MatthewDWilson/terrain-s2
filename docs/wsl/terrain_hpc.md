@@ -82,6 +82,68 @@ If a batch stops on its own: `status` shows the last log lines and any out-of-me
 (section 1, item 2). A Windows restart (for updates) stops WSL too (`Get-WinEvent -FilterHashtable @{LogName='System'; Id=1074,6006,6008,42} -MaxEvents 10` in
 PowerShell lists restarts and sleeps); then `start` again.
 
+## 5. The data on their own disk (optional)
+
+`~/terrain_data` lives on the distro's system disk by default. To keep that disk small (and the data separable: a
+disk that can be backed up, moved, or attached on the other workstation), put the data on their own ext4 disk: a
+VHDX file on a data SSD, attached to WSL with `wsl --mount`, and linked from `~/terrain_data`. It is as fast as the
+system disk (both are VHDX files on NTFS). Not a Windows folder through `/mnt/<drive>`: that path is many times
+slower, and GeoPackage (SQLite) locking over it is unreliable.
+
+Do it with no batch running. In an administrator PowerShell (`E:` is an example: the drive with the most free space;
+`maximum` in MB, here 3 TB, below that drive's free space; the file grows as data are written):
+
+```powershell
+$vhd = 'E:\WSL\terrain_data.vhdx'
+New-Item -ItemType Directory -Force (Split-Path $vhd) | Out-Null
+Set-Content $env:TEMP\mkvhd.txt "create vdisk file=`"$vhd`" maximum=3145728 type=expandable"
+diskpart /s $env:TEMP\mkvhd.txt
+wsl --mount --vhd $vhd --bare
+```
+
+In WSL, find the new disk (the one of that size with no mount point; check twice: formatting the wrong disk loses
+it) and format it:
+
+```bash
+lsblk -dno NAME,SIZE,MOUNTPOINTS
+sudo mkfs.ext4 -L terrain_data /dev/sdX          # X from lsblk
+```
+
+Back in the administrator PowerShell: attach it by name (it appears in every distro at `/mnt/wsl/terrain_data`), and
+add a logon task that attaches it again (also runnable later without a UAC prompt, after `wsl --shutdown` or a
+crash, with `schtasks /run /tn "WSL terrain_data disk"`):
+
+```powershell
+wsl --unmount $vhd
+wsl --mount --vhd $vhd --name terrain_data
+schtasks /create /tn "WSL terrain_data disk" /sc onlogon /rl highest /f /tr "wsl.exe --mount --vhd $vhd --name terrain_data"
+```
+
+In WSL: copy, check, swap in a link, and only then delete the old copy (about 1 TB: hours):
+
+```bash
+sudo chown "$USER": /mnt/wsl/terrain_data
+rsync -a --info=progress2 ~/terrain_data/ /mnt/wsl/terrain_data/
+rsync -an --delete --itemize-changes ~/terrain_data/ /mnt/wsl/terrain_data/ | head    # nothing listed: identical
+mv ~/terrain_data ~/terrain_data.old && ln -s /mnt/wsl/terrain_data ~/terrain_data
+bash ~/terrain/terrain_hpc.sh status                                                   # reads through the link
+rm -rf ~/terrain_data.old && sudo fstrim -av
+```
+
+`terrain_hpc.sh` stops with the `schtasks` command if the link is there but the disk is not attached, rather than
+writing into an empty folder. Last, shrink the system disk's file (administrator PowerShell):
+
+```powershell
+$base = (Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | Get-ItemProperty |
+         Where-Object DistributionName -eq terrain).BasePath -replace '^\\\\\?\\', ''
+wsl --shutdown
+Set-Content $env:TEMP\compact.txt "select vdisk file=`"$base\ext4.vhdx`"`r`nattach vdisk readonly`r`ncompact vdisk`r`ndetach vdisk"
+diskpart /s $env:TEMP\compact.txt
+schtasks /run /tn "WSL terrain_data disk"
+```
+
+The system disk keeps its 2 TB limit (only the file shrinks), which costs nothing.
+
 ## Notes
 
 - Untested on the target machine: the script passes `bash -n` and ShellCheck, but not every step could run in the
