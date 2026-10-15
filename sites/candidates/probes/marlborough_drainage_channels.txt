@@ -1,0 +1,20 @@
+# OK in 2 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source marlborough_drainage_channels --fields --values
+
+using https://gis.marlborough.govt.nz/server/rest/services/DataPublic/ZonesMEPDecisionOverlays/MapServer/28
+layer: Drainage Channel Network | esriGeometryPolyline | maxRecordCount 1000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1674252, 5400153, 1688547, 5414862 (wkid 2193)
+definition expression: None
+fields used by sources.yml: OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field Label (String) Label
+  field SHAPE (Geometry) SHAPE
+  field SHAPE.len (Double) SHAPE.len
+site window (EPSG:2193): 1674252, 5400153, 1688547, 5414862
+count where '1=1': 254
+    https://gis.marlborough.govt.nz/server/rest/services/DataPublic/ZonesMEPDecisionOverlays/MapServer/28/query?where=1%3D1&geometry=1674252.0757%2C5400152.5139%2C1688547.2317000004%2C5414861.7697&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 254 feature(s) in the window (where 1=1):
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  SHAPE.len: 254, 2.4126306907606065, 433.0786981555134, 11516.733457884608
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":255,"geometry":{"type":"LineString","coordinates":[[174.02928121371428,-41.508586237308073],[174.02932920026194,-41.508603742165754],[174.02941899866582,-41.508625360153111],[174.03194190080376,-41.50939193078927],[174.03272894723051,-41.509636886015777],[174.03357777075277,-41.509908969826817],[174.03388373626993,-41.509993278260154],[174.03410847675775,-41.510056115213366],[174.03559148014796,-41.510498059893365],[174.03797260319541,-41.511215198511799],[174.03922289979997,-41.511592441733946],[174.04052373890298,-41.511991844715
+     https://gis.marlborough.govt.nz/server/rest/services/DataPublic/ZonesMEPDecisionOverlays/MapServer/28/query?where=1%3D1&geometry=1674252.0757%2C5400152.5139%2C1688547.2317000004%2C5414861.7697&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

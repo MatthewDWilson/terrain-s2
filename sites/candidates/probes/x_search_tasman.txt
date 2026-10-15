@@ -1,0 +1,8 @@
+# OK in 1 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --search "Tasman District Council stormwater drains"
+
+2 item(s) for 'Tasman District Council stormwater drains' (newest first, max 25):
+  048dbb6fe22641d696a7727fdf850a60  StoryMap  'Manly Lagoon Project'  owner 49056247_mq
+      https://storymaps.arcgis.com/stories/048dbb6fe22641d696a7727fdf850a60
+  fbd8aa957f19444781d55468d8188153  Feature Service  'Modelled wet extents data from flood plain mapping analysis'  owner HorizonsRC
+      https://services1.arcgis.com/VuN78wcRdq1Oj69W/arcgis/rest/services/Modelled_wet_extents_data_from_flood_plain_mapping_analysis/FeatureServer

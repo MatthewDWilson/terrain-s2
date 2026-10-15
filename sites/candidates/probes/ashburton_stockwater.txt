@@ -1,0 +1,20 @@
+# OK in 2 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source ashburton_stockwater --fields --values
+
+using https://gis.adc.govt.nz/server/rest/services/LocalMapsPublic/Stockwater_Public/MapServer/18
+layer: Stockwater | esriGeometryPolyline | maxRecordCount 1000000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1460243, 5108535, 1532694, 5176280 (wkid 2193)
+definition expression: None
+fields used by sources.yml: OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field Stock_Area (String) Race name
+  field Race_type (String) Race type
+  field GlobalID (GlobalID) GlobalID
+site window (EPSG:2193): 1460243, 5108535, 1532694, 5176280
+count where '1=1': 654
+    https://gis.adc.govt.nz/server/rest/services/LocalMapsPublic/Stockwater_Public/MapServer/18/query?where=1%3D1&geometry=1460242.5526%2C5108535.4435%2C1532693.9391%2C5176279.8978&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 654 feature(s) in the window (where 1=1):
+  Stock_Area: 'Montalto Hinds' 190; 'Methven Lauriston' 178; 'Mt Somers Willowby' 165; 'Winchmore Rakaia' 93; 'Acton' 21; None 7
+  Race_type: 'Race' 512; 'Main' 139; 'Discharge' 3
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":3209,"geometry":null,"properties":{"OBJECTID":3209,"Stock_Area":"Mt Somers Willowby","Race_type":"Main","GlobalID":"{95A21339-AB6E-46E5-9C6A-653B70477A64}"}},{"type":"Feature","id":3211,"geometry":null,"properties":{"OBJECTID":3211,"Stock_Area":"Mt Somers Willowby","Race_type":"Main","GlobalID":"{4F23791E-7578-4CD4-AE03-8AF07349BFEF}"}}],"exceededTransferLimit":true,"properties":{"exceededTransferLimit":true}}
+     https://gis.adc.govt.nz/server/rest/services/LocalMapsPublic/Stockwater_Public/MapServer/18/query?where=1%3D1&geometry=1460242.5526%2C5108535.4435%2C1532693.9391%2C5176279.8978&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

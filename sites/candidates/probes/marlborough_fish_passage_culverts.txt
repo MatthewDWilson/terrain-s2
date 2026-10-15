@@ -1,0 +1,168 @@
+# OK in 26 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source marlborough_fish_passage_culverts --fields --values
+
+using https://gis.marlborough.govt.nz/server/rest/services/DataPublic/Environment/MapServer/84
+layer: NIWA Fish Passage Data | esriGeometryPoint | maxRecordCount 1000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1579274, 5300150, 1712548, 5490708 (wkid 2193)
+definition expression: None
+fields used by sources.yml: CulvertCharWidth, CulvertCharHeight, CulvertCharLength, AssetIDNumber, OBJECTID, StructureType  (all present)
+  field OBJECTID (OID) OBJECTID
+  field RiskClass (String) Risk Class
+  field Priority (Double) Priority
+  field ID (Double) ID
+  field RecordedDate (Date) Recorded Date
+  field Latitude (Double) Latitude
+  field Longitude (Double) Longitude
+  field EnteredDate (Date) Entered Date
+  field NZSegment (Integer) NZ Segment
+  field Organisation (String) Organisation
+  field Flow (String) Flow?
+  field Tidal (String) Tidal?
+  field StreamWidth (Double) Stream Width (m)
+  field BankfullWidth (Double) Bankfull Width (m)
+  field StructureType (String) Structure Type
+  field AssetIDNumber (String) Asset ID Number
+  field AssetOwner (String) Asset Owner
+  field NumberOfCulvertBarrels (Double) Number Of Culvert Barrels
+  field CulvertBarrelsTheSame (String) Culvert Barrels The Same?
+  field CulvertCharShape (String) Culvert Shape
+  field CulvertCharMaterial (String) Culvert Material
+  field CulvertCharLength (Double) Culvert Length (m)
+  field CulvertCharWidth (Double) Culvert Width (m)
+  field CulvertCharHeight (Double) Culvert Height (m)
+  field CulvertCharDropHeight (Double) Culvert Drop Height (m)
+  field CulvertCharUndercutLength (Double) Culvert Undercut Length (m)
+  field CulvertCharWaterVelocity (Double) Culvert Water Velocity (m per second)
+  field CulvertCharWaterDepth (Double) Culvert Water Depth (m)
+  field CulvertCharSubstrate (String) Culvert Substrate
+  field CulvertCharLowVelRecirculationZ (String) Culvert Low Velocity Recirculation Zones Present?
+  field CulvertCharWettedMarginsPresent (String) Culvert Wetted Margins Present?
+  field CulvertCharStructureSlope (String) Culvert Structure Slope
+  field CulvertCharStructureAlignment (String) Culvert Structure Alignment
+  field FordDropHeight (Double) Ford Drop Height (m)
+  field FordSubstrate (String) Ford Substrate
+  field FordWidth (Double) Ford Width (m)
+  field FordLength (Double) Ford Length (m)
+  field FordMaterial (String) Ford Material
+  field WeirType (String) Weir Type
+  field WeirCrestShape (String) Weir Crest Shape
+  field WeirHeight (Double) Weir Height (m)
+  field WeirWidth (Double) Weir Width (m)
+  field WeirSubstrate (String) Weir Substrate
+  field WeirSlope (Double) Weir Slope
+  field WeirWettedMarginsPresent (SmallInteger) Weir Wetted Margins Present?
+  field WeirMaterial (String) Weir Material
+  field WeirBackwaterDistance (String) Weir Backwater Distance (m)
+  field DamHeight (Double) Dam Height (m)
+  field NaturalBarrierType (String) Natural Barrier Type
+  field NaturalBarrierHeight (Double) Natural Barrier Height(m)
+  field BridgeType (String) Bridge Type
+  field UpstreamAddOn (String) Upstream Add On
+  field DownstreamAddOn (String) Downstream Add On
+  field ApronDropHeight (Double) Apron Drop Height (m)
+  field ApronLength (Double) Apron Length (m)
+  field ApronWaterDepth (Double) Apron Water Depth (m)
+  field ApronWaterVelocity (String) Apron Water Velocity (metres per second)
+  field ApronMaterial (String) Apron Material
+  field ApronSubstrate (String) Apron Substrate
+  field RampSurface (String) Ramp Surface
+  field RampSlope (Double) Ramp Slope
+  field RampLength (Double) Ramp Length (m)
+  field RampWettedMarginsPresent (SmallInteger) Ramp Wetted Margins Present?
+  field HeadwallHeight (String) Headwall Height (m)
+  field UpstreamPhoto (String) Upstream Photo
+  field DownstreamPhoto (String) Downstream Photo
+  field FishPassageImprovementPresent (String) Fish Passage Improvement Present
+  field SpatRopesEffectiveness (String) Spat Ropes Effectiveness
+  field RiskToFishPassage (String) Risk To Fish Passage
+  field ProtectingNativeSpeciesOrHabita (String) Protecting Native Species Or Habitat
+  field Comments (String) Comments
+  field StreamName (String) Stream Name
+  field CatchmentName (String) Catchment Name
+  field Species (String) Species
+  field BarrierScore (Double) Barrier Score
+  field DSConnScore (Double) DS Conn Score
+  field CatchPosScore (Double) Catch Pos Score
+  field AccUsHabScore (Double) Acc Us Hab Score
+  field Historical (String) Historical
+  field ManualAssessment (String) Manual Assessment
+  field Shape (Geometry) SHAPE
+  field GlobalID (GlobalID) GlobalID
+  field created_user (String) created_user
+  field created_date (Date) created_date
+  field last_edited_user (String) last_edited_user
+  field last_edited_date (Date) last_edited_date
+site window (EPSG:2193): 1579274, 5300150, 1712548, 5490708
+count where "StructureType IN ('Culvert', 'Ford with culvert', 'Flap gate with culver')": 521
+    https://gis.marlborough.govt.nz/server/rest/services/DataPublic/Environment/MapServer/84/query?where=StructureType+IN+%28%27Culvert%27%2C+%27Ford+with+culvert%27%2C+%27Flap+gate+with+culver%27%29&geometry=1579273.6183000002%2C5300150.0799%2C1712547.7665%2C5490707.5303&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 2950
+    https://gis.marlborough.govt.nz/server/rest/services/DataPublic/Environment/MapServer/84/query?where=1%3D1&geometry=1579273.6183000002%2C5300150.0799%2C1712547.7665%2C5490707.5303&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 2950 feature(s) in the window (where 1=1):
+  RiskClass: 'Not Assessed' 1700; 'Very Low' 709; 'Very High' 282; 'High' 163; 'Medium' 91; 'Low' 4; 'Structure Rem' 1
+  Organisation: None 2195; 'Marlborough District Council' 418; 'Department of Conservation' 326; 'Other' 6; 'WSP OPUS' 5
+  Flow: 'Unknown' 2398; 'Normal' 318; None 118; 'Low' 67; 'No flow' 35; 'High' 14
+  Tidal: None 2516; 'No' 363; 'Yes' 69; 'Unknown' 2
+  StructureType: 'Unknown' 1466; 'Bridge' 699; 'Culvert' 512; 'Dam' 88; 'Ford without culvert' 87; 'Natural' 78; 'Ford with culvert' 8; 'Other' 5; 'Weir' 4; 'Flap gate with culver' 1; 'Pump station' 1; 'Structure removed' 1
+  AssetOwner: 'Unknown' 2017; 'Department of Conservation' 431; None 255; 'NZTA' 185; 'Private' 52; 'KiwiRail' 7; 'Other' 1; 'Territorial Authority' 1; 'Regional Council' 1
+  CulvertBarrelsTheSame: None 2907; 'Yes' 31; 'No' 12
+  CulvertCharShape: None 2453; 'Pipe' 480; 'Box' 9; 'Arch' 7; 'Other' 1
+  CulvertCharMaterial: None 2451; 'Concrete' 363; 'Plastic' 95; 'Metal' 36; 'Concrete ' 3; 'Wood' 1; 'Metal , P' 1
+  CulvertCharSubstrate: None 2515; 'Bare' 240; 'Not observed' 119; 'Sand/silt' 30; 'Gravel' 26; 'Cobbles' 11; 'Other' 8; 'Bedrock' 1
+  CulvertCharLowVelRecirculationZ: None 2532; 'Yes' 214; 'Unkn' 120; 'No' 84
+  CulvertCharWettedMarginsPresent: None 2650; 'Yes' 187; 'No' 109; 'Unknown' 4
+  CulvertCharStructureSlope: None 2682; 'Same as stream' 159; 'Less than stream' 90; 'Steeper than stream' 19
+  CulvertCharStructureAlignment: None 2691; 'Straight in and out' 180; 'Curved in straight out' 50; 'Straight in curved out' 19; 'Curved in curved out' 10
+  FordSubstrate: None 2931; 'Bare' 10; 'Cobbles' 7; 'Bedrock' 1; 'Sand/sil' 1
+  FordMaterial: None 2933; 'Concrete' 9; 'Other' 8
+  WeirType: None 2946; 'Other' 2; 'Broad crested' 1; 'Sharp crested' 1
+  WeirCrestShape: None 2946; 'Sharp/angular' 3; 'Other' 1
+  WeirSubstrate: None 2946; 'Bare' 3; 'Bould' 1
+  WeirMaterial: None 2947; 'C' 2; 'M' 1
+  WeirBackwaterDistance: None 2947; '<10m' 2; '10-50' 1
+  NaturalBarrierType: None 2949; 'Waterfall' 1
+  BridgeType: None 2857; 'Single-span' 57; 'Multi-span' 36
+  UpstreamAddOn: None 2399; 'None observed' 450; 'Headwall' 50; 'Headwall , Wingwall' 23; 'Wingwall' 20; 'Other' 3; 'Apron , Headwall , W' 2; 'Apron , Wingwall' 1; 'Apron' 1; 'Headwall , Wingwall ' 1
+  DownstreamAddOn: None 2399; 'None observed' 457; 'Headwall' 43; 'Headwall , Wingwall' 18; 'Wingwall' 15; 'Other' 9; 'Apron , Headwall , Wingw' 2; 'Apron , Ramp , Wingwall' 1; 'Apron , Other' 1; 'Unknown' 1; 'Wingwall , Other' 1; 'None observed , Headwall' 1; 'Headwall , Wingwall , Ot' 1; 'Apron , Headwall' 1
+  ApronWaterVelocity: None 2946; '0' 4
+  ApronMaterial: None 2945; 'Concrete' 5
+  ApronSubstrate: None 2945; 'Bare' 4; 'Other' 1
+  RampSurface: None 2949; 'Bare' 1
+  HeadwallHeight: None 2949; '0' 1
+  FishPassageImprovementPresent: None 2614; 'None observed' 328; 'Spoiler baffles' 2; 'Other' 2; 'Spat ropes' 1; 'Artificial ramp' 1; 'Rock ramp' 1; 'Removed' 1
+  SpatRopesEffectiveness: None 2949; 'Low effectiveness' 1
+  RiskToFishPassage: 'Not assessed' 2365; None 172; 'Very low risk' 101; 'Low risk' 96; 'Very high risk' 82; 'High risk' 71; 'Medium risk' 63
+  ProtectingNativeSpeciesOrHabita: 'Unknown' 2498; None 358; 'No' 94
+  Species: None 2641; 'Dwarf galaxias (Nelson, Marlborough, and North Island)' 148; 'N/A (no segment selected)' 134; 'Northern flathead galaxias (Marlborough, Nelson, West Coast)' 27
+  Historical: 'true' 2511; 'false' 439
+  ManualAssessment: 'false' 2927; 'true' 23
+  created_user: 'GIS' 2950
+  last_edited_user: 'GIS' 2950
+numeric fields with values (non-null count, min, median, max); 8 others all null:
+  Priority: 1000, 1.0, 8.0, 19.0
+  ID: 1000, 279.0, 17320.5, 39258.0
+  Latitude: 1000, -42.4509446, -41.52082945, -40.73130478
+  Longitude: 1000, 172.7491087, 173.77896635000002, 174.3418011
+  NZSegment: 1000, 11000907, 11025284.5, 13073693
+  StreamWidth: 57, 0.0, 1.70000005, 30.0
+  BankfullWidth: 57, 1.0, 4.5, 35.0
+  NumberOfCulvertBarrels: 12, 1.0, 1.0, 2.0
+  CulvertCharLength: 12, 1.5, 2.5, 4.0
+  CulvertCharWidth: 12, 0.30000001, 1.0, 1.20000005
+  CulvertCharHeight: 12, 0.1, 1.0, 1.2
+  CulvertCharDropHeight: 12, 0.0, 0.0, 0.89999998
+  CulvertCharUndercutLength: 12, 0.0, 0.0, 0.30000001
+  CulvertCharWaterVelocity: 12, 0.0, 0.599999995, 2.0
+  CulvertCharWaterDepth: 12, 0.0, 0.125000005, 0.25
+  FordDropHeight: 1, 0.0, 0.0, 0.0
+  FordWidth: 1, 3.0, 3.0, 3.0
+  FordLength: 1, 3.0, 3.0, 3.0
+  WeirHeight: 1, 1.60000002, 1.60000002, 1.60000002
+  WeirWidth: 1, 7.0, 7.0, 7.0
+  WeirSlope: 1, 90.0, 90.0, 90.0
+  WeirWettedMarginsPresent: 1, 1, 1, 1
+  BarrierScore: 545, 1.0, 1.0, 5.0
+  DSConnScore: 545, 0.0, 0.0, 5.0
+  CatchPosScore: 545, 0.0, 0.0, 5.0
+  AccUsHabScore: 545, 0.0, 5.0, 5.0
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":2411619,"geometry":{"type":"Point","coordinates":[173.94246340057151,-41.273649099414357]},"properties":{"OBJECTID":2411619,"RiskClass":"Very High","Priority":14,"ID":362,"RecordedDate":1555693464000,"Latitude":-41.2736491,"Longitude":173.94246340000001,"EnteredDate":1564350805000,"NZSegment":11014534,"Organisation":"Department of Conservation","Flow":"Normal","Tidal":"No","StreamWidth":3,"BankfullWidth":6,"StructureType":"Culvert","AssetIDNumber":null,"AssetOwner":null,"NumberOfCulvertBarrels":1,"CulvertBarrelsTheSame":null,"Culve
+     https://gis.marlborough.govt.nz/server/rest/services/DataPublic/Environment/MapServer/84/query?where=StructureType+IN+%28%27Culvert%27%2C+%27Ford+with+culvert%27%2C+%27Flap+gate+with+culver%27%29&geometry=1579273.6183000002%2C5300150.0799%2C1712547.7665%2C5490707.5303&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

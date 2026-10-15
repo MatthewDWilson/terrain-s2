@@ -1,0 +1,49 @@
+# OK in 4 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source waikato_lds_drains --fields --values
+
+using https://services.arcgis.com/2bzQ0Ix3iO7MItUa/arcgis/rest/services/WDP_RACS_LDS_DRAIN/FeatureServer/0
+layer: RACS_LDS_DRAIN | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1751917, 5794629, 1849242, 5880165 (wkid 2193)
+definition expression: None
+fields used by sources.yml: ASSET_ID, OBJECTID, STATUS, PURPOSE  (all present)
+  field ASSET_ID (Integer) ASSET_ID
+  field ASSET_DESCRIPTION (String) ASSET_DESCRIPTION
+  field DRAIN_NUMBER (Double) DRAIN_NUMBER
+  field PROJECT_CODE (String) PROJECT_CODE
+  field BUSINESS_ID (String) BUSINESS_ID
+  field REGISTER (String) REGISTER
+  field DRAINAGE_SCHEME (String) DRAINAGE_SCHEME
+  field SUBDIVISION (String) SUBDIVISION
+  field PURPOSE (String) PURPOSE
+  field STATUS (String) STATUS
+  field ASSET_TYPE (String) ASSET_TYPE
+  field LENGTH_M (Single) LENGTH_M
+  field WORK_SUPERVISOR (String) WORK_SUPERVISOR
+  field SPATIAL_EDIT_DATE (Date) SPATIAL_EDIT_DATE
+  field SPATIAL_DATA_ACCURACY (String) SPATIAL_DATA_ACCURACY
+  field ID (Integer) ID
+  field FUNCTION_DESCRIPTION (String) FUNCTION_DESCRIPTION
+  field OBJECTID (OID) OBJECTID
+  field SHAPE__Length (Double) SHAPE__Length
+site window (EPSG:2193): 1751917, 5794629, 1849242, 5880165
+count where "STATUS <> 'Disposed' AND PURPOSE <> 'Stopbank'": 1470
+    https://services.arcgis.com/2bzQ0Ix3iO7MItUa/arcgis/rest/services/WDP_RACS_LDS_DRAIN/FeatureServer/0/query?where=STATUS+%3C%3E+%27Disposed%27+AND+PURPOSE+%3C%3E+%27Stopbank%27&geometry=1751917.33%2C5794628.9857%2C1849241.5099999998%2C5880164.7289&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 1477
+    https://services.arcgis.com/2bzQ0Ix3iO7MItUa/arcgis/rest/services/WDP_RACS_LDS_DRAIN/FeatureServer/0/query?where=1%3D1&geometry=1751917.33%2C5794628.9857%2C1849241.5099999998%2C5880164.7289&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 1477 feature(s) in the window (where 1=1):
+  REGISTER: 'Drainage Register' 1477
+  DRAINAGE_SCHEME: 'Waikato Central' 746; 'Thames Valley' 501; 'Franklin Waikato' 182; 'Aka Aka/Otaua' 48
+  PURPOSE: 'Drainage' 1399; 'NOT SPECIFIED' 62; 'Pumping' 12; 'Stopbank' 4
+  STATUS: 'Existing' 1474; 'Disposed' 3
+  ASSET_TYPE: 'Drain' 1477
+  WORK_SUPERVISOR: 'Northgate Central Works Supervisor' 714; 'Te Aroha Team 1 Works Supervisor' 501; 'Northgate Lower Works Supervisor' 118; 'Tuakau Team Works Supervisor' 112; 'Peter Cullen' 32
+  SPATIAL_DATA_ACCURACY: None 1397; 'Hand digitised - lidar' 55; 'Hand digitised - aerial photo' 24; 'Hand digitised - from existing feature' 1
+  FUNCTION_DESCRIPTION: 'LAND DRAINAGE' 1477
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  ASSET_ID: 1477, 33, 855, 84527
+  DRAIN_NUMBER: 1464, 1, 23.0, 111
+  LENGTH_M: 1477, 0, 860, 20920
+  ID: 1477, 1, 739, 1480
+  SHAPE__Length: 1477, 10.731341947394773, 856.1294655834711, 19698.85217117859
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[175.272091447821,-37.5657754431249],[175.275356215956,-37.564778658037],[175.275984954947,-37.5645743214682],[175.276267360166,-37.5642814360861],[175.27751681073,-37.563626866884]]},"properties":{"ASSET_ID":30638,"ASSET_DESCRIPTION":"Vandy","DRAIN_NUMBER":35,"PROJECT_CODE":"L390 035","BUSINESS_ID":"13-039-035-11","REGISTER":"Drainage Register","DRAINAGE_SCHEME":"Waikato Central","SUB
+     https://services.arcgis.com/2bzQ0Ix3iO7MItUa/arcgis/rest/services/WDP_RACS_LDS_DRAIN/FeatureServer/0/query?where=STATUS+%3C%3E+%27Disposed%27+AND+PURPOSE+%3C%3E+%27Stopbank%27&geometry=1751917.33%2C5794628.9857%2C1849241.5099999998%2C5880164.7289&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

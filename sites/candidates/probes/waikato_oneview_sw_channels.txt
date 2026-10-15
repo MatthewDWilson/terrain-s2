@@ -1,0 +1,36 @@
+# OK in 132 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source waikato_oneview_sw_channels --fields --values
+
+using https://services3.arcgis.com/Oou6z70yKcGvIDxP/arcgis/rest/services/StormwaterPipesWaikato/FeatureServer/0
+layer: Stormwater Pipe | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: -101447209, -82464560, 114023319, 119690854 (wkid 2193)
+definition expression: None
+fields used by sources.yml: AssetType, AssetID, OBJECTID  (all present)
+  field AssetID (String) Asset ID
+  field AssetType (String) Asset Type
+  field Material (String) Material
+  field ShapeLength (Double) ShapeLength
+  field InstallDate (Date) InstallDate
+  field Council (String) Council
+  field DataRefreshDate (Date) DataRefreshDate
+  field OneviewID (String) OneviewID
+  field OBJECTID (OID) OBJECTID
+  field SHAPE__Length (Double) SHAPE__Length
+  field GlobalID (GlobalID) GlobalID
+  field USInvert (String) US Invert
+  field Diameter (String) Diameter
+  field DSInvert (String) DS Invert
+  field Height (String) Height
+site window (EPSG:2193): -101447209, -82464560, 114023319, 119690854
+count where "AssetType IN ('Open Drain', 'Rural Drain', 'Open Drain (Urban)', 'Stormwater Channel', 'Channel', 'Lined Open Channel', 'Watercourse', 'Stream Channel')": 1222
+    https://services3.arcgis.com/Oou6z70yKcGvIDxP/arcgis/rest/services/StormwaterPipesWaikato/FeatureServer/0/query?where=AssetType+IN+%28%27Open+Drain%27%2C+%27Rural+Drain%27%2C+%27Open+Drain+%28Urban%29%27%2C+%27Stormwater+Channel%27%2C+%27Channel%27%2C+%27Lined+Open+Channel%27%2C+%27Watercourse%27%2C+%27Stream+Channel%27%29&geometry=-101447209.209106%2C-82464560.4284608%2C114023318.520845%2C119690854.474065&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 81859
+    https://services3.arcgis.com/Oou6z70yKcGvIDxP/arcgis/rest/services/StormwaterPipesWaikato/FeatureServer/0/query?where=1%3D1&geometry=-101447209.209106%2C-82464560.4284608%2C114023318.520845%2C119690854.474065&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 81859 feature(s) in the window (where 1=1):
+  AssetID: None 81859
+  Council: 'Hamilton City Council' 57455; 'Waipa District Council' 12280; 'Hauraki District Council' 5776; 'South Waikato District Council' 4848; 'Otorohanga District Council' 1500
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  ShapeLength: 2000, 0.00014141996355207978, 9.817372168499713, 3365.32
+  SHAPE__Length: 2000, 0.00014141469540302046, 9.534088338533758, 3365.320531201829
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":87202547,"geometry":{"type":"LineString","coordinates":[[175.295225675519,-37.1097590943496],[175.295228416174,-37.1097638168046]]},"properties":{"AssetID":null,"AssetType":"Open Drain","Material":"Type A","ShapeLength":0.726378933021302,"InstallDate":852422400000,"Council":"Hauraki District Council","DataRefreshDate":1792022400000,"OneviewID":"OV-SWP-20470","OBJECTID":87202547,"SHAPE__Length":0.57800772156516866,"GlobalID":"9d2dc25a
+     https://services3.arcgis.com/Oou6z70yKcGvIDxP/arcgis/rest/services/StormwaterPipesWaikato/FeatureServer/0/query?where=AssetType+IN+%28%27Open+Drain%27%2C+%27Rural+Drain%27%2C+%27Open+Drain+%28Urban%29%27%2C+%27Stormwater+Channel%27%2C+%27Channel%27%2C+%27Lined+Open+Channel%27%2C+%27Watercourse%27%2C+%27Stream+Channel%27%29&geometry=-101447209.209106%2C-82464560.4284608%2C114023318.520845%2C119690854.474065&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

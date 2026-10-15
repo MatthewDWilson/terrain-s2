@@ -1,0 +1,45 @@
+# OK in 1 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source ecan_bylaw_drains_2013 --fields --values
+
+using https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/16
+layer: Flood Protection and Drainage Bylaw 2013 - Drains and watercourses | esriGeometryPolyline | maxRecordCount 1000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1366084, 5038991, 1657543, 5315191 (wkid 2193)
+definition expression: None
+fields used by sources.yml: TYPE, ASSET_NO, OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field ASSET_NO (String) ASSET_NO
+  field NAME (String) NAME
+  field TYPE (String) TYPE
+  field PLAN_ (String) PLAN
+  field DIGITISED_BY (String) DIGITISED_BY
+  field VALIDATED_BY (String) VALIDATED_BY
+  field GIVEN_LENGTH (Double) GIVEN_LENGTH
+  field LENGTH_M (Double) LENGTH_M
+  field SOURCECODE (String) SOURCECODE
+  field QARCODE (SmallInteger) QARCODE
+  field CREATEDBY (String) CREATEDBY
+  field CREATEDDATE (Date) CREATEDDATE
+  field MODIFIEDBY (String) MODIFIEDBY
+  field MODIFIEDDATE (Date) MODIFIEDDATE
+  field SHAPE (Geometry) SHAPE
+  field MACHINE_ACCESS (String) MACHINE_ACCESS
+  field SHAPE_Length (Double) SHAPE_Length
+site window (EPSG:2193): 1366084, 5038991, 1657543, 5315191
+count where '1=1': 4888
+    https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/16/query?where=1%3D1&geometry=1366084.1272%2C5038990.973%2C1657542.5821000002%2C5315191.0562&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 4888 feature(s) in the window (where 1=1):
+  TYPE: 'Waterway' 2853; 'Natural waterway' 1598; 'Drain' 432; 'Grassed waterway' 4; ' ' 1
+  PLAN_: None 4399; ' ' 341; 'Ashburton-Hinds' 142; 'Ashburton' 4; 'Ashburton Hinds' 1; 'Ashbuton' 1
+  DIGITISED_BY: 'M Surman' 2888; None 1598; ' ' 164; 'Meredith Whitmore' 144; 'M Whitmore' 89; 'M Chivers' 4; '<Null>' 1
+  VALIDATED_BY: None 4399; ' ' 344; 'B Scarlett' 80; 'B McIndoe' 42; 'G Scholes' 12; 'M Chivers' 5; 'M Hyett' 2; '<Null>' 2; 'B McIdoe' 1; 'G Scoles' 1
+  SOURCECODE: 'MANCAP' 4888
+  CREATEDBY: 'MatthewS' 4888
+  MODIFIEDBY: 'HamishL' 4888
+  MACHINE_ACCESS: 'Both Sides' 4650; 'True Right' 129; 'True Left' 108; 'Not Specified' 1
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  GIVEN_LENGTH: 409, 0, 603, 16156.53
+  LENGTH_M: 889, 12.40100333, 847.70410347, 24112.39785714
+  QARCODE: 1000, 2, 2.0, 2
+  SHAPE_Length: 1000, 12.401003339379226, 850.2406081269451, 24112.397857143176
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":1,"geometry":{"type":"MultiLineString","coordinates":[[[171.61238558347986,-43.818698459477787],[171.61309425124682,-43.818407368361591],[171.61416261140141,-43.820268798396533],[171.61459000034654,-43.821010721654496],[171.6146675159855,-43.821507137571253],[171.61477505451552,-43.822245222253315]],[[171.61474734118985,-43.822096887417956],[171.61481012350154,-43.822509985474412],[171.61485610611584,-43.8225872434259],[171.61492487843051,-43.822642564634265],[171.61526158939773,-43.822733673361746],[171.61615584116942,-43.82288274
+     https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/16/query?where=1%3D1&geometry=1366084.1272%2C5038990.973%2C1657542.5821000002%2C5315191.0562&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

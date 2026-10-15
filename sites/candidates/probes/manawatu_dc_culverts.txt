@@ -1,0 +1,57 @@
+# OK in 7 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source manawatu_dc_culverts --fields --values
+
+using https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0
+layer: GIS_STORMWATER_LINE_LN | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 19505181, -4920331, 19569107, -4873711 (wkid 3857)
+definition expression: None
+fields used by sources.yml: asset_id, OBJECTID, asset_type  (all present)
+  field FID (OID) FID
+  field OBJECTID (Integer) OBJECTID
+  field asset_id (String) asset_id
+  field asset_clas (Integer) asset_clas
+  field short_id (String) short_id
+  field Category (String) Category
+  field status (String) status
+  field asset_type (String) asset_type
+  field material (String) material
+  field diameter (Integer) diameter
+  field height (Integer) height
+  field quantity_l (Double) quantity_l
+  field us_invert (Double) us_invert
+  field ds_invert (Double) ds_invert
+  field install_da (String) install_da
+  field notes (String) notes
+  field found_date (String) found_date
+  field community (String) community
+  field asset_owne (String) asset_owne
+  field address (String) address
+  field source (String) source
+  field contract_n (String) contract_n
+  field project_id (String) project_id
+  field condition (String) condition
+  field Shape__Length (Double) Shape__Length
+site window (EPSG:2193): 1788302, 5527071, 1838178, 5563954
+count where "asset_type = 'Culvert'": 121
+    https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0/query?where=asset_type+%3D+%27Culvert%27&geometry=1788302.477466248%2C5527071.06926494%2C1838178.2634869134%2C5563954.1364044435&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 6887
+    https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0/query?where=1%3D1&geometry=1788302.477466248%2C5527071.06926494%2C1838178.2634869134%2C5563954.1364044435&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 6887 feature(s) in the window (where 1=1):
+  Category: 'None' 5003; '_None' 1879; ' ' 5
+  status: 'Existing' 6102; '224 Certified' 672; 'New' 50; 'Renewal' 33; 'Found' 27; 'Abandoned' 2; 'Dummy' 1
+  asset_type: 'Main' 4122; 'Service' 2082; 'Sump Lead' 507; 'Culvert' 121; 'Sub Soil Drain' 48; 'Open Drain' 3; 'Main (Relined)' 2; 'Service (Bulk)' 1; 'Placeholder' 1
+  material: 'Reinforced Concrete' 3660; 'PVC-u' 2795; 'Other' 118; 'Polyethylene' 99; 'Concrete' 43; 'Vitreous Clay' 41; 'Asbestos' 24; 'None' 23; 'Novaflo' 22; 'Concrete Box Culvert' 19; 'Trapezoidal' 15; 'Steel' 12; 'Boss Pipe' 11; 'Open Drain' 3; 'PE-100' 2
+  community: 'Feilding' 6288; 'Sanson' 209; 'Rongotea' 159; 'Halcombe' 140; 'Cheltenham' 21; 'Tangimoana' 21; 'Kimbolton' 19; 'Himatangi Beach' 14; 'Pohangina' 11; 'Bainesse' 2; 'Awahuri' 2; 'Waituna West RWS' 1
+  asset_owne: 'Utilities' 4291; 'Road Asset' 1829; 'Private' 715; 'Parks & Reserves' 21; 'Wastewater Plant' 16; 'Water_Plant' 11; 'None' 4
+  condition: 'Excellent' 3250; 'Good' 2142; 'Poor' 796; 'Average' 507; 'N/A' 151; 'Very Poor' 41
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  OBJECTID: 2000, 2, 3448.5, 6886
+  asset_clas: 2000, 49, 49.0, 49
+  diameter: 2000, 0, 225.0, 2100
+  height: 2000, 0, 282.0, 2005
+  quantity_l: 2000, 0.01, 7.6, 301.2
+  us_invert: 2000, -999, 0.0, 140.68
+  ds_invert: 2000, -999, 0.0, 142.91
+  Shape__Length: 2000, 0.013129086688846766, 9.79244559768447, 395.17317367493706
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":2797,"geometry":{"type":"LineString","coordinates":[[175.556026846693,-40.2263508448543],[175.556018838467,-40.2263910170994]]},"properties":{"FID":2797,"OBJECTID":2178,"asset_id":"12301","asset_clas":49,"short_id":"2280","Category":"None","status":"Existing","asset_type":"Culvert","material":"Concrete Box Culvert","diameter":2000,"height":1450,"quantity_l":4.6,"us_invert":67.44,"ds_invert":-999,"install_da":"1970-07-07T00:00:00","no
+     https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0/query?where=asset_type+%3D+%27Culvert%27&geometry=1788302.477466248%2C5527071.06926494%2C1838178.2634869134%2C5563954.1364044435&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

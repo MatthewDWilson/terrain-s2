@@ -1,0 +1,6 @@
+# OK in 1 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --search "Tararua stormwater open drains"
+
+1 item(s) for 'Tararua stormwater open drains' (newest first, max 25):
+  56e090489098409690d730d77e340026  Feature Service  'Dannevirke_Map_WFL1'  owner ENMbiodiversity
+      https://services8.arcgis.com/D9BnlM7qMpDWoV7z/arcgis/rest/services/Dannevirke_Map_WFL1/FeatureServer

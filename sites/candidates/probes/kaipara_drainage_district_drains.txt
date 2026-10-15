@@ -1,0 +1,33 @@
+# OK in 3 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source kaipara_drainage_district_drains --fields --values
+
+using https://services9.arcgis.com/DUYVFPAJ5YcaFDs0/arcgis/rest/services/KDC_Drainage_(External)/FeatureServer/4
+layer: Drains | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1667575, 5990452, 1699626, 6035104 (wkid 2193)
+definition expression: None
+fields used by sources.yml: Drain_no, OBJECTID  (all present)
+  field Drain_no (SmallInteger) Drain_no
+  field Size (String) Size
+  field Width (Double) Width
+  field Depth (Double) Depth
+  field Place_name (String) Place_name
+  field Length_text (String) Length_text
+  field Hydraulic_digger (String) Hydraulic_digger
+  field Length_m (Integer) Length_m
+  field GlobalID (GlobalID) GlobalID
+  field OBJECTID (OID) OBJECTID
+  field Shape__Length (Double) Shape__Length
+site window (EPSG:2193): 1667575, 5990452, 1699626, 6035104
+count where '1=1': 247
+    https://services9.arcgis.com/DUYVFPAJ5YcaFDs0/arcgis/rest/services/KDC_Drainage_(External)/FeatureServer/4/query?where=1%3D1&geometry=1667574.727%2C5990452.0719%2C1699625.9115165267%2C6035103.753205013&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 247 feature(s) in the window (where 1=1):
+  Length_text: None 247
+  Hydraulic_digger: None 247
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  Drain_no: 247, 0, 6, 135
+  Width: 247, 0, 4, 24
+  Depth: 247, 0, 3, 7
+  Length_m: 247, 123, 1358, 14228
+  Shape__Length: 247, 122.74561970820574, 1357.51594567594, 14228.21573070521
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[173.889083958753,-35.9795219851874],[173.887665985143,-35.9807949576185],[173.882569032666,-35.9836729888627],[173.883302975394,-35.9855439903008],[173.882225961829,-35.9860910301729]]},"properties":{"Drain_no":0,"Size":null,"Width":0,"Depth":0,"Place_name":"Aoroa","Length_text":null,"Hydraulic_digger":null,"Length_m":1082,"GlobalID":"6baa1d26-7c98-443a-bac6-0c82b474638c","OBJECTID":1
+     https://services9.arcgis.com/DUYVFPAJ5YcaFDs0/arcgis/rest/services/KDC_Drainage_(External)/FeatureServer/4/query?where=1%3D1&geometry=1667574.727%2C5990452.0719%2C1699625.9115165267%2C6035103.753205013&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

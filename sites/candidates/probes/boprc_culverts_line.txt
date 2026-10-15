@@ -1,0 +1,74 @@
+# FAILED (exit 1) in 4 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source boprc_culverts_line --fields --values
+
+using https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1
+layer: Asset Register - Line | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1856673, 5734667, 1983513, 5841032 (wkid 2193)
+definition expression: None
+fields used by sources.yml: DiameterMM, AssetID, OBJECTID, AssetType  (all present)
+  field OBJECTID (OID) OBJECTID
+  field AssetID (Double) Asset ID
+  field AssetType (String) Asset Type
+  field AssetDescription (String) Asset Description
+  field AssetClassification (String) Asset Classification
+  field Accuracy (String) Accuracy
+  field DesignLevel (String) Design Level
+  field Freeboard (String) Freeboard (mm)
+  field SchemeName (String) Scheme Name
+  field Reach (String) Reach
+  field Waterway (String) Waterway
+  field CanalDrain (String) Canal or Drain Classification
+  field DisplayName (String) Display Name
+  field BatterRatio (String) Batter (ratio)
+  field Width (Double) Width (m)
+  field Height (Double) Height (m)
+  field Length (Double) Length (m)
+  field DiameterMM (Double) Diameter (mm)
+  field Volume (Double) Volume (m3)
+  field Mass (Double) Mass (t)
+  field ThicknessMM (Double) Thickness (mm)
+  field Depth (Double) Depth (m)
+  field AssetArea (Double) Area (m2)
+  field NumberOfUnits (Double) Number of Units
+  field GeofabricInstalled (String) Geofabric Installed
+  field Toe (String) Toe Keyed In
+  field ConstructionMaterial (String) Construction Material
+  field AssetFunction (String) Function
+  field YearBuiltRenewed (Double) Year Built or Renewed
+  field Consented (String) Consented
+  field AssetOwner (String) Asset Owner
+  field Photo_1 (String) Photo 1
+  field Photo_2 (String) Photo 2
+  field CriticalAsset (String) Critical Asset
+  field ManagedBy (String) Managed By
+  field AssetStatus (String) Asset Status
+  field NewAsset (String) New Asset
+  field Sync (String) Sync
+  field GISID (GUID) GIS ID
+  field created_user (String) created_user
+  field created_date (Date) created_date
+  field last_edited_user (String) last_edited_user
+  field last_edited_date (Date) last_edited_date
+  field GlobalID (GlobalID) GlobalID
+  field Bank (String) Bank
+  field Shape__Length (Double) Shape__Length
+site window (EPSG:2193): 1856673, 5734667, 1983513, 5841032
+count where "AssetType IN ('Culvert', 'Culvert Pipe', 'Culvert Box')": 202
+    https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1/query?where=AssetType+IN+%28%27Culvert%27%2C+%27Culvert+Pipe%27%2C+%27Culvert+Box%27%29&geometry=1856672.6290999996%2C5734666.573%2C1983512.7412%2C5841031.8217&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 2186
+    https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1/query?where=1%3D1&geometry=1856672.6290999996%2C5734666.573%2C1983512.7412%2C5841031.8217&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 2186 feature(s) in the window (where 1=1):
+  AssetClassification: 'AC21' 535; 'AC23' 387; 'AC8' 332; 'AC25' 288; 'AC24' 197; 'AC5' 160; 'AC9' 66; 'AC6' 35; 'AC4' 33; 'AC2' 30; 'AC14' 29; None 20; 'AC22' 19; 'AC32' 18; 'AC13' 14; 'AC16' 10; 'AC39' 4; 'AC34' 4; 'AC35' 2; 'AC27' 2; 'AC1' 1
+  DesignLevel: None 1826; '1' 215; '20' 58; '10' 49; '5' 32; '50' 4; '2' 2
+  Freeboard: 'Unknown' 1141; None 793; '300mm' 98; '300' 31; '500mm' 28; '600mm' 24; '450mm' 18; '800mm' 16; '600' 9; '250mm' 7; '150mm' 6; '800' 4; '150' 4; '500' 3; 'unknown' 1; '450' 1; '400mm' 1; '' 1
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py", line 204, in <module>
+    main()
+  File "D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py", line 108, in main
+    print(f"  {f}: " + "; ".join(f"{v!r} {c}" for v, c in counts))
+  File "C:\Users\mwi104\miniforge3\envs\terrain-s2\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u012b' in position 201: character maps to <undefined>

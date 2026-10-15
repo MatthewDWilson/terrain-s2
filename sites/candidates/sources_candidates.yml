@@ -1,0 +1,417 @@
+# Candidate council sources for ML wave 3 (drains, channels, culverts). Drafted 16 Oct 2026 in the council-data
+# thread from WebFetch queries of each layer's REST metadata and group-by counts. Not yet probed with
+# scripts/probe_source.py: run scripts/probe_candidates.py, which writes the --fields --values output per source
+# to sites/candidates/probes/. Every entry is enabled: false; this file is separate from sites/sources.yml so the
+# two threads do not edit the same file. Copy the good entries into sources.yml when enabling them.
+# Assessment and ranking: docs/council_data_candidates.md. Same mapping keys as sources.yml (harmonise.py).
+# Counts below are whole-layer counts from 16 Oct 2026 unless marked otherwise.
+sources:
+
+  # ---------------------------------------------------------------- Tier A: strong candidates ----------------
+
+  waimakariri_drain_channels_all:
+    kind: arcgis
+    # Waimakariri DC "Drain Channel" (Drainage_Areas_and_Water_Races/5): the layer description says "all drainage
+    # channels in the WDC area, WDC-owned and private" - unlike Assets_Stormwater/3 (waimakariri_channels, council
+    # scheme channels only). Fields: assnbri, drainname, scheme, type, baseflow, topwidth, bottomwidth, depth,
+    # liningmaterial, liningprofile, drainownership, asset_owner, in_road_reserve, condition. Counts and how many
+    # widths are filled NOT yet known (the group-by query did not run through WebFetch): probe first. If the widths
+    # are filled this is a better Waimakariri source than waimakariri_channels (private drains + widths).
+    url: https://gisservices.waimakariri.govt.nz/arcgis/rest/services/Drainage_Areas_Water_Races/Drainage_Areas_and_Water_Races/MapServer/5
+    layer: channels
+    const: {exists: y, class: drain}
+    scale: {width_m: [topwidth, 1.0], base_width_m: [bottomwidth, 1.0]}   # units to confirm (m expected)
+    id_field: [assnbri, OBJECTID]
+    enabled: false
+    scope: >-
+      all known drain channels in Waimakariri District, council and private (drainownership, asset_owner,
+      in_road_reserve); class from `type` once its values are known (probe --values)
+
+  waikato_lds_drains:
+    kind: arcgis
+    # WRC Land Drainage Schemes - Drains (RACS_LDS_DRAIN; Hub item d7ddc3c738b246218dc52bcbfd99600c), CC BY 4.0,
+    # modified 31 Jul 2026. 1,477 lines, all ASSET_TYPE Drain; DRAINAGE_SCHEME Waikato Central 746, Thames Valley 501,
+    # Franklin Waikato 182, Aka Aka/Otaua 48; PURPOSE/STATUS Drainage/Existing 1,396, NOT SPECIFIED/Existing 62,
+    # Pumping/Existing 12, Stopbank/Existing 4, Drainage/Disposed 3. The where keeps 1,470. No width/depth/form.
+    url: https://services.arcgis.com/2bzQ0Ix3iO7MItUa/arcgis/rest/services/WDP_RACS_LDS_DRAIN/FeatureServer/0
+    where: "STATUS <> 'Disposed' AND PURPOSE <> 'Stopbank'"
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [ASSET_ID, OBJECTID]
+    enabled: false
+    scope: >-
+      WRC-managed rural land-drainage scheme drains (lower Waikato, Thames Valley/Piako, Franklin, Aka Aka);
+      scheme drains only, private and farm drains absent; Hauraki Plains drains are Hauraki DC's (hauraki_land_drains)
+
+  hauraki_land_drains:
+    kind: arcgis
+    # Hauraki DC Land Drain (Asset-Finda; Hub item 179257d036914fe3a6ccf7d7e30fdbfc), CC BY 4.0. 776 lines:
+    # Land Drain 721 (Material = drain class: Type A 98, B 298, C 145, O 173, X 7), Stopbank 52, Culvert 3.
+    # DIAMETER on drains is a code per class (A 1, B 2, C 3, O 6, X 15): possibly a nominal width, unconfirmed,
+    # so not mapped. Community = drainage district (18, e.g. Kerepehi, Turua, Mackaytown, Waihi).
+    url: https://services9.arcgis.com/ph39VKR5KFKf0WbU/arcgis/rest/services/Land_Drain/FeatureServer/0
+    where: "Asset_Type = 'Land Drain'"
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [Asset_ID, FID]
+    enabled: false
+    scope: >-
+      Hauraki DC drainage-district drains (Hauraki Plains, Paeroa, Waihi); council-maintained, private drains absent;
+      drain class A/B/C/O/X in Material (meaning to confirm with HDC)
+
+  boprc_waterways:
+    kind: arcgis
+    # BOPRC Asset Register - Line (item 781ae58cfb744d27a576aafbbedad932, "Flood Protection Assets for TLAs"),
+    # modified Jun 2025; licenceInfo only "Public available data" (no CC licence stated: confirm). 2,186 lines;
+    # Waterway Drain 285, Waterway Canal 19, Waterway Stream 5, Waterway 1. Schemes: Rangitaiki Drainage 230,
+    # Kaituna 54, Waioeka-Otara 16, Waiotahe 6, Huntress Creek 2. CanalDrain: Regional Drain, Drainage Scheme,
+    # Arterial Canal/Drain. Width (m) > 0 on 244 of 310. AssetOwner Council 301, Private 8, TA 1.
+    url: https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1
+    where: "AssetType IN ('Waterway Drain', 'Waterway Canal', 'Waterway Stream')"
+    layer: channels
+    const: {exists: y}
+    class_map: {field: AssetType, values: {Waterway Drain: drain, Waterway Canal: drain, Waterway Stream: stream}}
+    scale: {width_m: [Width, 1.0]}
+    id_field: [AssetID, OBJECTID]
+    enabled: false
+    scope: >-
+      BOPRC rivers and drainage scheme waterways (Rangitaiki Plains, Kaituna); regional and scheme drains and canals,
+      farm drains absent; licence to confirm with BOPRC
+
+  boprc_culverts_line:
+    kind: arcgis
+    # same layer: Culvert Pipe 163, Culvert Box 34, Culvert 5 (owner Council 183, Private 10, Crown 3); DiameterMM > 0 on 154
+    url: https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1
+    where: "AssetType IN ('Culvert', 'Culvert Pipe', 'Culvert Box')"
+    layer: crossings
+    const: {type: culvert}
+    scale: {diameter_m: [DiameterMM, 0.001]}
+    id_field: [AssetID, OBJECTID]
+    enabled: false
+    scope: BOPRC scheme culverts (lines); check overlap with boprc_culverts_point; licence to confirm
+
+  boprc_culverts_point:
+    kind: arcgis
+    # Asset Register - Point: Culvert 325, Culvert Pipe 2 (DiameterMM > 0 on 264). Same layer also holds Flapgate 255,
+    # Flood Gate 33, Pumpstation 62, Drop Structure 11 (structures candidates).
+    url: https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/0
+    where: "AssetType IN ('Culvert', 'Culvert Pipe')"
+    layer: crossings
+    const: {type: culvert}
+    scale: {diameter_m: [DiameterMM, 0.001]}
+    id_field: [AssetID, OBJECTID]
+    enabled: false
+    scope: BOPRC scheme culverts (points); licence to confirm
+
+  horizons_drainage_channels:
+    kind: arcgis
+    # Horizons River Management Asset (Polyline), public view (item 4eb7eebcbbb04a69b1b32f40d6074b21), modified
+    # Apr 2026; definition expression AMIS_ServiceStatus = 'In Service'; licenceInfo empty (confirm). 3,091 lines:
+    # Drainage Channel 765, River Channel 34, Toe Drain 1, Floodway 8 (+ stopbanks 314, rock lining, groynes, ...).
+    # Drainage Channel in 24 schemes (Lower Manawatu, Makerua, Koputaroa, Moutoa, Himatangi, Foxton East, Whirokino,
+    # Te Kawau, Tawataia-Mangaone, ...). No width/depth/form field.
+    url: https://services1.arcgis.com/VuN78wcRdq1Oj69W/arcgis/rest/services/River_Management_Public_view/FeatureServer/1
+    where: "AMIS_AssetClass2 IN ('Drainage Channel', 'Toe Drain', 'River Channel')"
+    layer: channels
+    const: {exists: y}
+    class_map: {field: AMIS_AssetClass2, values: {Drainage Channel: drain, Toe Drain: drain, River Channel: stream}}
+    id_field: [AMIS_AssetID, OBJECTID]
+    enabled: false
+    scope: >-
+      Horizons-maintained drainage scheme channels (Manawatu plains); scheme drains only, district and private drains
+      absent (Manawatu DC road/open drains are manawatu_dc_open_drains); licence to confirm
+
+  horizons_floodgate_culverts:
+    kind: arcgis
+    # Horizons River Management Asset (Point): Floodgate Structure - Culvert 566 (17 schemes), no diameter field.
+    # Same layer: Floodgate 20, Land Use - Drainage Pump Station 24 (structures candidates). Layer 1 has 66 culvert lines.
+    url: https://services1.arcgis.com/VuN78wcRdq1Oj69W/arcgis/rest/services/River_Management_Public_view/FeatureServer/0
+    where: "AMIS_AssetClass2 = 'Floodgate Structure - Culvert'"
+    layer: crossings
+    const: {type: culvert}
+    id_field: [AMIS_AssetID, OBJECTID]
+    enabled: false
+    scope: Horizons scheme culverts with floodgates (outlets through stopbanks and drain crossings); licence to confirm
+
+  otago_scheduled_drains:
+    kind: arcgis
+    # ORC Flood Protection Management Bylaw 2022, Scheduled Drains (item d9542addf2184fec938a5792ec12924c), CC BY 4.0.
+    # 317 lines: West Taieri 97, Lower Clutha 81, East Taieri 74, Tokomairiro 65. Fields: label (drain number),
+    # Location. No class, width or pipe field. No public ORC culvert layer found.
+    url: https://services6.arcgis.com/ALxeDxaeNjQo1Mf0/arcgis/rest/services/Flood_Protection_Management_Bylaw_2022/FeatureServer/1
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [label, OBJECTID]
+    enabled: false
+    scope: ORC scheme drains scheduled in the bylaw (Taieri Plain, Lower Clutha, Tokomairiro); private drains absent
+
+  gisborne_rural_drains:
+    kind: arcgis
+    # Gisborne DC Rural Drains (item 55765e67974c4fd38661f68f89ab4bcc), CC BY 4.0, modified Jul 2023. 325 lines:
+    # UNITTYPE DRAIN 283, STREAM 22, RIVER 19, DIVERSION 1. Fields: COMPKEY, UNITTYPE, Name.
+    url: https://services7.arcgis.com/8G10QCd84QpdcTJ9/arcgis/rest/services/rural_drains/FeatureServer/0
+    layer: channels
+    const: {exists: y}
+    class_map: {field: UNITTYPE, values: {DRAIN: drain, DIVERSION: drain, STREAM: stream, RIVER: stream}}
+    id_field: [COMPKEY, OBJECTID]
+    enabled: false
+    scope: council-owned public rural drains (Poverty Bay flats); private drains (landowner's) absent
+
+  ecan_bylaw_drains_2013:
+    kind: arcgis
+    # ECan Flood Protection and Drainage Bylaw 2013 - Drains and watercourses (PlanningZones/16). 4,888 lines:
+    # TYPE Waterway 2,853, Natural waterway 1,598, Drain 432, Grassed waterway 4, ' ' 1. No SCHEME field here.
+    # Digitised from georeferenced plans: the layer adds a 10 m buffer "to allow for drawing errors", so expect
+    # positional errors of several metres (the +-15 m snap corridor should cope). 'Waterway' (2,853) is ambiguous.
+    url: https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/16
+    layer: channels
+    const: {exists: y}
+    class_map: {field: TYPE, values: {Drain: drain, Waterway: other, Natural waterway: stream, Grassed waterway: drain}}
+    id_field: [ASSET_NO, OBJECTID]
+    enabled: false
+    scope: >-
+      drains and watercourses ECan manages under its bylaw, region-wide (all its drainage and river schemes);
+      scheme waterways only, district and private drains absent; overlaps Selwyn's 120 'ECan' drains
+
+  ecan_bylaw_drains_2019:
+    kind: arcgis
+    # The 2019 amendment layer (PlanningZones/3), the url of the disabled ecan_drains entry in sources.yml. Only 560
+    # lines: TYPE/CATEGORY Drain A 19, B 273, C 144; Modified waterway A 20, B 53; Natural waterway A 3, B 44;
+    # Grassed waterway B 4. Has SCHEME (Ashburton Hinds Drainage 160, Halswell Drainage 143, Waimakariri-Eyre-Cust 52,
+    # Kaikoura Drainage 48, Seadown 33, Clandeboye 33, ...) and CATEGORY. Likely only the drains the 2019 amendment
+    # changed or added: compare ASSET_NO with layer 16 before choosing.
+    url: https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/3
+    layer: channels
+    const: {exists: y}
+    class_map: {field: TYPE, values: {Drain: drain, Modified waterway: drain, Natural waterway: stream, Grassed waterway: drain}}
+    id_field: [ASSET_NO, OBJECTID]
+    enabled: false
+    scope: ECan bylaw drains (2019 amendment); scheme drains only
+
+  selwyn_land_drains:
+    kind: arcgis
+    # Selwyn DC CDrain_ln (SDC_Public/WATER_Drain/12). No licence stated on the service or item: confirm with SDC.
+    # 597 lines: TYPE DRAIN 445 (OWNERSHIP 'Stormwater Land Drainage'), ECan 120, OUTLINE 30, site boundaries 2.
+    # SCHEME: L.D Leeston 263, L.D L2 (Liffey) 114, L.D Ellesmere 30, Greenpark 17, Taumutu 9, Osbournes 7,
+    # Wairiri Valley 5, null 152. AMS2/AMS3 Channel/Drain 443; 2 rows AMS2 Pipe (excluded by the where).
+    url: https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_Drain/MapServer/12
+    where: "TYPE IN ('DRAIN', 'ECan') AND (AMS2 IS NULL OR AMS2 <> 'Pipe')"
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [ASSETID, OBJECTID]
+    enabled: false
+    scope: >-
+      Selwyn land-drainage scheme drains (Ellesmere lowlands, Leeston) plus 120 ECan-owned drains (overlap with
+      ecan_bylaw_drains_*); scheme drains only, private drains absent; licence to confirm
+
+  selwyn_water_races:
+    kind: arcgis
+    # Selwyn DC WRace_ln (WATER_WaterRace/6): stock-water races, class race (raised or level, not draining).
+    # 4,102 lines: MAIN 805, LOCAL 1,339, LATERAL 329, CULVERT 1,571, others small; schemes Malvern 1,934,
+    # Paparua 1,671, Ellesmere 439. STATUS In Service 4,042 (some decommissioned). Licence not stated.
+    url: https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6
+    where: "TYPE IN ('MAIN', 'LOCAL', 'LATERAL') AND STATUS = 'In Service'"
+    layer: channels
+    const: {exists: y, class: race}
+    id_field: [ASSETID, OBJECTID]
+    enabled: false
+    scope: Selwyn stock-water races in service (race class); closures under way, so some may be filled in; licence to confirm
+
+  selwyn_race_culverts:
+    kind: arcgis
+    # same layer, TYPE CULVERT: 1,571 lines, DIAPIPE (mm) > 0 on 1,203 (e.g. 300, 350, 750, 1050)
+    url: https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6
+    where: "TYPE = 'CULVERT'"
+    layer: crossings
+    const: {type: culvert}
+    scale: {diameter_m: [DIAPIPE, 0.001]}
+    id_field: [ASSETID, OBJECTID]
+    enabled: false
+    scope: >-
+      culverts carrying Selwyn water races under roads and accesses (crossings of races, not drains); add STATUS
+      filter if decommissioned ones show; licence to confirm
+
+  ccc_watercourses:
+    kind: arcgis
+    # Christchurch CC WcWaterCourse (OpenData/WaterCourse/29), CC BY 4.0. 9,550 open-watercourse lines (rivers,
+    # streams, utility drains); piped reaches are in the StormWater service. No class field on the lines: the
+    # district-plan class (Utility Waterway 543 = drain type; Environmental Asset 484; Hill 667; Upstream/Downstream
+    # River 69/81; null 3,666) is on segment POLYGONS (layer 38) and would need a spatial join, which harmonise
+    # does not do. TopWidth (mm) > 0 on 1,239; Depth, BottomWidth also present.
+    url: https://gis.ccc.govt.nz/server/rest/services/OpenData/WaterCourse/MapServer/29
+    layer: channels
+    const: {exists: y}
+    scale: {width_m: [TopWidth, 0.001], base_width_m: [BottomWidth, 0.001]}
+    id_field: [WcWaterCourseID, OBJECTID]
+    enabled: false
+    scope: >-
+      CCC-maintained open watercourses (urban and peri-urban: Halswell, Marshland, Styx, Banks Peninsula);
+      mixed streams and drains without a class; private drains absent
+
+  ccc_culverts:
+    kind: arcgis
+    # CCC SwPipe (OpenData/StormWater/1), CC BY 4.0: Culvert 1,347, Box Culvert 613, Arch Culvert 177 (of ~88,800
+    # stormwater lines); NominalDiameter (mm) > 0 on 1,573; box culverts have NominalWidth/NominalHeight.
+    # Ownership and ServiceStatus not yet checked (probe --values).
+    url: https://gis.ccc.govt.nz/server/rest/services/OpenData/StormWater/MapServer/1
+    where: "Type IN ('Culvert', 'Box Culvert', 'Arch Culvert')"
+    layer: crossings
+    const: {type: culvert}
+    scale: {diameter_m: [NominalDiameter, 0.001], width_m: [NominalWidth, 0.001], height_m: [NominalHeight, 0.001]}
+    id_field: [SAPInternalReference, OBJECTID]
+    enabled: false
+    scope: CCC stormwater asset register culverts (lines); private culverts mostly absent
+
+  # ---------------------------------------------------------------- Tier B: useful, with caveats --------------
+
+  manawatu_dc_open_drains:
+    kind: arcgis
+    # Manawatu DC Stormwater open drains (layer 7): asset_type Open Drain 278, Road Drain 394, Swale 37.
+    # Roadside drains are what the crossing scorer needs. Licence not checked.
+    url: https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/Stormwater_Open_Drains/FeatureServer/7
+    layer: channels
+    const: {exists: y, class: drain}
+    class_map: {field: asset_type, target: form, values: {Open Drain: unlined, Road Drain: unlined, Swale: swale}}
+    id_field: [asset_id, OBJECTID]
+    enabled: false
+    scope: Manawatu DC stormwater open and roadside drains (Feilding and rural roads); licence to confirm
+
+  manawatu_dc_culverts:
+    kind: arcgis
+    # Manawatu DC stormwater lines: Culvert 121 of 6,888; diameter field present (units and fill not checked)
+    url: https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0
+    where: "asset_type = 'Culvert'"
+    layer: crossings
+    const: {type: culvert}
+    id_field: [asset_id, OBJECTID]
+    enabled: false
+    scope: Manawatu DC stormwater culverts; licence to confirm
+
+  marlborough_drainage_channels:
+    kind: arcgis
+    # Marlborough DC MEP overlay "Drainage Channel Network" (ZonesMEPDecisionOverlays/28): 254 lines on the Wairau
+    # Plain, attribute Label only (Dr A-Z series, Fultons Creek, Spring Creek, ...). Licence not verified.
+    url: https://gis.marlborough.govt.nz/server/rest/services/DataPublic/ZonesMEPDecisionOverlays/MapServer/28
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [OBJECTID]
+    enabled: false
+    scope: council drainage channel network scheduled in the MEP (Wairau Plain); includes modified creeks; private absent
+
+  marlborough_fish_passage_culverts:
+    kind: arcgis
+    # NIWA fish passage inventory on MDC's server (Environment/84), region-wide points: Culvert 512, Ford with culvert 8,
+    # Flap gate with culver(t) 1; also Bridge 699, Ford without culvert 87, Unknown 1,466. CulvertCharWidth/Height/Length
+    # in metres, NumberOfCulvertBarrels, AssetOwner (fill not checked). All owners incl. private and farm crossings.
+    url: https://gis.marlborough.govt.nz/server/rest/services/DataPublic/Environment/MapServer/84
+    where: "StructureType IN ('Culvert', 'Ford with culvert', 'Flap gate with culver')"
+    layer: crossings
+    const: {type: culvert}
+    scale: {width_m: [CulvertCharWidth, 1.0], height_m: [CulvertCharHeight, 1.0], length_m: [CulvertCharLength, 1.0]}
+    id_field: [AssetIDNumber, OBJECTID]
+    enabled: false
+    scope: >-
+      fish-passage survey of instream structures (all owners, on mapped streams): positions surveyed, not a full
+      register; bridges (699) could feed the bridge class
+
+  whakatane_ramm_culverts:
+    kind: arcgis
+    # Whakatane DC road drainage (RAMM) points: Culvert 2,771, Side Culvert 1,536 (under accesses along roadside
+    # drains); Diameter_Height (mm) > 0 on 4,816. No licence stated (confirm with WDC). Points are on the road
+    # centreline offset (Offset/Side fields), so positions may sit a few metres from the outlet.
+    url: https://services7.arcgis.com/j6iZKHlCHnF3lABj/arcgis/rest/services/WDC_Drainage_Assets_RAMM/FeatureServer/0
+    where: "Drainage_Type IN ('Culvert', 'Side Culvert')"
+    layer: crossings
+    const: {type: culvert}
+    scale: {diameter_m: [Diameter_Height, 0.001]}
+    id_field: [Drainage_ID, OBJECTID]
+    enabled: false
+    scope: Whakatane district road culverts and side (driveway) culverts from RAMM, incl. the Rangitaiki Plains; licence to confirm
+
+  hastings_culverts:
+    kind: arcgis
+    # Hastings DC Stormwater Mains (OpenData_StormwaterMains/21), CC BY 4.0: IPS_UnitType CULV 341, FLUME 12 of
+    # 14,018 lines. IPS_Diameter units assumed mm (check). Heretaunga Plains drains are HBRC's (already in use).
+    url: https://services1.arcgis.com/8L3DQUzjrkgEmDpQ/arcgis/rest/services/OpenData_StormwaterMains/FeatureServer/21
+    where: "IPS_UnitType = 'CULV'"
+    layer: crossings
+    const: {type: culvert}
+    scale: {diameter_m: [IPS_Diameter, 0.001]}
+    id_field: [IPS_Compkey, OBJECTID]
+    enabled: false
+    scope: Hastings DC stormwater culverts (mostly urban and peri-urban); complements HBRC's 176 culverts
+
+  waikato_oneview_sw_channels:
+    kind: arcgis
+    # Waikato OneView stormwater lines (Hauraki, Waipa, Hamilton, South Waikato, Otorohanga), CC BY 4.0, 81,866 lines;
+    # open-channel subset ~1,220: Hauraki Open Drain 462, Hamilton Stormwater Channel 358, Waipa Rural Drain 135,
+    # South Waikato Watercourse 113, Otorohanga Open Drain 58, others small. Mostly urban/peri-urban.
+    url: https://services3.arcgis.com/Oou6z70yKcGvIDxP/arcgis/rest/services/StormwaterPipesWaikato/FeatureServer/0
+    where: "AssetType IN ('Open Drain', 'Rural Drain', 'Open Drain (Urban)', 'Stormwater Channel', 'Channel', 'Lined Open Channel', 'Watercourse', 'Stream Channel')"
+    layer: channels
+    const: {exists: y}
+    class_map: {field: AssetType, values: {Open Drain: drain, Rural Drain: drain, Open Drain (Urban): drain, Stormwater Channel: drain, Channel: drain, Lined Open Channel: drain, Watercourse: stream, Stream Channel: stream}}
+    id_field: [AssetID, OBJECTID]
+    enabled: false
+    scope: council stormwater open channels in five Waikato TLAs; private drains absent
+
+  fndc_sw_channels:
+    kind: arcgis
+    # Far North DC 3Waters Stormwater_Lines, CC BY 4.0, 11,330 lines: Unlined Channel 690, Lined Channel 143,
+    # Open Drain 9 (Swale Drain 104 left out). 'Culvert' (5,659) is FNDC's general pipe term, so NOT used as crossings.
+    url: https://services5.arcgis.com/H4FlrMy6xTBd6Ywx/arcgis/rest/services/3Waters_Stormwater_Public/FeatureServer/1
+    where: "asset_type IN ('Unlined Channel', 'Lined Channel', 'Open Drain')"
+    layer: channels
+    const: {exists: y, class: drain}
+    class_map: {field: asset_type, target: form, values: {Unlined Channel: unlined, Lined Channel: lined, Open Drain: unlined}}
+    id_field: [asset_id, OBJECTID]
+    enabled: false
+    scope: FNDC stormwater open channels in town schemes (Kaitaia, Awanui, Kerikeri...); rural drainage-district drains not public
+
+  kaipara_drainage_district_drains:
+    kind: arcgis
+    # Kaipara DC Drainage (External) / Drains (layer 4), 247 lines around Dargaville-Ruawai (Raupo and ~32 other
+    # districts). 129 have Size 'W x D' and Width (max 24; units m or ft unknown, so not mapped). Licence is a
+    # disclaimer only (no CC): confirm with KDC.
+    url: https://services9.arcgis.com/DUYVFPAJ5YcaFDs0/arcgis/rest/services/KDC_Drainage_(External)/FeatureServer/4
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [Drain_no, OBJECTID]
+    enabled: false
+    scope: Kaipara land-drainage district drains and canals (Northern Wairoa flats); licence to confirm
+
+  hurunui_sw_channels:
+    kind: arcgis
+    # Hurunui DC Three_Waters_view Stormwater Lines (5): Swale 261, Open Drain 184, Creek 41, Rateable Drain 40,
+    # Channel 28, Open Channel 14 (of 2,853). Not on HDC's open-data hub: licence unknown.
+    url: https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5
+    where: "Asset_Type IN ('Open Drain', 'Rateable Drain', 'Open Channel', 'Channel', 'Creek', 'Swale')"
+    layer: channels
+    const: {exists: y}
+    class_map: {field: Asset_Type, values: {Open Drain: drain, Rateable Drain: drain, Open Channel: drain, Channel: drain, Swale: drain, Creek: stream}}
+    id_field: [Asset_ID, OBJECTID]
+    enabled: false
+    scope: Hurunui township stormwater channels incl. Amberley rateable drains; swales need form swale if kept; licence unknown
+
+  hurunui_culverts:
+    kind: arcgis
+    # same layer: Culvert 527 (Diameter mm > 0 on 433; -99 = null, dropped by the plausibility range)
+    url: https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5
+    where: "Asset_Type = 'Culvert'"
+    layer: crossings
+    const: {type: culvert}
+    scale: {diameter_m: [Diameter, 0.001]}
+    id_field: [Asset_ID, OBJECTID]
+    enabled: false
+    scope: Hurunui stormwater culverts; licence unknown
+
+  ashburton_stockwater:
+    kind: arcgis
+    # Ashburton DC Stockwater (Stockwater_Public/18): 654 lines, Race_type Race 512, Main 139, Discharge 3; no ids or
+    # status. The network is being closed: some races may be gone on the ground. Licence not stated.
+    url: https://gis.adc.govt.nz/server/rest/services/LocalMapsPublic/Stockwater_Public/MapServer/18
+    layer: channels
+    const: {exists: y, class: race}
+    id_field: [OBJECTID]
+    enabled: false
+    scope: Ashburton stock-water races (race class); no status, closures under way

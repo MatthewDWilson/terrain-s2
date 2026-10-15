@@ -1,0 +1,41 @@
+# OK in 4 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source whakatane_ramm_culverts --fields --values
+
+using https://services7.arcgis.com/j6iZKHlCHnF3lABj/arcgis/rest/services/WDC_Drainage_Assets_RAMM/FeatureServer/0
+layer: RAMM_Drainage_Assets_WDC | esriGeometryPoint | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1916529, 5714922, 1963851, 5804616 (wkid 2193)
+definition expression: None
+fields used by sources.yml: Diameter_Height, Drainage_ID, OBJECTID, Drainage_Type  (all present)
+  field OBJECTID (OID) OBJECTID
+  field Drainage_ID (Integer) Drainage_ID
+  field Road (String) Road
+  field Drainage_Type (String) Drainage_Type
+  field Age (SmallInteger) Age
+  field Location (Integer) Location
+  field Offset (Double) Offset
+  field Side (String) Side
+  field Material (String) Material
+  field Culvert_Type (String) Culvert_Type
+  field Width (SmallInteger) Width
+  field Waterway (String) Waterway
+  field Diameter_Height (SmallInteger) Diameter_Height
+site window (EPSG:2193): 1916529, 5714922, 1963851, 5804616
+count where "Drainage_Type IN ('Culvert', 'Side Culvert')": 4307
+    https://services7.arcgis.com/j6iZKHlCHnF3lABj/arcgis/rest/services/WDC_Drainage_Assets_RAMM/FeatureServer/0/query?where=Drainage_Type+IN+%28%27Culvert%27%2C+%27Side+Culvert%27%29&geometry=1916529.4374000002%2C5714921.6715%2C1963851.1195%2C5804616.4485&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 7215
+    https://services7.arcgis.com/j6iZKHlCHnF3lABj/arcgis/rest/services/WDC_Drainage_Assets_RAMM/FeatureServer/0/query?where=1%3D1&geometry=1916529.4374000002%2C5714921.6715%2C1963851.1195%2C5804616.4485&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 7215 feature(s) in the window (where 1=1):
+  Drainage_Type: 'Culvert' 2771; 'Single Catchpit' 1988; 'Side Culvert' 1536; 'Flume down batter' 344; 'Double Catchpit' 172; 'Drop Chamber' 107; 'Manhole' 94; 'Side Entry Catchpit' 57; 'Subsoil drain' 54; 'Scour Protection' 51; 'Cesspit' 9; 'Sump' 6; 'North Shore City Ce' 5; 'Soak pit' 5; 'Swale' 5; 'Spillway' 4; 'Cesspit Lead' 4; 'Scruffy  Dome' 3
+  Side: 'Across' 2667; 'Left' 2383; 'Right' 2122; 'Centre' 34; None 5; 'Both' 3; 'End' 1
+  Material: 'Concrete' 3813; None 2280; 'H Density Polyethyl' 295; 'Armco' 264; 'Poly Vinyl Chloride' 198; 'Helcor (Steel Spiral)' 137; 'Steel' 94; 'Timber Construction' 57; 'Stone' 40; 'Aluminium' 25; 'Earthenware' 4; 'Grass' 4; 'Asbestos Cement' 2; 'Natural Ground' 2
+  Culvert_Type: 'Circular' 4459; None 2671; 'Box shaped' 40; 'Twin circular' 34; 'Other' 4; 'Arched' 3; 'Twin boxes' 2; 'Triple Circul' 2
+  Waterway: None 7210; "'" 2; 'OFFSET CULVERT' 2; 'A' 1
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  Drainage_ID: 2000, 187, 30301.0, 34310
+  Age: 1997, 0, 24, 101
+  Location: 2000, 0, 1458.0, 44702
+  Offset: 1280, 0, 5.65, 123.5
+  Width: 16, 300, 2800.0, 3500
+  Diameter_Height: 1326, 100, 300.0, 2500
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1,"geometry":{"type":"Point","coordinates":[176.877278978067,-37.9292905590476]},"properties":{"OBJECTID":1,"Drainage_ID":182,"Road":"THORNTON ROAD","Drainage_Type":"Culvert","Age":29,"Location":6156,"Offset":null,"Side":"Across","Material":"Concrete","Culvert_Type":"Circular","Width":null,"Waterway":null,"Diameter_Height":450}},{"type":"Feature","id":2,"geometry":{"type":"Point","coordinates":[176.888358756428,-37.932378675963]},"pr
+     https://services7.arcgis.com/j6iZKHlCHnF3lABj/arcgis/rest/services/WDC_Drainage_Assets_RAMM/FeatureServer/0/query?where=Drainage_Type+IN+%28%27Culvert%27%2C+%27Side+Culvert%27%29&geometry=1916529.4374000002%2C5714921.6715%2C1963851.1195%2C5804616.4485&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

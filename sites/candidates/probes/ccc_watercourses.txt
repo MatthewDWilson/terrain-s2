@@ -1,0 +1,42 @@
+# OK in 4 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source ccc_watercourses --fields --values
+
+using https://gis.ccc.govt.nz/server/rest/services/OpenData/WaterCourse/MapServer/29
+layer: WcWaterCourse | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1548000, 5139000, 1611000, 5196000 (wkid 2193)
+definition expression: None
+fields used by sources.yml: TopWidth, BottomWidth, WcWaterCourseID, OBJECTID  (all present)
+  field WcWaterCourseID (OID) WcWaterCourseID
+  field Name (String) Name
+  field RiverSystem (String) RiverSystem
+  field UpStreamFeatureID (Integer) UpStreamFeatureID
+  field UpStreamFeatureType (String) UpStreamFeatureType
+  field DownStreamFeatureID (Integer) DownStreamFeatureID
+  field DownStreamFeatureType (String) DownStreamFeatureType
+  field Depth (Integer) Depth
+  field TopWidth (Integer) TopWidth
+  field BottomWidth (Integer) BottomWidth
+  field Diameter (Integer) Diameter
+  field CrossSectionArea (Double) CrossSectionArea
+  field Grade (Double) Grade
+  field CreateDate (Date) CreateDate
+  field LastEditDate (Date) LastEditDate
+  field SHAPE (Geometry) SHAPE
+  field SHAPE.STLength() (Double) SHAPE.STLength()
+site window (EPSG:2193): 1548000, 5139000, 1611000, 5196000
+count where '1=1': 9550
+    https://gis.ccc.govt.nz/server/rest/services/OpenData/WaterCourse/MapServer/29/query?where=1%3D1&geometry=1548000%2C5139000%2C1611000%2C5196000&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 9550 feature(s) in the window (where 1=1):
+  RiverSystem: None 5768; 'Avon' 1567; 'Heathcote' 1212; 'Styx' 690; 'Halswell' 130; 'Waimakariri' 110; 'Outfall Drain' 73
+  UpStreamFeatureType: 'WcHeadwater' 2819; 'WcConfluence' 2640; 'WcAttributeChange' 2031; 'WcRestriction' 1438; 'WcDiffluence' 385; 'WcSpring' 84; 'WcClassificationChange' 47; 'WcInlet' 42; 'WcOutlet' 32; 'WcChangeOfGrade' 24; 'WcPumpStation' 8
+  DownStreamFeatureType: 'WcConfluence' 5279; 'WcAttributeChange' 2016; 'WcRestriction' 1467; 'WcMouth' 372; 'WcDiffluence' 209; 'WcOutlet' 61; 'WcClassificationChange' 49; 'WcSpring' 46; 'WcInlet' 37; 'WcPumpStation' 6; 'WcHeadwater' 5; 'WcChangeOfGrade' 3
+numeric fields with values (non-null count, min, median, max); 2 others all null:
+  UpStreamFeatureID: 1976, 1, 599.5, 2978
+  DownStreamFeatureID: 1977, 1, 623, 2797
+  Depth: 568, 50, 800.0, 3500
+  TopWidth: 560, 110, 1100.0, 7500
+  BottomWidth: 471, 200, 1100, 7000
+  Diameter: 1, 1500, 1500, 1500
+  SHAPE.STLength(): 2000, 0.341904972177943, 57.2228837554365, 2495.8633569581943
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":12,"geometry":{"type":"LineString","coordinates":[[172.58497210694,-43.545730172292146],[172.58493746448886,-43.545739797199893],[172.58488629672823,-43.545745037374047],[172.58400540449492,-43.546053663363381],[172.58384293347208,-43.54607793904416],[172.58364263753674,-43.546076128408124],[172.58339421140229,-43.546117636014998]]},"properties":{"WcWaterCourseID":12,"Name":"Curlett Stream Branch","RiverSystem":"Heathcote","UpStreamFeatureID":2,"UpStreamFeatureType":"WcHeadwater","DownStreamFeatureID":2,"DownStreamFeatureType":"WcD
+     https://gis.ccc.govt.nz/server/rest/services/OpenData/WaterCourse/MapServer/29/query?where=1%3D1&geometry=1548000%2C5139000%2C1611000%2C5196000&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

@@ -1,0 +1,109 @@
+# OK in 3 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source manawatu_dc_open_drains --fields --values
+
+using https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/Stormwater_Open_Drains/FeatureServer/7
+layer: Stormwater open drains | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1789247, 5520566, 1838728, 5562615 (wkid 2193)
+definition expression: None
+fields used by sources.yml: asset_type, asset_id, OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field asset_id (String) asset_id
+  field mi_prinx (Integer) mi_prinx
+  field asset_type (String) asset_type
+  field material (String) material
+  field diameter (Integer) diameter
+  field height (Integer) height
+  field community (String) community
+  field quantity_length (Double) quantity_length
+  field install_date (Date) install_date
+  field condition_id (Integer) condition_id
+  field performance_id (Integer) performance_id
+  field accuracy_id (Integer) accuracy_id
+  field condition (String) condition
+  field accuracy (String) accuracy
+  field performance (String) performance
+  field us_invert (Double) us_invert
+  field ds_invert (Double) ds_invert
+  field purchase_cost (Double) purchase_cost
+  field contract_number (String) contract_number
+  field base_life_optional (Double) base_life_optional
+  field criticality_id (Integer) criticality_id
+  field unit_rate_optional (Double) unit_rate_optional
+  field project_id (String) project_id
+  field asset_owner (String) asset_owner
+  field notes (String) notes
+  field source (String) source
+  field address (String) address
+  field unit_rate_factor (Double) unit_rate_factor
+  field disposal_date (Date) disposal_date
+  field status_id (Integer) status_id
+  field found_date (Date) found_date
+  field status (String) status
+  field short_id (String) short_id
+  field edited_date (Date) edited_date
+  field loginusername (String) loginusername
+  field asset_class_id (Integer) asset_class_id
+  field asset_class (String) asset_class
+  field material_id (Integer) material_id
+  field expr1 (Integer) expr1
+  field diameter_id (Integer) diameter_id
+  field expr2 (Integer) expr2
+  field category (String) category
+  field asset_category_id (Integer) asset_category_id
+  field residual_value (Double) residual_value
+  field interpolation (String) interpolation
+  field us_node (String) us_node
+  field ds_node (String) ds_node
+  field method (String) method
+  field insurer (String) insurer
+  field Shape__Length (Double) Shape__Length
+site window (EPSG:2193): 1789247, 5520566, 1838728, 5562615
+count where '1=1': 709
+    https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/Stormwater_Open_Drains/FeatureServer/7/query?where=1%3D1&geometry=1789247.08%2C5520565.78%2C1838728.1500000004%2C5562614.7&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 709 feature(s) in the window (where 1=1):
+  asset_type: 'Road Drain' 394; 'Open Drain' 278; 'Swale' 37
+  material: 'Open Channel - Class 1' 437; 'Open Channel - Class 2' 118; 'Natural Open Drain' 75; 'Open Channel - Class 3' 41; 'Swale' 31; 'Open Channel - Class 4' 6; 'Trapezoidal Unlined' 1
+  community: 'Halcombe ' 154; 'Sanson ' 128; 'Oroua Downs' 126; 'Rongotea' 110; 'Feilding ' 65; 'Pohangina' 29; 'Tangimoana ' 25; 'Cheltenham' 22; 'Kimbolton' 18; 'Bainesse' 14; 'Makowhai' 10; 'Maire' 8
+  condition: 'Excellent' 708; 'Good' 1
+  accuracy: 'Excellent' 590; 'Very Poor' 119
+  performance: 'Excellent' 709
+  contract_number: '' 675; 'MDC1122-1' 25; 'MDC1092-5' 5; 'C4-1135' 1; 'CCR40069' 1; 'MC1070' 1; 'WW2038-013' 1
+  project_id: '' 676; 'MDC1122' 25; 'MDC1092 MDC1092-5' 5; 'ST1009-006 C4-1135' 1; 'WS2002-002 WR1099' 1; 'ST1009-012 MC1070' 1
+  asset_owner: 'Road Asset' 401; 'Utilities' 179; 'Private' 121; 'Wastewater Plant' 3; 'Solid Waste' 3; 'Parks & Reserves' 2
+  notes: '' 705; 'Piakatutu Stream' 1; 'constructed in 2013' 1; 'Changed from Private to utilities as per email from Dave Flintoff 05/02/2021' 1; 'Has had previous MDC paid maintenance - December 2018 Higgins Contract C1505 dispatch 32185' 1
+  source: '' 619; 'Aerial Photos' 38; 'Loaders asbuilt' 25; 'Central Districts Surveys' 11; 'MDC asbuilt' 5; 'Central District Surveys Ltd' 4; 'ST1009-006 C4-1135' 1; 'As advised by Ian Gilchrist 4/12/2019' 1; 'Aerial Photo' 1; 'MWH Survey 2007' 1; 'MDC Retic' 1; 'Central District Surveys' 1; 'MC1070' 1
+  status: 'Existing' 678; 'New' 18; 'Maintenance Capital' 13
+  loginusername: 'hharding' 707; 'beryl' 1; 'mgunn' 1
+  asset_class: 'Open_Drains' 709
+  category: 'None' 663; '_None' 46
+  interpolation: '' 709
+  us_node: '' 709
+  ds_node: '' 709
+  method: 'As Built' 481; 'Digitised' 209; 'GPS Survey' 16; 'Field Survey Unlicensed' 1; 'Contractor Feedback' 1; 'Imported' 1
+  insurer: 'None' 709
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  mi_prinx: 709, 60537, 66588, 74596
+  diameter: 709, 0, 1, 2000
+  height: 709, 0, 0, 0
+  quantity_length: 709, 1.97, 53.02, 5494.23
+  condition_id: 709, 1, 1, 2
+  performance_id: 709, 1, 1, 1
+  accuracy_id: 709, 1, 1, 5
+  us_invert: 709, -999, 0, 114.26
+  ds_invert: 709, -999, 0, 113.35
+  purchase_cost: 709, 0, 0, 66636.6
+  base_life_optional: 709, 0, 0, 210
+  criticality_id: 709, 0, 0, 1
+  unit_rate_optional: 709, 0, 0, 0
+  unit_rate_factor: 709, 0, 1, 1
+  status_id: 709, 1, 1, 28
+  asset_class_id: 709, 60, 60, 60
+  material_id: 709, 1, 1, 7
+  expr1: 709, 1, 1, 7
+  diameter_id: 709, 1, 1, 3
+  expr2: 709, 1, 1, 3
+  asset_category_id: 709, 1, 1, 3
+  residual_value: 709, 0, 0, 0
+  Shape__Length: 709, 1.9654007224956922, 53.02520844925148, 5494.220191395972
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[175.324193566049,-40.3613739658818],[175.321121145021,-40.3608495480739],[175.320025978402,-40.3606429998515],[175.31961267991,-40.3605099580889],[175.319315948618,-40.3604177245563],[175.318182368472,-40.3599352025437],[175.317710504357,-40.3597732415249],[175.31592656673,-40.3594656095865],[175.314663242536,-40.3592268873282],[175.31443066165,-40.359150742097],[175.314032638985,-40.
+     https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/Stormwater_Open_Drains/FeatureServer/7/query?where=1%3D1&geometry=1789247.08%2C5520565.78%2C1838728.1500000004%2C5562614.7&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

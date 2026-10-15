@@ -1,0 +1,44 @@
+# OK in 8 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source fndc_sw_channels --fields --values
+
+using https://services5.arcgis.com/H4FlrMy6xTBd6Ywx/arcgis/rest/services/3Waters_Stormwater_Public/FeatureServer/1
+layer: Stormwater_Lines | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1610591, 6067223, 1712768, 6147920 (wkid 2193)
+definition expression: None
+fields used by sources.yml: asset_type, asset_id, OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field globalid (GlobalID) globalid
+  field asset_id (String) Asset Id
+  field asset_class (String) Asset Class
+  field asset_group (String) Asset Group
+  field asset_type (String) Asset Type
+  field asset_sub_type (String) Asset Sub-type
+  field asset_owner (String) Asset Owner
+  field service_status (String) Service Status
+  field scheme (String) Scheme
+  field Shape__Length (Double) Shape__Length
+  field material (String) Material
+  field quantity_length (Double) Quantity/Length
+  field diameter (Double) Diameter
+  field us_invert (Double) Upstream Invert
+  field ds_invert (Double) Downstream Invert
+site window (EPSG:2193): 1610591, 6067223, 1712768, 6147920
+count where "asset_type IN ('Unlined Channel', 'Lined Channel', 'Open Drain')": 842
+    https://services5.arcgis.com/H4FlrMy6xTBd6Ywx/arcgis/rest/services/3Waters_Stormwater_Public/FeatureServer/1/query?where=asset_type+IN+%28%27Unlined+Channel%27%2C+%27Lined+Channel%27%2C+%27Open+Drain%27%29&geometry=1610590.8964%2C6067223.4552%2C1712768.2296000002%2C6147920.2796&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 11328
+    https://services5.arcgis.com/H4FlrMy6xTBd6Ywx/arcgis/rest/services/3Waters_Stormwater_Public/FeatureServer/1/query?where=1%3D1&geometry=1610590.8964%2C6067223.4552%2C1712768.2296000002%2C6147920.2796&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 11328 feature(s) in the window (where 1=1):
+  asset_class: 'sw_line' 11215; 'Parks_and_Reserves' 57; 'Carparks' 25; 'Parks & Reserves' 13; None 12; 'Maritime' 5; 'sw_lines' 1
+  asset_group: None 11224; 'Stormwater' 90; 'Box Culvert' 12; 'Drainage' 1; 'Pump Station' 1
+  asset_type: 'Culvert' 5661; 'Catchpit Lead' 3329; 'Service' 1022; 'Unlined Channel' 690; 'Overland Flowpath' 288; 'Lined Channel' 143; 'Swale Drain' 104; 'Dish Drain' 18; 'Kerb & Channel' 18; 'Box Culvert' 16; 'Drain Coil' 15; 'Open Drain' 9; 'Miscellaneous' 4; 'Culvert Sock' 3; 'Bund' 3; 'Wall' 2; 'Pipe' 2; 'Rising Main' 1
+  asset_sub_type: 'Culvert' 5675; 'Catchpit Lead' 3327; 'Service' 1022; 'Unlined Channel' 690; 'Overland Flow Path' 288; 'Lined Channel' 143; 'Swale Drain' 104; 'Dish Drain' 18; 'Kerb & Channel' 17; 'Drain Coil' 15; 'Open Drain' 10; None 4; 'Sub-Soil Drain' 4; 'Culvert Sock' 3; 'Bund' 3; 'Retaining Wall' 2; 'Perforated Pipe' 2; 'Rising Main' 1
+  asset_owner: 'FNDC' 8838; 'Private' 1797; 'NZTA' 684; 'NRC' 6; 'FNHL' 2; 'TBC' 1
+  service_status: 'In service' 9541; 'Private' 1708; 'Abandoned' 75; 'Disposed' 4
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  Shape__Length: 2000, 0.10515208062870275, 14.998852917456524, 1119.6431552546644
+  quantity_length: 1962, 0.11, 15.02, 811.67
+  diameter: 1933, 3, 300, 3000
+  us_invert: 1742, 0, 0.0, 248.91
+  ds_invert: 1744, 0, 0.0, 247.96
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":73,"geometry":{"type":"LineString","coordinates":[[173.257484518803,-35.0918080348098],[173.256990837405,-35.0917925615757]]},"properties":{"OBJECTID":73,"globalid":"2dfed85f-7ace-4061-ae1c-98419219bd1c","asset_id":"SWLN100084","asset_class":"sw_line","asset_group":null,"asset_type":"Unlined Channel","asset_sub_type":"Unlined Channel","asset_owner":"FNDC","service_status":"In service","scheme":"Kaitaia","Shape__Length":45.03188447709
+     https://services5.arcgis.com/H4FlrMy6xTBd6Ywx/arcgis/rest/services/3Waters_Stormwater_Public/FeatureServer/1/query?where=asset_type+IN+%28%27Unlined+Channel%27%2C+%27Lined+Channel%27%2C+%27Open+Drain%27%29&geometry=1610590.8964%2C6067223.4552%2C1712768.2296000002%2C6147920.2796&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

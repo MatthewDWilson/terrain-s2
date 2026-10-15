@@ -1,0 +1,54 @@
+# OK in 1 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source ecan_bylaw_drains_2019 --fields --values
+
+using https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/3
+layer: Flood Protection and Drainage Bylaw 2013 - Amended 2019 - Drains and watercourses | esriGeometryPolyline | maxRecordCount 1000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1366084, 5038991, 1657543, 5315191 (wkid 2193)
+definition expression: None
+fields used by sources.yml: TYPE, ASSET_NO, OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field ASSET_NO (String) ASSET_NO
+  field NAME (String) NAME
+  field TYPE (String) TYPE
+  field PLAN_ (String) PLAN
+  field DIGITISED_BY (String) DIGITISED_BY
+  field VALIDATED_BY (String) VALIDATED_BY
+  field GIVEN_LENGTH (Double) GIVEN_LENGTH
+  field LENGTH_M (Double) LENGTH_M
+  field SOURCECODE (String) SOURCECODE
+  field QARCODE (SmallInteger) QARCODE
+  field CREATEDBY (String) CREATEDBY
+  field CREATEDDATE (Date) CREATEDDATE
+  field MODIFIEDBY (String) MODIFIEDBY
+  field MODIFIEDDATE (Date) MODIFIEDDATE
+  field SHAPE (Geometry) SHAPE
+  field MACHINE_ACCESS (String) MACHINE_ACCESS
+  field COMMENTS (String) COMMENTS
+  field SCHEME (String) SCHEME
+  field CLEANING (String) CLEANING
+  field RANGI_ASSETTUID (String) RANGI_ASSETTUID
+  field RANGI_ASSETNO (String) RANGI_ASSETNO
+  field GlobalID (GlobalID) GlobalID
+  field CATEGORY (String) Category
+  field SHAPE_Length (Double) SHAPE_Length
+site window (EPSG:2193): 1366084, 5038991, 1657543, 5315191
+count where '1=1': 560
+    https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/3/query?where=1%3D1&geometry=1366084.1272%2C5038990.973%2C1657542.5821000002%2C5315191.0562&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 560 feature(s) in the window (where 1=1):
+  TYPE: 'Drain' 436; 'Modified waterway' 73; 'Natural waterway' 47; 'Grassed waterway' 4
+  PLAN_: ' ' 336; 'Ashburton-Hinds' 158; None 44; 'Topo' 16; 'Ashburton' 4; 'Ashburton Hinds' 1; 'Ashbuton' 1
+  DIGITISED_BY: 'M Surman' 296; 'Meredith Whitmore' 154; 'M Whitmore' 94; 'Matthew Surman' 6; None 6; 'M Chivers' 4
+  VALIDATED_BY: ' ' 348; 'B Scarlett' 73; None 61; 'B McIndoe' 42; 'G Scholes' 25; 'M Chivers' 5; 'M Hyett' 2; '<Null>' 2; 'B McIdoe' 1; 'G Scoles' 1
+  SOURCECODE: 'MANCAP' 560
+  CREATEDBY: 'MatthewS' 505; 'MATTHEWS' 31; 'matthews' 18; 'SUYOUNGK' 6
+  MODIFIEDBY: 'MATTHEWS' 283; 'SUYOUNGK' 247; 'SDE' 30
+  MACHINE_ACCESS: 'Both Sides' 355; 'True Right' 105; 'True Left' 100
+  CLEANING: None 384; 'Mechanical' 69; 'Mechanical & Spray' 31; 'Mechanical & Spray (Feb-Mar)' 30; 'Spray (Feb-Mar)' 21; 'Spray' 12; 'Mechanical & Spray (Feb-Mar) & Mulch' 5; 'Mechanical & Mulch' 3; 'Not Specified' 2; 'Spray (Feb-Mar) & Mulch' 1; 'Spray & Mulch' 1; 'Mulch' 1
+  CATEGORY: 'B' 374; 'C' 144; 'A' 42
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  GIVEN_LENGTH: 499, 0, 724, 16156.53
+  LENGTH_M: 560, 18.99306301, 1002.399263185, 3339652.17418988
+  QARCODE: 560, 2, 2.0, 3
+  SHAPE_Length: 560, 18.993063014284342, 1007.2906632595408, 3328160.3117278875
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":1,"geometry":{"type":"MultiLineString","coordinates":[[[171.61238558347986,-43.818698459477787],[171.61309425124682,-43.818407368361591],[171.61416261140141,-43.820268798396533],[171.61459000034654,-43.821010721654496],[171.6146675159855,-43.821507137571253],[171.61477505451552,-43.822245222253315]],[[171.61474734118985,-43.822096887417956],[171.61481012350154,-43.822509985474412],[171.61485610611584,-43.8225872434259],[171.61492487843051,-43.822642564634265],[171.61526158939773,-43.822733673361746],[171.61615584116942,-43.82288274
+     https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/3/query?where=1%3D1&geometry=1366084.1272%2C5038990.973%2C1657542.5821000002%2C5315191.0562&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

@@ -1,0 +1,98 @@
+# OK in 50 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source ccc_culverts --fields --values
+
+using https://gis.ccc.govt.nz/server/rest/services/OpenData/StormWater/MapServer/1
+layer: SwPipe | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1548000, 5139000, 1611000, 5196000 (wkid 2193)
+definition expression: None
+fields used by sources.yml: NominalDiameter, NominalWidth, NominalHeight, SAPInternalReference, OBJECTID, Type  (all present)
+  field SwPipeID (OID) SwPipeID
+  field Shape (Geometry) Shape
+  field Type (String) Type
+  field ServiceStatus (String) ServiceStatus
+  field Ownership (String) Ownership
+  field Responsibility (String) Responsibility
+  field Maintenance (String) Maintenance
+  field LocationCertainty (String) LocationCertainty
+  field InstallationCompany (String) InstallationCompany
+  field Manufacturer (String) Manufacturer
+  field NominalDiameter (Integer) NominalDiameter
+  field DiameterDescription (String) DiameterDescription
+  field Construction (String) Construction
+  field ConstructionDescription (String) ConstructionDescription
+  field PressureClass (String) PressureClass
+  field StiffnessClass (String) StiffnessClass
+  field LoadClass (String) LoadClass
+  field SwPipeShape (String) SwPipeShape
+  field InstallationMethod (String) InstallationMethod
+  field UpstreamFeature (String) UpstreamFeature
+  field DownstreamFeature (String) DownstreamFeature
+  field Treatment (String) Treatment
+  field TreatmentConstruction (String) TreatmentConstruction
+  field TreatmentInstallationCompany (String) TreatmentInstallationCompany
+  field SurveyDate (Date) SurveyDate
+  field CommissionDate (Date) CommissionDate
+  field DecommissionDate (Date) DecommissionDate
+  field InsideDiameter (Integer) InsideDiameter
+  field NominalHeight (Integer) NominalHeight
+  field NominalWidth (Integer) NominalWidth
+  field UpstreamInvert (Single) UpstreamInvert
+  field DownstreamInvert (Single) DownstreamInvert
+  field Depth (Single) Depth
+  field Grade (Double) Grade
+  field UpstreamFeatureID (Integer) UpstreamFeatureID
+  field DownstreamFeatureID (Integer) DownstreamFeatureID
+  field TreatmentDiameter (Integer) TreatmentDiameter
+  field TreatmentDate (Date) TreatmentDate
+  field PipeName (String) PipeName
+  field PipeLabel (String) PipeLabel
+  field drvLength (Double) drvLength
+  field Comment (String) Comment
+  field Project (String) Project
+  field ContractorExternalReference (String) ContractorExternalReference
+  field SAPInternalReference (String) SAPInternalReference
+  field CreateDate (Date) CreateDate
+  field LastEditDate (Date) LastEditDate
+  field Shape.STLength() (Double) Shape.STLength()
+site window (EPSG:2193): 1548000, 5139000, 1611000, 5196000
+count where "Type IN ('Culvert', 'Box Culvert', 'Arch Culvert')": 2137
+    https://gis.ccc.govt.nz/server/rest/services/OpenData/StormWater/MapServer/1/query?where=Type+IN+%28%27Culvert%27%2C+%27Box+Culvert%27%2C+%27Arch+Culvert%27%29&geometry=1548000%2C5139000%2C1611000%2C5196000&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where '1=1': 88783
+    https://gis.ccc.govt.nz/server/rest/services/OpenData/StormWater/MapServer/1/query?where=1%3D1&geometry=1548000%2C5139000%2C1611000%2C5196000&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 18000 feature(s) in the window (where 1=1):
+  Type: 'Gravity' 17316; 'Brick Barrel' 203; 'Culvert' 176; 'Field Tile' 105; 'Box Culvert' 82; 'Subsoil Drain' 44; 'Covered Half Pipe' 37; 'Arch Culvert' 23; 'Pressure' 13; 'Syphon' 1
+  ServiceStatus: 'In Service' 16027; 'Abandoned' 1013; 'Removed' 937; 'Out of Service' 23
+  Ownership: 'CCC' 17112; 'Private' 621; 'NZTA' 267
+  Responsibility: 'Land Drainage Operations' 11763; 'Road Asset Operations' 5322; 'Private' 625; 'NZTA' 267; 'Parks' 23
+  Maintenance: 'Land Drainage Operations' 11764; 'Road Asset Operations' 5322; 'Private' 624; 'NZTA' 267; 'Parks' 23
+  LocationCertainty: 'Survey Accurate' 9540; 'Non Verified' 7775; 'Unknown' 682; 'Survey Accurate XY and Accurate Z' 3
+  InstallationCompany: None 17771; 'Fletcher Construction Company Ltd' 88; 'Downer NZ Ltd' 43; 'Fulton Hogan Ltd' 41; 'City Care Ltd' 41; 'McConnell Dowell Constructors Ltd' 13; 'Easyflow Drainage' 1; 'Taggart Earthmoving Ltd' 1; 'Construction Contracting Ltd' 1
+  Manufacturer: None 17782; 'Insituform - Aegion Corporation' 56; 'Sekisui SPR Americas LLC' 51; 'Vinidex Pty Ltd' 34; 'Interflow' 15; 'American Pipe and Plastics Inc' 12; 'PipeWorks' 10; 'W.E. Rawson Ltd' 9; 'Sideliner' 9; 'Karl Otto Braun GmbH and Co. KG' 6; 'SEKISUI Rib Loc Australia Pty Ltd' 6; 'Humes Pipeline Systems' 4; 'Iplex Pipelines NZ Ltd' 2; 'Hynds Pipe Systems Ltd' 2; 'Trelleborg Pipe Seals' 1; 'Marley New Zealand Ltd' 1
+  Construction: 'RCRR' 11227; 'AC' 2034; 'UPVC' 1370; 'CONC' 1153; 'EW' 903; 'PVC' 688; 'BB' 254; None 183; 'VC' 84; 'CI' 28; 'CLS' 17; 'NovaFlow' 10; 'PE' 9; 'HDPE' 8; 'STEEL' 7; 'AL' 7; 'SPWAL' 7; 'ROCK' 5; 'MPVC' 4; 'ABS' 1; 'PE100' 1
+  ConstructionDescription: 'Reinforced Concrete Rubber Ringed' 11227; 'Asbestos Cement' 2034; 'Unplasticised Polyvinyl Chloride' 1370; 'Concrete or Concrete Mortar' 1153; 'Earthenware' 903; 'Polyvinyl Chloride' 688; 'Brick Barrel' 254; None 183; 'Vitrified Clay' 84; 'Cast Iron' 28; 'Concrete Lined Steel' 17; 'NovaFlow' 10; 'Polyethylene' 9; 'High Density Polyethylene' 8; 'Steel' 7; 'Alkathene' 7; 'Spirally Wound Aluminium' 7; 'Rock' 5; 'Modified Polyvinyl Chloride' 4; 'Acrylonitrile Butadiene Styrene' 1; 'Polyethylene 100' 1
+  PressureClass: 'Not Applicable' 15738; None 2249; 'B' 8; 'C' 3; 'PN12.5' 2
+  StiffnessClass: 'Not Applicable' 15749; None 2249; 'SN8' 1; 'SN16' 1
+  LoadClass: None 10588; 'Not Applicable' 7242; 'Class2' 92; 'Class3' 45; 'Class4' 31; 'Class6' 1; 'Class10' 1
+  SwPipeShape: 'Circle' 17722; None 140; 'Rectangular' 122; 'Arch' 11; 'Egg' 5
+  InstallationMethod: None 17995; 'Trenched' 5
+  UpstreamFeature: 'SwInlet' 10679; 'SwAccess' 5839; 'SwFitting' 1244; 'SwHeadwall' 177; 'SwOutlet' 28; 'SwPump' 12; None 12; 'SwValve' 8; 'SwFlowRestriction' 1
+  DownstreamFeature: 'SwAccess' 8234; 'SwInlet' 5887; 'SwFitting' 2202; 'SwOutlet' 1298; 'SwHeadwall' 265; 'SwValve' 94; 'SwPump' 11; None 9
+  Treatment: None 17764; 'CIPP' 122; 'Wound Plastic' 74; 'Plastic Sleeve' 37; 'Sliplined' 2; 'Relined' 1
+  TreatmentConstruction: None 17760; 'PVC' 108; 'CIPP-PR' 44; 'CIPP-ER' 43; 'CIPP' 26; 'CIPP-EV' 9; 'ULINER' 4; 'RIBLOC' 3; 'CI' 1; 'HDPE' 1; 'UPVC' 1
+  TreatmentInstallationCompany: None 17984; 'PipeWorks' 16
+  PipeName: None 17988; 'ex PM24' 5; '150 Concrete 1981' 4; 'Ex PM24' 3
+numeric fields with values (non-null count, min, median, max); 1 others all null:
+  InsideDiameter: 16, 100, 815.0, 900
+  NominalHeight: 338, 0, 1000.0, 2200
+  NominalWidth: 339, 100, 1300, 6000
+  UpstreamInvert: 238, -1.197, 3.7595, 79.112
+  DownstreamInvert: 250, -1.197, 3.72, 96.05
+  Depth: 303, 0.1, 1.3, 6.0
+  Grade: 195, -5619.958, 133.151, 4205.712
+  UpstreamFeatureID: 1986, 4, 14776.5, 61764
+  DownstreamFeatureID: 1991, 3, 6368, 61686
+  TreatmentDiameter: 19, 4, 660, 865
+  drvLength: 2000, 0.1, 9.8, 281.3
+  Shape.STLength(): 2000, 0.09990045044943491, 9.761977534326657, 281.3162068831995
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":145,"geometry":{"type":"LineString","coordinates":[[172.75032196424445,-43.565601535710677],[172.75032224654612,-43.565598844073648],[172.75033179303261,-43.565507866750949],[172.75034259503005,-43.565404914790491],[172.75034345094303,-43.565396756159636]]},"properties":{"SwPipeID":145,"Type":"Culvert","ServiceStatus":"In Service","Ownership":"CCC","Responsibility":"Land Drainage Operations","Maintenance":"Land Drainage Operations","LocationCertainty":"Survey Accurate","InstallationCompany":"Fulton Hogan Ltd","Manufacturer":"Insitu
+     https://gis.ccc.govt.nz/server/rest/services/OpenData/StormWater/MapServer/1/query?where=Type+IN+%28%27Culvert%27%2C+%27Box+Culvert%27%2C+%27Arch+Culvert%27%29&geometry=1548000%2C5139000%2C1611000%2C5196000&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

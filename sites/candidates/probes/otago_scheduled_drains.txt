@@ -1,0 +1,21 @@
+# OK in 3 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source otago_scheduled_drains --fields --values
+
+using https://services6.arcgis.com/ALxeDxaeNjQo1Mf0/arcgis/rest/services/Flood_Protection_Management_Bylaw_2022/FeatureServer/1
+layer: Scheduled Drains | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1346746, 4860284, 1398554, 4920743 (wkid 2193)
+definition expression: None
+fields used by sources.yml: label, OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field label (String) Label
+  field Location (String) Location
+  field Shape__Length (Double) Shape__Length
+site window (EPSG:2193): 1346746, 4860284, 1398554, 4920743
+count where '1=1': 317
+    https://services6.arcgis.com/ALxeDxaeNjQo1Mf0/arcgis/rest/services/Flood_Protection_Management_Bylaw_2022/FeatureServer/1/query?where=1%3D1&geometry=1346745.8518000022%2C4860283.9089%2C1398553.5238000015%2C4920742.7214&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 317 feature(s) in the window (where 1=1):
+  Location: 'West Taieri' 97; 'Lower Clutha' 81; 'East Taieri' 74; 'Tokomairiro' 65
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  Shape__Length: 317, 52.252102359935435, 964.3188195880705, 10852.286758001223
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[169.780893954666,-46.3599183828164],[169.781499936187,-46.3582983210714],[169.781804944731,-46.3574752987124],[169.781913934142,-46.3566722805626],[169.781849903608,-46.3553082380338],[169.781919921022,-46.3551122187799],[169.782016900445,-46.3538191882572],[169.78189089408,-46.3533431880031],[169.78165786703,-46.352597156185],[169.780843844133,-46.3513331419192],[169.776308747752,-46
+     https://services6.arcgis.com/ALxeDxaeNjQo1Mf0/arcgis/rest/services/Flood_Protection_Management_Bylaw_2022/FeatureServer/1/query?where=1%3D1&geometry=1346745.8518000022%2C4860283.9089%2C1398553.5238000015%2C4920742.7214&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

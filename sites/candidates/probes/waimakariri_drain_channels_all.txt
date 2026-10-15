@@ -1,0 +1,77 @@
+# OK in 2 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source waimakariri_drain_channels_all --fields --values
+
+using https://gisservices.waimakariri.govt.nz/arcgis/rest/services/Drainage_Areas_Water_Races/Drainage_Areas_and_Water_Races/MapServer/5
+layer: Drain Channel | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1524839, 5192212, 1577002, 5212390 (wkid 2193)
+definition expression: None
+fields used by sources.yml: topwidth, bottomwidth, assnbri, OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field Shape (Geometry) Shape
+  field assnbri (String) Asset No.
+  field drainname (String) Drain name
+  field scheme (String) Scheme
+  field type (String) Type
+  field baseflow (String) Base flow
+  field length (Double) Length
+  field topwidth (Double) Top width
+  field bottomwidth (Double) Bottom width
+  field depth (Double) Depth
+  field liningmaterial (String) Lining material
+  field liningprofile (String) Lining profile
+  field drainownership (String) Drain ownership
+  field asset_owner (String) Asset owner
+  field asset_order (SmallInteger) Asset order
+  field property_type (String) Property type
+  field asset_description (String) Asset description
+  field asset_notes (String) Asset notes
+  field scheme_type (String) Scheme type
+  field external_id (String) External ID
+  field financial_year (String) Financial year
+  field state_code (String) State code
+  field condition (String) Condition
+  field condition_date (Date) Condition date
+  field install_date (Date) Install date
+  field age (SmallInteger) Age
+  field prior_id (Integer) Prior ID
+  field in_contract_id (String) In contract ID
+  field in_dispatch_id (String) In dispatch ID
+  field in_replace_reason (String) In replace reason
+  field replace_date (Date) Replace date
+  field rep_contract_id (String) Rep contract ID
+  field rep_dispatch_id (String) rep dispatch ID
+  field rep_replace_reason (String) Rep replace reason
+  field frequencyofclean (String) Frequency of clean
+  field in_road_reserve (String) In road reserve
+  field Shape_Length (Double) Shape_Length
+site window (EPSG:2193): 1524839, 5192212, 1577002, 5212390
+count where '1=1': 637
+    https://gisservices.waimakariri.govt.nz/arcgis/rest/services/Drainage_Areas_Water_Races/Drainage_Areas_and_Water_Races/MapServer/5/query?where=1%3D1&geometry=1524839.4685058594%2C5192212.380126953%2C1577002.4765014648%2C5212390.034729004&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 637 feature(s) in the window (where 1=1):
+  scheme: 'D - Ohoka Rural' 181; 'D - Central Rural' 133; 'D - Oxford Rural East' 120; 'D - Coastal Rural' 96; 'D - Clarkville Rural' 50; 'D - Oxford Rural West' 22; 'D - Cust Rural' 11; 'D - Oxford Urban' 7; None 7; 'D - Woodend Coastal Urban' 4; 'D - Kaiapoi Urban' 3; 'D - Loburn Lea Rural' 1; 'D - Oxford Rural' 1; 'D - District Drainage' 1
+  type: 'Wet Channel' 346; 'Dry Channel' 214; 'River/Waterway' 50; None 26; 'Other' 1
+  baseflow: None 637
+  liningmaterial: None 637
+  liningprofile: None 637
+  drainownership: None 637
+  asset_owner: 'Waimakariri District Council' 634; None 3
+  property_type: None 330; 'Road Reserve' 175; 'Private' 123; 'Council - Stormwater' 9
+  scheme_type: None 637
+  external_id: None 637
+  financial_year: '2012/13' 634; None 3
+  state_code: None 637
+  condition: 'Unknown' 584; 'Excellent' 40; 'Good' 11; 'Average' 2
+  in_contract_id: None 637
+  in_dispatch_id: None 637
+  in_replace_reason: None 637
+  rep_contract_id: None 637
+  rep_dispatch_id: None 637
+  rep_replace_reason: None 630; 'Removed' 7
+  frequencyofclean: None 637
+  in_road_reserve: None 637
+numeric fields with values (non-null count, min, median, max); 5 others all null:
+  length: 636, 11, 554.5, 3077
+  age: 1, 1, 1, 1
+  Shape_Length: 637, 11.133218691760677, 480.56721418450513, 3076.954329792618
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[172.19918532470163,-43.275548349658393],[172.19928336691405,-43.275583572163939],[172.19935310553259,-43.275608958186346],[172.19947889878074,-43.275650175767709],[172.19957573852614,-43.275783761460481],[172.19963645306416,-43.275824616877003],[172.19972952214275,-43.27583220123141],[172.1998393999244,-43.275920764780672],[172.19990427805033,-43.275972995064627],[172.19995825460776,-43.276039016498018],[172.2000273874948,-43.276086413634879],[172.20014477158759,-43.276166475454765]
+     https://gisservices.waimakariri.govt.nz/arcgis/rest/services/Drainage_Areas_Water_Races/Drainage_Areas_and_Water_Races/MapServer/5/query?where=1%3D1&geometry=1524839.4685058594%2C5192212.380126953%2C1577002.4765014648%2C5212390.034729004&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

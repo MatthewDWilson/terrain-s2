@@ -1,0 +1,23 @@
+# OK in 1 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --url https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/3 --layers
+
+using https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/3
+layer: Drains | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1876031, 5522008, 2028178, 5674581 (wkid 2193)
+definition expression: None
+fields used by sources.yml: -  (all present)
+site window (EPSG:2193): 1876031, 5522008, 2028178, 5674581
+count where '1=1': 702
+    https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/3/query?where=1%3D1&geometry=1876030.8789999997%2C5522008.2332%2C2028177.8707999997%2C5674581.1696&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+  layer   0: Bench Marks (esriGeometryPoint)
+  layer   5: Asset Lines (esriGeometryPolyline)
+  layer   1: Drain Labels (esriGeometryPolyline)
+  layer   2: Stream Labels (esriGeometryPolyline)
+  layer   3: Drains (esriGeometryPolyline)
+  layer   6: Asset Polygon (esriGeometryPolygon)
+  layer   4: Asset Points (esriGeometryPoint)
+  layer   7: River Cross Sections (esriGeometryPolyline)
+  layer   8: Pump Stations (esriGeometryPoint)
+  layer   9: Pump Station Catchment (esriGeometryPolygon)
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":65,"geometry":{"type":"LineString","coordinates":[[176.93359832872679,-39.583813680884894],[176.93373037158045,-39.583651348286566]]},"properties":{"OldAssetID_Chain":null,"OBJECTID":65,"GlobalID":"{58C4E44C-5F80-464D-95C2-32E99C92DBAB}","AssetType":"Drain","SchemeName":"HPS","River_StreamName":"Muddy","Details":"Short Section to ensure PS401 outlet is clear","AssetMaintenance":"Y","AssetSubType":null,"Area_Park":"Area 4 Muddy Creek","Material":null,"Asset_Owner":"HBRC","OldAssetID":"Sea Exclusion ","Shape_Length":21.31741334709679
+     https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/3/query?where=1%3D1&geometry=1876030.8789999997%2C5522008.2332%2C2028177.8707999997%2C5674581.1696&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2
