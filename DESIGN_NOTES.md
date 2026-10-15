@@ -1656,6 +1656,25 @@ rebuild. Per-line weight: the council's positive weight (Environment Southland 1
 0.7) times a form weight (swales 0.5, to be confirmed). The channel label schema gains `form`, `width_m` and
 `base_width_m`.
 
+**ML-3a step 3: snapping council lines to the bed** (17 Oct; `ml/snap.py`, `channel_labels.tile_channels`,
+`scripts/snap_channels.py`; first on a 1 km clip of BW24_10000_0402, Waimakariri, 10 lines, 4.8 km). Least-cost path
+in a +-15 m corridor; cost per metre `0.02 + exp(-depth / 0.15) + 0.3 (d / 15)^2`, with depth = max(11 m black
+top-hat, half the 21 m one): the 21 m top-hat alone is high in paddock hollows (field median 0.04 m, 90th percentile
+0.18 m), the 11 m one less so (0.02, 0.09). Long lines go in 200 m pieces, each starting where the last ended. A line
+counts as snapped when 60 % of its path has the 11 m top-hat >= 0.10 m; otherwise it keeps its council geometry at
+half weight. The check is independent of the cost: at points every 5 m, is the DEM's lowest point across the line
+(+-6 m) within 2 m of it?
+- *On the clip*, over the drains (rivers excluded: their polygons are the label): the check rose from 0.46 (council
+  geometry) to 0.82 (snapped), median move 2.9 m. Two drains the physics map does not hold at all (286602, 0.3-0.6 m
+  deep and ~5 m wide; 286656, 0.1-0.3 m deep) were found 3-6 m from their council lines: the kind of drain ML-3 is for.
+- *A doubtful case*: 286253 runs parallel to a large drain ~18-20 m away, on a raised strip (a road or a bank), with
+  only a faint hollow beside it; its path is on a bed for 64 % of its cells, so it snaps, just. The corridor keeps it
+  off the large drain. `min_bed_frac` is to be set from the per-council distributions over all tiles
+  (`channels_summary.csv`), not from one clip.
+- *Widths after snapping* (clip): physics 37 % of the length, default 37 %, river polygons 27 %.
+Swales (Auckland): Matt (17 Oct) wants them in at reduced weight provided they do not harm the model, so ML-3b compares
+swale weight 0.5 against swales ignored on Auckland's held-out blocks.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

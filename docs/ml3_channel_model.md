@@ -118,6 +118,8 @@ hydrology) run on the merged network (7m).
    - Waimakariri and HBRC: 1.0;
    - Auckland (urban stormwater; long stretches run underground, so the network looks fragmented and many pieces are
      missing): about 0.7.
+     Its swales count at reduced weight (0.5), provided they do not harm the model: ML-3b compares that with
+     swales ignored (Matt, 17 Oct).
 
    In Auckland, a detected channel with no council line is not an error: those cells are ignored, and only clearly
    flat, un-incised ground is a (weak) negative there. Auckland gets no negatives at all only if that is tested first:

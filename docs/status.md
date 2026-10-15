@@ -36,7 +36,8 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 
 ## Next
 
-1. ML-3a: snapping council channel lines to the bed (step 3); label rasters with per-council weights (step 4);
+1. ML-3a: snapping (step 3) built (`snap_channels.py`; on one clip the bed check rose from 0.46 to 0.82), to run on
+   all tiles with saved rasters and calibrate per council; label rasters with per-council weights (step 4);
    chips from the saved rasters; review sets for Matt. Step 1 (widths) done: no council records widths usably, so
    widths come from the fallbacks in `ml/config/channels.yml` (DESIGN_NOTES 11).
 2. ML-3b-d: the U-Net, its integration into the run, the end-to-end check on found labels, the stream/drain head.

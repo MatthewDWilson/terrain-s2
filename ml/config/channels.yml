@@ -17,8 +17,20 @@ ignore_ring_m: 3.0
 # Forms (Auckland's SW_ASSET_TYPE; others have none): a multiplier on the positive weight. Swales are broad, shallow,
 # grassed: weak in the DEM. To be confirmed with Matt (17 Oct).
 form_weights: {unlined: 1.0, lined: 1.0, flume: 1.0, swale: 0.5, other: 1.0}
+# Matt (17 Oct): swales count, at reduced weight, as long as they do not harm the model: ML-3b compares swale weight 0.5
+# with swales ignored (weight 0; their cells then join the ignored ring), on Auckland's held-out blocks.
 
-# Channel half-width for the label rasters (decision 4), in this order:
+# Snapping council lines to the bed (terrain_s2.ml.snap; DESIGN_NOTES 11, 17 Oct, BW24_10000_0402).
+snap:
+  corridor_m: 15.0           # +- around the council line
+  piece_m: 200.0             # long lines are snapped in pieces, each starting where the last ended
+  depth_scale_m: 0.15        # cost = base + exp(-depth / depth_scale_m) + lateral * (distance / corridor_m)^2
+  lateral: 0.3
+  bed_depth_m: 0.10          # a cell is on a bed when the 11 m black top-hat is at least this (field p90 0.09 m)
+  min_bed_frac: 0.6          # snapped when the path is on a bed for at least this share of its cells
+  unsnapped_weight: 0.5      # weight multiplier for lines left at their council position
+
+# Channel half-width for the label rasters (decision 4), worked out after snapping, in this order:
 #   1. council:  the council's top width, else its base width, if within plausible_width_m (Auckland's 1-3 "mm"
 #                base widths are dropped, not reinterpreted);
 #   2. river:    a line lying mostly inside a wide-channel polygon (network.gpkg `rivers`) takes the polygon;

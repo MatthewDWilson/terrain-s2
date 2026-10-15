@@ -156,3 +156,106 @@ def resolve_widths(lines, cfg: dict, edt=None, transform=None, rivers=None):
     out["half_width_m"] = half
     out["width_source"] = source
     return out
+
+
+SNAP_VERSION = 1
+
+
+def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):
+    """Council lines of one tile, snapped to the bed and given widths and weights (ML-3a steps 3 and the width part
+    of 4). Needs the run's saved rasters (``--rasters all``): features.tif (black top-hats), hydro.tif (channel
+    mask); the bundle's dem.tif for the check; network.gpkg ``rivers``.
+
+    Lines are clipped to the rasters (the tile core), so a line crossing a tile edge is snapped piecewise in each
+    tile. Writes ``ml_channels.gpkg`` (layer ``council_channels``: the snapped geometry, the council geometry as
+    WKT in ``geometry_council``, ``snapped``, ``bed_frac``, ``offset_med_m``, ``check_council``, ``check_snapped``,
+    ``half_width_m``, ``width_source``, ``weight``) and ``ml_channels.json`` (counts and length-weighted shares per
+    council). Returns (lines, summary)."""
+    import geopandas as gpd
+    import pyogrio
+    import rasterio
+    import rasterio.windows
+    from shapely.geometry import box
+
+    from . import snap as S
+    run, bundle = Path(run), Path(bundle)
+    P = dict(S.DEFAULTS, **(cfg.get("snap") or {}))
+    with rasterio.open(run / "features.tif") as s:
+        T, crs, bounds = s.transform, s.crs, s.bounds
+        names = list(s.descriptions)
+        bands = {n: s.read(names.index(n) + 1) for n in S.DEPTH_BANDS if n in names}
+    with rasterio.open(run / "hydro.tif") as s:
+        mask = s.read(list(s.descriptions).index("channel_mask") + 1) > 0
+    dem = None
+    if (bundle / "dem.tif").exists():
+        with rasterio.open(bundle / "dem.tif") as s:
+            win = rasterio.windows.from_bounds(*bounds, transform=s.transform).round_offsets().round_lengths()
+            dem = s.read(1, window=win, boundless=True, fill_value=np.nan).astype(np.float32)
+            dem = np.where(dem == s.nodata, np.nan, dem) if s.nodata is not None else dem
+    depth, bed = S.bed_depth(bands)
+    lines = council_lines(bundle, sources, cfg, crs=crs)
+    core = box(*bounds)
+    if len(lines):
+        lines = lines.copy()
+        lines["geometry"] = lines.geometry.intersection(core)
+        lines = lines[~lines.is_empty]
+        lines = lines[lines.geom_type.isin(["LineString", "MultiLineString"])].explode(ignore_index=True)
+        lines = lines[lines.length >= 2.0].reset_index(drop=True)
+    rivers = None
+    if (run / "network.gpkg").exists() and "rivers" in {n for n, _ in pyogrio.list_layers(run / "network.gpkg")}:
+        rivers = gpd.read_file(run / "network.gpkg", layer="rivers").to_crs(crs)
+    if len(lines):
+        out = S.snap_lines(lines, depth, T, P, bed=bed)
+        out = resolve_widths(out, cfg, edt=edge_distance(mask, T), transform=T, rivers=rivers)
+        if dem is not None:
+            out["check_council"] = [S.bed_check(g, dem, T, P) for g in out.geometry_council]
+            out["check_snapped"] = [S.bed_check(g, dem, T, P) if ok else np.nan
+                                    for g, ok in zip(out.geometry, out.snapped)]
+        else:
+            out["check_council"] = out["check_snapped"] = np.nan
+        fw = float((cfg.get("snap") or {}).get("unsnapped_weight", 0.5))
+        out["weight"] = [w if ok else w * fw for w, ok in zip(out.weight.astype(float), out.snapped)]
+        out["geometry_council"] = gpd.GeoSeries(out.geometry_council, crs=crs).to_wkt()
+    else:
+        out = gpd.GeoDataFrame(columns=COLUMNS + ["snapped", "bed_frac", "offset_med_m", "half_width_m",
+                                                  "width_source", "check_council", "check_snapped", "geometry_council"],
+                               geometry=[], crs=crs)
+    summary = summarise(out)
+    summary.update(tile=run.name, snap_version=SNAP_VERSION)
+    if write:
+        f = run / "ml_channels.gpkg"
+        if f.exists():
+            f.unlink()
+        if len(out):
+            out.to_file(f, layer="council_channels", driver="GPKG")
+        (run / "ml_channels.json").write_text(json.dumps(summary, indent=1, default=float))
+    return out, summary
+
+
+def summarise(out) -> dict:
+    """Per council: lines, km, length shares snapped, by width source, and the bed check (length-weighted over
+    non-river lines: council geometry against snapped geometry, for the lines that snapped)."""
+    res = {}
+    if not len(out):
+        return dict(councils=res)
+    from shapely import wkt
+    L = out.geometry.length.values
+    Lc = np.array([wkt.loads(g).length if isinstance(g, str) else g.length for g in out.geometry_council])
+    for c in sorted(set(out.council)):
+        m = (out.council == c).values
+        nr = m & (out.width_source != "river").values
+        sn = nr & out.snapped.values.astype(bool)
+
+        def wmean(v, k, w):
+            v = np.asarray(v, float)[k]
+            ok = np.isfinite(v)
+            return round(float(np.average(v[ok], weights=w[k][ok])), 3) if ok.any() and w[k][ok].sum() > 0 else None
+        res[c] = dict(lines=int(m.sum()), km=round(float(Lc[m].sum()) / 1000, 2),
+                      snapped_share=round(float(Lc[m & out.snapped.values.astype(bool)].sum() / max(Lc[m].sum(), 1e-9)), 3),
+                      width_sources={k: round(float(Lc[m & (out.width_source == k).values].sum() / max(Lc[m].sum(), 1e-9)), 3)
+                                     for k in sorted(set(out.width_source[m]))},
+                      check_council_all=wmean(out.check_council, nr, Lc),
+                      check_council_snapped=wmean(out.check_council, sn, Lc),
+                      check_snapped=wmean(out.check_snapped, sn, L),
+                      offset_med_m=round(float(np.nanmedian(np.asarray(out.offset_med_m, float)[sn])), 2) if sn.any() else None)
+    return dict(councils=res)
