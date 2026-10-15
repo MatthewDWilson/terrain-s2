@@ -1612,6 +1612,20 @@ compared on 13 Oct; on these tiles they do not.)
 **ML-3 draft**: `docs/ml3_channel_model.md` (labels and snapping, chips, U-Net with clDice, integration into the run,
 phases, decisions for Matt).
 
+**Folds, revised** (17 Oct, with Matt): leaving a council out tests transfer to a different kind of area whose
+registers record different things; single tiles would be too optimistic (neighbours share drains and surveys). The
+primary folds are now spatial blocks (a sheet's tiles two 1:10k rows at a time) dealt into 5 folds with every council in
+each (`train.folds`, `blocks`; StratifiedGroupKFold); leave one council out is the second measure; the BW24 holdout
+stays. Scorer on `waves12`, out of fold over blocks: recall@100 0.59 against the tiers' 0.29, AP 0.42 against 0.03;
+over labels with a candidate, council culverts 0.55, implied 0.73, KiwiRail 0.59, bridges 0.84
+(`ml/results/scorer_waves12_blocks.md`). Waimakariri has few blocks and spreads unevenly across folds.
+
+**ML-3 decisions** (17 Oct): `docs/ml3_channel_model.md` section 7: per-council label weights (Environment Southland
+higher; Auckland lower, its unrecorded detections ignored, since its network runs underground), the block folds, saved
+rasters (`--rasters all`, ~1 TB of the RTX 6000 machine's ~10 TB free) rather than chips made in the run, width from the
+council's attribute with fallbacks, and review sets from model-data disagreement (Matt uses the LINZ basemap).
+Handover for the work from ML-3a on: `docs/handover_ml3.md`.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

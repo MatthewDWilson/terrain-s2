@@ -1,7 +1,8 @@
-# ML-3: a learned channel map (draft, 16 Oct 2026)
+# ML-3: a learned channel map (design, 17 Oct 2026)
 
-Draft for discussion. Phase names follow DESIGN_NOTES section 8 (ML-3: dense multi-task U-Net). Evidence is in
-DESIGN_NOTES section 11.
+Agreed with Matt on 17 Oct (section 7 records the decisions). Phase names follow DESIGN_NOTES section 8 (ML-3: dense
+multi-task U-Net). Evidence is in DESIGN_NOTES section 11. The handover for the work from ML-3a on is
+`docs/handover_ml3.md`.
 
 ## 1. Why, and what it must do
 
@@ -54,7 +55,7 @@ labels to the bed" task, and it helps the crossing labels too.
 
 REC2 is not a stream label (coarse source DEM; DESIGN_NOTES 7i).
 
-## 3. Inputs and training chips
+## 3. Inputs and training chips (superseded in part: chips come from saved rasters, section 7)
 
 **Bands** (1 m, as in `features.tif` and `hydro.tif`): the 17-band DEM feature stack, DSM - DEM, REM, log10 upstream
 area, breach depth, depression depth, and a rasterised distance to any way (roads, tracks, rail, OSM ways). That is
@@ -109,13 +110,43 @@ hydrology) run on the merged network (7m).
    - *Check:* the share of labels "found" rises (probes), and the scorer's recall@100 rises or holds.
 4. **ML-3d: the class head.** The class head in the network, and the second-pass outputs on it.
 
-## 7. Decisions for Matt
+## 7. Decisions (Matt, 17 Oct 2026)
 
-1. **Positives.** Which channel sources count as positives: all four councils' channel data? Auckland's are urban
-   stormwater channels; Environment Southland's are long scheme drains.
-2. **Another run of the tiles** for the chips (~6 h on the RTX 6000 machine), or chips from saved rasters instead
-   (`--rasters all`: ~2-3 GB per tile, ~1 TB for waves 1 and 2).
-3. **Channel width** for the positive raster: one fixed half-width (1.5 m), or from the council's width attribute where
-   there is one.
-4. **More reviews.** Whether more of your time goes on channel reviews, even 2-3 tiles of `exists` y/n. They are the
-   only true negatives for small drains.
+1. **Positives and weights, per council.** All four councils' channel data are positives, weighted by how completely
+   they record what the DEM can show:
+   - Environment Southland (rural scheme drains): higher, about 1.5;
+   - Waimakariri and HBRC: 1.0;
+   - Auckland (urban stormwater; long stretches run underground, so the network looks fragmented and many pieces are
+     missing): about 0.7.
+
+   In Auckland, a detected channel with no council line is not an error: those cells are ignored, and only clearly
+   flat, un-incised ground is a (weak) negative there. Auckland gets no negatives at all only if that is tested first:
+   with none, the model can learn "urban means channel" (as the 20 m scope rule did for the scorer). A gap in a
+   network is usually a pipe, which the DEM cannot show; the model is not asked to find pipes. The weights live in the
+   ML-3 configuration (one table per council: positive weight, negative weight, ignore rules).
+2. **Evaluation folds.** The primary measure is spatial blocks: a 1:50k sheet's tiles two 1:10k rows at a time, dealt
+   into 5 folds with every council in every fold (`train.folds`, `blocks`; now also the scorer's and the CNN's).
+   Single tiles would be too optimistic: neighbours share drains and surveys. Leave one council out stays as the second
+   measure: transfer to a new kind of area, the worst case. The BW24 holdout stays.
+   - On waves 1 + 2 the scorer's out-of-fold recall@100 over blocks is 0.59 against the tiers' 0.29
+     (`ml/results/scorer_waves12_blocks.md`).
+   - Waimakariri has few blocks and spreads unevenly across folds, so its numbers are the noisiest.
+3. **Saved rasters, not chips made in the run.** The tiles are rerun with `--rasters all` (features.tif, hydro.tif,
+   conditioned.tif: ~2-3 GB per tile, ~1 TB for 349 tiles; the RTX 6000 machine has ~6 TB and 3.6 TB free on two data
+   SSDs).
+   - "Rerun" is processing, not downloading: the DEM and DSM are in the bundles and the COG mirror. The exception is
+     wave 1 on that machine, whose bundles were copied without their rasters.
+   - Chips are then cut from the saved rasters, mosaicked across tile edges (the rasters are cropped to tile cores), so
+     size and sampling can change without another run.
+   - The distance-to-any-way band is rasterised from the bundles' vectors when chips are made.
+4. **Channel width.** The council's width attribute where there is one, with fallbacks in this order:
+   - the physics channel map's width where it overlaps the snapped line;
+   - a default by type (drain ~1 m half-width, stream ~2 m);
+   - for rivers, the wide-channel polygons.
+
+   None of the four sources' field mappings carries a width yet: probing them is the first ML-3a task. A LiDAR-derived
+   width (as GeoFabrics does) does not work for channels this small.
+5. **Reviews.** Matt reviews 2-3 tiles of channels, `exists` y / n / unsure, marking "unsure" freely: only confident
+   answers train. The review sets come from where the model and the data disagree (channels the model sees that no
+   council records; council lines the model misses). They are delivered as GeoPackages; Matt views them over the LINZ
+   basemap, so no imagery is packaged.

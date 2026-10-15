@@ -15,8 +15,11 @@ Model: scikit-learn's HistGradientBoostingClassifier (missing values handled nat
 feature columns (never location, identifiers or labels).
 
 Evaluation, for the model and for the rule-based tiers (the baseline: tier, then the DEM-only tier, then h_b):
-- folds: leave one council out (train on the others, outside the holdout); blocked by sheet within the training
-  councils (``GroupKFold``); the holdout sheets (BW24), trained on everything else;
+- folds (``folds``): ``blocks``, the primary measure: spatial blocks (a 1:50k sheet's tiles two 1:10k rows at a time)
+  dealt into ``block_folds`` folds with every council in every fold (``StratifiedGroupKFold``), so training and testing
+  both see each kind of area while neighbouring tiles stay on one side (Matt, 17 Oct: a held-out council is a
+  different kind of area, and its registers record different things); ``council``, leave one council out: transfer to
+  a new kind of area, the worst case, reported second; ``holdout``: the BW24 sheet, trained on everything else;
 - recall at fixed review budgets per tile (top 50, 100, 200, 500 candidates): positives captured / (positives +
   misses), so labels the chain never proposed count against it, and the same without the misses ("reachable");
   by label kind;
@@ -32,8 +35,8 @@ from pathlib import Path
 import numpy as np
 
 DEFAULTS = dict(unlabelled_weight_ratio=1.0, unlabelled_scope_m=None, manual_weight=None, importance=True,
-                exclude_features=[], include_features=[],
-                budgets=[50, 100, 200, 500], sheet_folds=5, seed=0,
+                exclude_features=[], include_features=[], folds=["blocks", "council", "holdout"], block_folds=5,
+                budgets=[50, 100, 200, 500], seed=0,
                 model=dict(max_iter=400, learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=40, l2_regularization=1.0,
                            early_stopping=True, validation_fraction=0.1, n_iter_no_change=30))
 
@@ -181,24 +184,46 @@ def evaluate(d, score, misses=None, budgets=(50, 100, 200, 500)):
     return out
 
 
+def block_of(tile_id: str) -> str:
+    """The spatial block of a tile: its 1:50k sheet and the pair of 1:10k tile rows it is in (``BW23:0`` for rows 01
+    and 02, ``BW23:1`` for 03 and 04, ``BW23:2`` for 05); quadrant suffixes are ignored."""
+    import re
+    m = re.match(r"^([A-Z]{2}\d{2})_10000_(\d{2})(\d{2})", str(tile_id))
+    if not m:
+        return str(tile_id).split("_")[0]
+    return f"{m.group(1)}:{(int(m.group(2)) - 1) // 2}"
+
+
 def folds(d, cfg):
-    """[(name, train mask, test mask)]: leave-one-council-out, sheets within councils, holdout."""
-    from sklearn.model_selection import GroupKFold
+    """[(name, train mask, test mask)] for the fold kinds in ``cfg['folds']`` (see the module docstring)."""
+    from sklearn.model_selection import StratifiedGroupKFold
     hold = d.holdout.fillna(False).to_numpy(bool)
+    kinds = cfg.get("folds") or DEFAULTS["folds"]
     out = []
-    councils = sorted(d.council.dropna().unique())
-    if len(councils) > 1:
-        for c in councils:
-            out.append((f"council:{c}", (d.council != c).to_numpy() & ~hold, (d.council == c).to_numpy()))
-    sheets = d.loc[~hold, "sheet"]
-    k = min(cfg["sheet_folds"], sheets.nunique())
-    if k >= 2:
+    if "blocks" in kinds:
         idx = np.flatnonzero(~hold)
-        for i, (tr, te) in enumerate(GroupKFold(n_splits=k).split(idx, groups=sheets.to_numpy())):
-            trm, tem = np.zeros(len(d), bool), np.zeros(len(d), bool)
-            trm[idx[tr]], tem[idx[te]] = True, True
-            out.append((f"sheets:{i + 1}/{k}", trm, tem))
-    if hold.any():
+        blocks = d.tile_id.iloc[idx].map(block_of).to_numpy()
+        k = min(cfg.get("block_folds", 5), len(set(blocks)))
+        if k >= 2:
+            # one row per block for the split (its council), then back to candidates
+            ub, first = np.unique(blocks, return_index=True)
+            councils = d.council.iloc[idx].to_numpy()[first]
+            try:
+                splits = list(StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=cfg.get("seed", 0)).split(
+                    ub, councils, groups=ub))
+            except ValueError:                    # a council with fewer blocks than folds
+                from sklearn.model_selection import GroupKFold
+                splits = list(GroupKFold(n_splits=k).split(ub, groups=ub))
+            for i, (_, te_b) in enumerate(splits):
+                tem = np.zeros(len(d), bool)
+                tem[idx[np.isin(blocks, ub[te_b])]] = True
+                out.append((f"blocks:{i + 1}/{k}", ~hold & ~tem, tem))
+    if "council" in kinds:
+        councils = sorted(d.council.dropna().unique())
+        if len(councils) > 1:
+            for c in councils:
+                out.append((f"council:{c}", (d.council != c).to_numpy() & ~hold, (d.council == c).to_numpy()))
+    if "holdout" in kinds and hold.any():
         out.append(("holdout", ~hold, hold))
     return out
 

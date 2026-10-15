@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 DEFAULTS = dict(epochs=15, batch_size=256, lr=1e-3, weight_decay=1e-4, unlabelled_weight_ratio=1.0,
-                unlabelled_per_positive=10, val_fraction=0.1, seed=0, folds=["council", "holdout"], workers=None,
+                unlabelled_per_positive=10, val_fraction=0.1, seed=0, folds=["blocks", "holdout"], workers=None,
                 budgets=[50, 100, 200, 500], scorer=None, device="auto")
 
 
@@ -204,7 +204,7 @@ def run(dataset, out, cfg=None, name=None, log=print):
     if cfg.get("scorer"):
         f = Path(cfg["scorer"]) / "fold_scores.parquet"
         gbm = pd.read_parquet(f) if f.exists() else None
-    folds = [f for f in TR.folds(d, dict(sheet_folds=5)) if f[0].split(":")[0] in cfg["folds"]]
+    folds = TR.folds(d, dict(folds=cfg["folds"], block_folds=cfg.get("block_folds", 5), seed=cfg["seed"]))
     results, scores = [], []
     for fname, trm, tem in folds:
         log(f"{fname}: training on {d.loc[trm, 'tile_id'].nunique()} tiles")

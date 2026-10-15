@@ -45,7 +45,7 @@ def test_scorer_beats_the_tiers_and_saves_a_model(tmp_path):
     cfg["model"]["max_iter"] = 60
     rep = TR.run(ds, tmp_path / "model", cfg, log=lambda *a: None)
     names = [r["fold"] for r in rep["folds"]]
-    assert names[:2] == ["council:a", "council:b"] and names[-1] == "holdout" and any(n.startswith("sheets:") for n in names)
+    assert names[-3:-1] == ["council:a", "council:b"] and names[-1] == "holdout" and any(n.startswith("blocks:") for n in names)
     for r in rep["folds"]:
         assert r["model"]["recall@50"] > r["baseline"]["recall@50"]
         assert r["model"]["average_precision"] > r["baseline"]["average_precision"]
@@ -86,3 +86,19 @@ def test_feature_selection_patterns_and_any_way():
     cfg = dict(exclude_features=["road_dist_m", "road_distance_*", "ctx_*", "src_road_x_drain"],
                include_features=["ctx_dist_any_way_m"])
     assert TR.feature_columns(d, cfg) == ["a", "src_testA", "ctx_dist_any_way_m"]
+
+
+def test_blocks_are_balanced_across_councils():
+    assert TR.block_of("BW23_10000_0201") == "BW23:0" and TR.block_of("BW23_10000_0405") == "BW23:1"
+    assert TR.block_of("BW23_10000_0502_SE") == "BW23:2"
+    rows = []
+    for council, sheets in (("a", ["AA01", "AA02", "AA03"]), ("b", ["BB01", "BB02", "BB03", "BB04"])):
+        for sh in sheets:
+            for r in range(1, 6):
+                rows.append(dict(tile_id=f"{sh}_10000_{r:02d}01", council=council, holdout=False))
+    d = pd.DataFrame(rows)
+    f = TR.folds(d, dict(folds=["blocks"], block_folds=3, seed=0))
+    assert len(f) == 3
+    for _, tr, te in f:
+        assert set(d[te].council) == {"a", "b"} and not (tr & te).any()
+        assert not set(d[te].tile_id.map(TR.block_of)) & set(d[tr].tile_id.map(TR.block_of))

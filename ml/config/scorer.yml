@@ -13,7 +13,10 @@ importance: true
 exclude_features: [road_dist_m, "road_distance_*", "ctx_*", src_road_x_drain, src_road_end_pair]
 include_features: [ctx_dist_any_way_m]
 budgets: [50, 100, 200, 500]          # review budgets per tile for recall@K
-sheet_folds: 5                        # GroupKFold by 1:50k sheet, outside the holdout
+# blocks (primary): spatial blocks (a sheet's tiles, two rows at a time) dealt into block_folds folds with every council
+# in each; council: leave one council out (transfer to a new kind of area); holdout: BW24
+folds: [blocks, council, holdout]
+block_folds: 5
 seed: 0
 model:                                # sklearn HistGradientBoostingClassifier
   max_iter: 400

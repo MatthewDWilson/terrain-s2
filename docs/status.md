@@ -1,4 +1,4 @@
-# terrain-s2: status (15 Oct 2026, evening)
+# terrain-s2: status (17 Oct 2026)
 
 Where the work stands, who is on what, and what comes next. Detail and evidence are in `DESIGN_NOTES.md`
 (section numbers below); the plan is `docs/EDDIE Terrain — Revised Stage 1 and Stage 2 Integration Plan_with_diagrams.md`.
@@ -26,23 +26,19 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 
 ## In progress
 
-- **Wave 2 batch** (RTX 6000 machine): 259 of 266 done; 7 Auckland tiles to rerun after the cache fix.
-- **ML-1 first results**: `train_scorer.py` on `wave1`.
-- **Stage 1 rivers** (Cowork, branch `stage1/rivers`): GeoFabrics river bathymetry for the ML-4 benchmark; merge when tested.
-- **Stage 1** (Cowork): remaining W items (W3 acceptance on the shared reader, W5 on PostGIS, W7, W10, W11).
+- **ML-3 (a learned channel map)**: design agreed (`docs/ml3_channel_model.md`, decisions in its section 7); the work
+  from ML-3a on continues in a new conversation, from `docs/handover_ml3.md`.
+- **Stage 1 rivers** (Cowork, branch `stage1/rivers`): GeoFabrics river bathymetry for the ML-4 benchmark; merge when
+  tested.
+- **Four wave-1 tiles to rerun** (BW23_10000_0201, 0202, 0302, 0303, `--rerun`), then `waves12` rebuilt with all 349.
 
 ## Next
 
-1. ML-3 (channel detection for small drains; draft in `docs/ml3_channel_model.md`): most lost council culverts
-   have no channel mapped.
-2. Rerun BW23_10000_0201, 0202, 0302, 0303 (`--rerun`) and rebuild `waves12`.
-2. ML-1: gradient-boosting candidate scorer (weighted positive-unlabelled), evaluation on the folds
-   (leave-one-council-out; BW24 held out), then the patch CNN (ML-1b, GPU).
-3. Wave 2 (Environment Southland 165, Auckland 101 tiles; `ml/config/wave2.yml`) on the RTX 6000 machine,
-   installed with `docs/wsl/terrain_hpc.sh`.
-4. ML-2 (link decisions), ML-3 (dense U-Net), ML-4 (bed elevation, benchmarked against GeoFabrics river
-   bathymetry: Stage 1 work, see below). The second-pass outputs (stream REM, conditioned hydrology) move
-   after ML (7m).
+1. ML-3a: width fields of the channel sources; the tiles rerun with `--rasters all`; snapping council channel lines to
+   the bed; label rasters with per-council weights; chips from the saved rasters; review sets for Matt.
+2. ML-3b-d: the U-Net, its integration into the run, the end-to-end check on found labels, the stream/drain head.
+3. ML-1b again (the CNN with the scorer's scalar features), after ML-3.
+4. ML-2 (link decisions) and ML-4 (bed elevation, against GeoFabrics' river bathymetry).
 
 ## Benchmark for bed elevation (ML-4)
 
