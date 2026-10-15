@@ -21,7 +21,8 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 | ML-1 scorer | Gradient boosting, weighted PU; chosen configuration 1.4-3.6 x the tiers (`ml/results/`) | 11 |
 | ML-1 step 9 | Scores in the run (`--crossing-model`): `p_structure`, `p_bridge`, recorded structures always included | 11 |
 | Miss diagnosis | Probes at every labelled structure; reasons per council (`diagnose_misses.py`) | 11 |
-| ML-1b | Patch CNN (`train_cnn.py`), with the ensemble against the scorer; first run pending (needs PyTorch) | 11 |
+| ML-1b | Patch CNN (`train_cnn.py`): below the scorer; ensemble no gain; deferred behind ML-3 | 11 |
+| Waves 1 + 2 | 345 tiles, 686,305 candidates; scorer 2-3.5 x the tiers on every held-out council (`ml/results/`) | 11 |
 
 ## In progress
 
@@ -32,8 +33,9 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 
 ## Next
 
-1. Waves 1 + 2 in one dataset on the RTX 6000 machine (labels at 25 m), the scorer retrained: four councils.
-2. ML-3 (channel detection for small drains): most lost council culverts have no channel mapped.
+1. ML-3 (channel detection for small drains; draft in `docs/ml3_channel_model.md`): most lost council culverts
+   have no channel mapped.
+2. Rerun BW23_10000_0201, 0202, 0302, 0303 (`--rerun`) and rebuild `waves12`.
 2. ML-1: gradient-boosting candidate scorer (weighted positive-unlabelled), evaluation on the folds
    (leave-one-council-out; BW24 held out), then the patch CNN (ML-1b, GPU).
 3. Wave 2 (Environment Southland 165, Auckland 101 tiles; `ml/config/wave2.yml`) on the RTX 6000 machine,

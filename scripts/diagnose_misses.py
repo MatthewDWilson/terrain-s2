@@ -5,7 +5,7 @@
     python scripts/diagnose_misses.py --manifest ml/manifests/wave1.csv --compute --council waimakariri --limit 8
 
 Tiles run since the probes were added have ml_probes.parquet already. --compute reruns the network for tiles without
-it (same parameters as their done.json; outputs unchanged, ~10-16 min per LINZ tile) to write it. Writes
+it (same parameters as their done.json, ~10-16 min per LINZ tile) in a scratch folder, leaving the tile's run as it was. Writes
 <runs>/misses_<manifest>.md and .parquet (one row per label, with its reason and the features at its crest).
 """
 import argparse
@@ -61,10 +61,15 @@ def main():
             b = bundles / t.tile_id
             params = json.loads((runs / t.tile_id / "done.json").read_text()).get("params", {})
             params = {k: v for k, v in params.items() if k not in ("device", "features")}
+            # into a scratch folder: rewriting the tile's own network.gpkg without its features made 4 wave-1 tiles
+            # disagree with their ml_features.parquet (a CPU run then a GPU run: a few candidates differ), 16 Oct 2026
+            import shutil
+            scratch = runs / t.tile_id / "_probe_run"
             res = network(b / "dem.tif", b / "dsm.tif" if (b / "dsm.tif").exists() else None, b / "aoi.geojson",
-                          roads=b / "roads.gpkg" if (b / "roads.gpkg").exists() else None, out=runs / t.tile_id,
+                          roads=b / "roads.gpkg" if (b / "roads.gpkg").exists() else None, out=scratch,
                           params=params, device=a.device, keep=True)
             pr = probes.write(res, b, runs / t.tile_id, _label_cfg())
+            shutil.rmtree(scratch, ignore_errors=True)
             tables.append(pr.assign(tile_id=t.tile_id, council=t.council))
             print(f"[{i + 1}/{len(todo)}] {t.tile_id}: " + ", ".join(f"{k} {v}" for k, v in pr.reason.value_counts().items()))
     if not tables:

@@ -1596,6 +1596,22 @@ writing one STAC cache entry, or a worker stopped mid-write) that every retry re
 Cache files are now written atomically and re-fetched when unreadable (`acquire/cachefile.py`: STAC documents, item
 indexes, mirror sidecars, partition collections); `Http.json` names the URL and the first bytes when a body is not JSON.
 
+**Waves 1 + 2** (17 Oct, RTX 6000 machine; `ml/results/scorer_waves12.md`): dataset `waves12`, 345 tiles, 686,305
+candidates, +4,090 (bridges 1,529, implied 958, KiwiRail 830, council 718, manual 55), 1,085 misses; labels at 25 m.
+Scorer, leave one council out, recall@100 per tile: Auckland 0.51 (tiers 0.21), Environment Southland 0.73 (0.45),
+HBRC 0.53 (0.25; wave 1 alone 0.43), Waimakariri 0.30 (0.13); holdout 0.30 (0.09); AP 0.29-0.48 against 0.02-0.07;
+bridge AUC 0.92-0.98; manual AUC 0.60-0.65 (wave 1 0.60). Over labels that have a candidate only (scoring alone):
+council culverts 0.37 (HBRC) to 0.45 (Waimakariri), implied crossings 0.47-0.81, KiwiRail 0.45-0.74, bridges
+0.67-0.85. Distance to any way remains the main feature (0.28), then DSM - DEM, upstream area, breach depth.
+Four wave-1 tiles (BW23_10000_0201, 0202, 0302, 0303) were skipped: features and labels disagreed. They were among the
+tiles `diagnose_misses.py --compute` reran, which rewrote network.gpkg (on the GPU, where the batch had used the CPU)
+without the features: a few candidates differ between the two runs. `--compute` now runs in a scratch folder and leaves
+the tile's run as it was; the four tiles need `run_tiles.py --rerun`. (CPU and GPU runs agreed exactly on the quadrant
+compared on 13 Oct; on these tiles they do not.)
+
+**ML-3 draft**: `docs/ml3_channel_model.md` (labels and snapping, chips, U-Net with clDice, integration into the run,
+phases, decisions for Matt).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
