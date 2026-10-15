@@ -34,6 +34,9 @@ sources:
     layer: channels
     const: {exists: y}
     class_map: {field: CLASSIFICATION3, values: {Network Drain: drain, Receiving Waterway: stream, Water Race: race, Process Channel: other}}
+    # 17 Oct 2026 probe (ML-3 widths): TOP_WIDTH_m, BASE_WIDTH_m, WIDTH_m and CHANNEL_FORM exist but are empty on all
+    # 3,174 features of waves 1+2 (DEPTH_m on a handful); mapped so that values flow through if the council fills them
+    scale: {width_m: [TOP_WIDTH_m, 1.0], base_width_m: [BASE_WIDTH_m, 1.0]}
     id_field: [ASSET_ID, ASSNBRI]
     scope: council scheme channels (33 council, 12 private in canterbury1); most roadside and private drains absent
   waimakariri_pipes:
@@ -60,6 +63,8 @@ sources:
     url: https://maps.es.govt.nz/server/rest/services/Public/General/MapServer/27
     layer: channels
     const: {exists: y}
+    # 17 Oct 2026 probe: no width, depth, form or class field (Name, District, Catchment, maintenance schedule);
+    # widths fall back to the physics channel map, then the drain default (ml/config/channels.yml)
     id_field: [SmartId, GlobalID, OBJECTID]
     scope: regional council drainage scheme network (Southland); probe before use
   es_stopbanks:
@@ -76,6 +81,12 @@ sources:
     url: 6c4196567eae4cd48f1c071911fe4105_0      # ArcGIS Hub item, Auckland Council Stormwater Channel
     layer: channels
     const: {class: drain, exists: y}
+    # 17 Oct 2026 probe: SW_WIDTH_TOP_MM (~1 % filled) and SW_WIDTH_BASE_MM (~4 %), integers in mm; many base widths
+    # are 1-3 "mm" (metres entered in a mm field?): ML-3 drops widths outside its plausible range, no unit guessing.
+    # SW_ASSET_TYPE gives the form (12,142 features in waves 1+2: UNLI 9,107, LINE 1,658, SWAL 1,296, FLUM 71, CONS 5).
+    scale: {width_m: [SW_WIDTH_TOP_MM, 0.001], base_width_m: [SW_WIDTH_BASE_MM, 0.001]}
+    class_map: {field: SW_ASSET_TYPE, target: form, values: {UNLI: unlined, LINE: lined, SWAL: swale, FLUM: flume}}
+    id_field: [SW_GIS_ID, GlobalID_1, OBJECTID]
     scope: constructed channels only (explicitly not stream water) - drain labels, no stream labels
   canterbury_threewaters:
     kind: arcgis
@@ -223,6 +234,7 @@ sources:
     layer: channels
     const: {exists: y}
     class_map: {field: AssetType, values: {Drain: drain, River Channel: stream, Channel: other}}
+    # 17 Oct 2026 probe: no width, depth or form field (Asset Lines: AssetType, SchemeName, River_StreamName, Material)
     id_field: [OBJECTID]
     scope: HBRC scheme drains and river channels
   hbrc_bridges:

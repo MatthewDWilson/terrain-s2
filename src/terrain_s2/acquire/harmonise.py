@@ -12,7 +12,8 @@ Note: read the schema column ``type`` as ``g["type"]``; ``g.type`` is the GeoDat
 from __future__ import annotations
 
 SCHEMA = {
-    "channels": ["class", "exists", "source", "source_id", "positional_accuracy", "retrieved"],
+    "channels": ["class", "form", "width_m", "base_width_m", "exists", "source", "source_id", "positional_accuracy",
+                 "retrieved"],
     "crossings": ["type", "diameter_m", "width_m", "height_m", "length_m", "length_from_geometry", "cells", "source",
                   "source_id", "retrieved"],
     "stopbanks": ["type", "crest_height_m", "source", "source_id", "retrieved"],

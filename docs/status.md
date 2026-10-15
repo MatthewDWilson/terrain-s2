@@ -1,4 +1,4 @@
-# terrain-s2: status (17 Oct 2026)
+# terrain-s2: status (17 Oct 2026, ML-3a step 1)
 
 Where the work stands, who is on what, and what comes next. Detail and evidence are in `DESIGN_NOTES.md`
 (section numbers below); the plan is `docs/EDDIE Terrain — Revised Stage 1 and Stage 2 Integration Plan_with_diagrams.md`.
@@ -30,12 +30,15 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
   from ML-3a on continues in a new conversation, from `docs/handover_ml3.md`.
 - **Stage 1 rivers** (Cowork, branch `stage1/rivers`): GeoFabrics river bathymetry for the ML-4 benchmark; merge when
   tested.
-- **Four wave-1 tiles to rerun** (BW23_10000_0201, 0202, 0302, 0303, `--rerun`), then `waves12` rebuilt with all 349.
+- **ML-3a step 2: the rerun with saved rasters** (`--param rasters=all`, all 349 tiles including the four wave-1 tiles
+  whose features and candidates disagreed), on the RTX 6000 machine after the memory fix of 16 Oct (DESIGN_NOTES 11);
+  then `waves12` rebuilt with all 349 (`terrain_hpc.sh dataset`).
 
 ## Next
 
-1. ML-3a: width fields of the channel sources; the tiles rerun with `--rasters all`; snapping council channel lines to
-   the bed; label rasters with per-council weights; chips from the saved rasters; review sets for Matt.
+1. ML-3a: snapping council channel lines to the bed (step 3); label rasters with per-council weights (step 4);
+   chips from the saved rasters; review sets for Matt. Step 1 (widths) done: no council records widths usably, so
+   widths come from the fallbacks in `ml/config/channels.yml` (DESIGN_NOTES 11).
 2. ML-3b-d: the U-Net, its integration into the run, the end-to-end check on found labels, the stream/drain head.
 3. ML-1b again (the CNN with the scorer's scalar features), after ML-3.
 4. ML-2 (link decisions) and ML-4 (bed elevation, against GeoFabrics' river bathymetry).

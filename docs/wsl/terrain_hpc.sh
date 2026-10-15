@@ -70,14 +70,42 @@ preflight() {
     note "memory visible to WSL: ${mem} GB"
     if [ "$mem" -lt 100 ]; then
         note "WARNING: WSL sees ${mem} GB. WSL takes half the host's RAM unless %UserProfile%\\.wslconfig sets"
-        note "         [wsl2] memory=176GB (for 192 GB) and processors=32; then 'wsl --shutdown' and reopen."
+        note "         [wsl2] memory=150GB (for 192 GB) and processors=64; then 'wsl --shutdown' and reopen."
     fi
+    host_memory_check
     note "free disk in \$HOME: $(df -h --output=avail "$HOME" | tail -1 | tr -d ' ')"
     if command -v nvidia-smi >/dev/null 2>&1; then
         nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader | sed 's/^/  GPU: /'
     else
         note "WARNING: nvidia-smi not found. In WSL the NVIDIA driver is the Windows one (do not install a Linux"
         note "         driver); update the Windows driver, then 'wsl --shutdown'. CPU-only runs still work."
+    fi
+}
+
+host_memory_check() {  # Windows' memory beside WSL's (16 Oct 2026: Windows ran out and stopped the VM)
+    command -v powershell.exe >/dev/null 2>&1 || return 0
+    local v ram commit wsl head
+    # shellcheck disable=SC2016
+    v=$(powershell.exe -NoProfile -NonInteractive -Command '$o = Get-CimInstance Win32_OperatingSystem; "$([math]::Round($o.TotalVisibleMemorySize/1MB)) $([math]::Round($o.TotalVirtualMemorySize/1MB))"' 2>/dev/null | tr -d '\r')
+    read -r ram commit <<< "$v"
+    [[ "$ram" =~ ^[0-9]+$ && "$commit" =~ ^[0-9]+$ ]] || return 0
+    wsl=$(awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo)
+    head=$(( commit - wsl ))
+    note "Windows: ${ram} GB RAM, page file $(( commit - ram )) GB; WSL may use ${wsl} GB, leaving Windows ${head} GB"
+    if [ "$head" -lt 32 ]; then
+        note "WARNING: Windows keeps only ${head} GB beside WSL. When Linux fills its memory (the file cache does, while"
+        note "         rasters are written), Windows runs out and stops the WSL VM. Lower memory= in .wslconfig (e.g."
+        note "         150GB for 192 GB of RAM), add a page file (System > Advanced > Performance > Virtual memory), or both."
+    fi
+}
+
+cache_guard() {  # empty Linux's file cache every minute while the batch runs; WSL then returns that memory to Windows
+    local sup="$1"
+    if sudo -n true 2>/dev/null || sudo -v; then
+        sudo -b sh -c "while kill -0 $sup 2>/dev/null; do sync; echo 1 > /proc/sys/vm/drop_caches; sleep 60; done" \
+            && note "file cache emptied every minute while the batch runs"
+    else
+        note "WARNING: no sudo, so the file cache is not emptied: Windows may run short of memory (see 'check')"
     fi
 }
 
@@ -248,10 +276,12 @@ start() {
     if [ -f "$RUN/batch.pid" ] && kill -0 "$(cat "$RUN/batch.pid")" 2>/dev/null; then
         die "a batch is already running (pid $(cat "$RUN/batch.pid")): 'status' or 'stop'"
     fi
+    host_memory_check
     local opts; mapfile -t opts < <(sizing "$@")
     printf '%s\n' "$manifest" "${opts[@]}" > "$RUN/batch.args"
     setsid nohup bash "$0" _supervise >> "$RUN/supervisor.log" 2>&1 < /dev/null &
     echo $! > "$RUN/batch.pid"
+    cache_guard "$(cat "$RUN/batch.pid")"
     say "Started (pid $(cat "$RUN/batch.pid")): $manifest ${opts[*]}"
     note "detached: closing this terminal does not stop it. 'status' for progress, 'stop' to end it."
     note "supervisor log: $RUN/supervisor.log; batch logs: $TERRAIN_DATA_DIR/logs/"
@@ -304,6 +334,8 @@ status() {
             [ -f "$TERRAIN_DATA_DIR/runs/$t/failed.json" ] && nfail=$((nfail + 1))
         done < <(tail -n +2 "$manifest")
         note "tiles: $ndone of $n done; $nfail with failed.json (retried by the next attempt)"
+        note "finished since this batch started: $(find "$TERRAIN_DATA_DIR/runs" -mindepth 2 -maxdepth 2 -name done.json \
+            -newer "$RUN/batch.args" 2>/dev/null | wc -l) (a rerun with new parameters leaves the old done.json until then)"
     fi
     last=$(ls -t "$TERRAIN_DATA_DIR"/logs/batch_*.log 2>/dev/null | head -1)
     [ -n "$last" ] && { note "last lines of $last:"; tail -5 "$last" | sed 's/^/    /'; }

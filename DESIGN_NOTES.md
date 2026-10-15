@@ -1626,6 +1626,36 @@ rasters (`--rasters all`, ~1 TB of the RTX 6000 machine's ~10 TB free) rather th
 council's attribute with fallbacks, and review sets from model-data disagreement (Matt uses the LINZ basemap).
 Handover for the work from ML-3a on: `docs/handover_ml3.md`.
 
+**HPC, the VM stopping** (16 Oct, the `--rasters all` rerun): WSL closed every ~20 minutes (the terminal dropped
+back to PowerShell; the supervisor log had no "ended" line). The Windows System log had "low virtual memory" events
+(Resource-Exhaustion-Detector 2004) naming vmmemWSL at 161-165 GB just before each stop: `.wslconfig` gave WSL 176 GB of
+191 GB (our own advice in `terrain_hpc.md`) and Windows had no page file (commit limit = RAM). Linux used ~100 GB for
+10 workers (peaks 9.6-10 GB per tile, unchanged by the rasters) and filled the rest with file cache from writing the
+rasters; Windows counts all of it. Very probably the cause of the overnight wave-2 stop too. Fix: `memory=150GB`,
+`autoMemoryReclaim=dropCache`, a page file, and the file cache emptied every minute during a batch (WSL returns freed
+pages to Windows). `terrain_hpc.sh` now reports Windows' margin beside WSL (`check`, `start`; warning under 32 GB),
+empties the cache while a batch runs (`start`, through sudo), and counts the tiles finished since the batch started
+(`status`: a rerun with new parameters leaves the old done.json until each tile is redone). The distro's disk was at its
+1 TB default with 648 GB free against ~550 GB of rasters still to come: enlarge it with `wsl --manage terrain --resize 2TB`.
+
+**ML-3a step 1: channel widths** (17 Oct; `scripts/probe_source.py --fields --values` on the four sources, and the raw
+attributes in the 349 bundles). None of the four records widths usably:
+- *Waimakariri* (3,174 features): `TOP_WIDTH_m`, `BASE_WIDTH_m`, `WIDTH_m`, `CHANNEL_FORM` exist but are empty
+  (`DEPTH_m` on a handful). Mapped anyway, so values flow through if the council fills them.
+- *HBRC* (809) and *Environment Southland* (358): no width, depth or form field; Environment Southland has no class
+  field either (Name, District, Catchment, maintenance schedule), so its lines take the drain class.
+- *Auckland* (12,142): `SW_WIDTH_TOP_MM` (~1 % filled, median ~3.5 m) and `SW_WIDTH_BASE_MM` (~4 %, but most of those
+  1-3 "mm": metres in a mm field, presumably). Mapped as mm; ML-3 drops widths outside 0.3-30 m rather than guessing
+  units. `SW_ASSET_TYPE` gives a form: unlined 9,107, lined 1,658, swale 1,296, flume 71.
+So the half-width comes from the fallbacks (`ml/channel_labels.py`, `ml/config/channels.yml`): the council's width if
+plausible; a line mostly inside a wide-channel polygon (network.gpkg `rivers`) takes the polygon; the physics channel
+map's half-width along the snapped line (distance to the edge of `channel_mask`, median, clipped to 0.5-4 m) where at
+least half of the line lies in the mask; otherwise a default by class (drain 1 m, stream 2 m, race 0.75 m). Council
+lines are harmonised again from the bundles' raw layers with the current `sources.yml`, so new mappings need no bundle
+rebuild. Per-line weight: the council's positive weight (Environment Southland 1.5, Waimakariri and HBRC 1.0, Auckland
+0.7) times a form weight (swales 0.5, to be confirmed). The channel label schema gains `form`, `width_m` and
+`base_width_m`.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

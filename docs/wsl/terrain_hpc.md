@@ -7,16 +7,23 @@ the EDDIE stack and GeoFabrics (Docker, `stage1_workstation.md`) are not needed 
 ## 1. Windows side, once
 
 1. **NVIDIA driver**: a current Windows driver. WSL uses it; never install a Linux driver inside WSL.
-2. **WSL memory**: WSL takes half the RAM by default. Create `%UserProfile%\.wslconfig`:
+2. **WSL memory**: WSL takes half the RAM by default. Create `%UserProfile%\.wslconfig` (for 192 GB of RAM):
 
    ```ini
    [wsl2]
-   memory=176GB
-   processors=32
+   memory=150GB
+   processors=64
    swap=32GB
+
+   [experimental]
+   autoMemoryReclaim=dropCache
    ```
 
-   then `wsl --shutdown`.
+   then `wsl --shutdown`. Leave Windows at least ~32 GB beside WSL, and give Windows a page file (System >
+   Advanced > Performance > Virtual memory). On 16 Oct 2026, with `memory=176GB` and no page file, Linux's file cache
+   (the rasters being written) filled WSL's memory, Windows ran out ("low virtual memory", event 2004 of
+   Resource-Exhaustion-Detector, naming vmmemWSL at ~162 GB) and stopped the VM every ~20 minutes. `check` reports
+   the margin, and `start` empties the file cache every minute while a batch runs (it asks for sudo once).
 3. **The distro, on the big data drive** (PowerShell; `E:` is an example):
 
    ```powershell
@@ -69,8 +76,10 @@ every tile is done (at most 5 attempts; finished tiles are skipped), keeps Windo
 records out-of-memory kills in `~/terrain/run/supervisor.log`. `batch` runs the same in the terminal (closing the
 terminal stops it). Results are readable from Windows at `\\wsl.localhost\terrain\home\<user>\terrain_data`.
 
-If a batch stops on its own: `status` shows the last log lines and any out-of-memory kills; a Windows restart (for
-updates) stops WSL too (`Get-WinEvent -FilterHashtable @{LogName='System'; Id=1074,6006,6008,42} -MaxEvents 10` in
+If a batch stops on its own: `status` shows the last log lines and any out-of-memory kills. If WSL itself closed
+(the terminal drops back to PowerShell, and the supervisor log has no "ended" line), look for low-memory events:
+`Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Resource-Exhaustion-Detector'} -MaxEvents 5`
+(section 1, item 2). A Windows restart (for updates) stops WSL too (`Get-WinEvent -FilterHashtable @{LogName='System'; Id=1074,6006,6008,42} -MaxEvents 10` in
 PowerShell lists restarts and sleeps); then `start` again.
 
 ## Notes
