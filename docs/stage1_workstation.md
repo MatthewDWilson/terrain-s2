@@ -272,7 +272,17 @@ The results go to `D:\EDDIE\w7_<res>m_<time>\`:
 - each product's provenance and record;
 - the `rivers/` folders, as `.tgz`.
 
-A failed run is recorded and the script carries on.
+A failed run is recorded and the script carries on. The 1 m results of 15 Oct 2026 are in
+`docs/stage1_rivers.md` section 4d.
+
+**W6 regression harness** (any two registry products on the same grid; B − A, by `data_source` of each, the
+`data_source` changes and the instruction differences):
+
+```bash
+bash $S compare 14 15 2>&1 | tee /mnt/d/EDDIE/eddie_step8_compare_14_15.txt   # SH12: geofabrics vs + rivers
+```
+
+The report is saved as `D:\EDDIE\compare_<a>_<b>.md` and `.json`.
 
 River and waterway bed estimation (`rivers=true`, `waterways=true`) are in `docs/stage1_rivers.md`.
 

@@ -200,10 +200,74 @@ data in 3 attempts". Another instance can be named: `TERRAIN_OVERPASS_URL` in `.
 `osm.overpass_url`. For example `https://overpass.kumi.systems/api/` or
 `https://maps.mail.ru/osm/tools/overpass/api/`.
 
+## 4d. W7 runs: four AOIs at 1 m, with and without rivers (15 Oct 2026)
+
+`bash $S w7 1` on commit `13ddb4c` (`ec5d9b6` as applied): each example AOI as raster, geofabrics and geofabrics
+with rivers (product `dem`; waterways off, since Overpass was down). Results in `D:\EDDIE\w7_1m_20261015_0902`.
+
+**Runtime (wall clock per request, s).**
+
+| AOI | raster | geofabrics | + rivers | River (REC1 id, catchment, MAF) |
+|---|---|---|---|---|
+| SH12 | 10 | 81 | 311 | 1011466, 43 km², 76-81 m³/s |
+| aoi2 | 10 | 80 | 302 | 1011466 |
+| canterbury1 | 10 | 533 | 1,549 | 13040752, 65 km², 14-17 m³/s |
+| canterbury2 | 11 | 321 | 291 | none selected |
+
+GeoFabrics stages (`timeline`):
+
+| Stage | SH12 before the fix (product 12) | SH12 (15) | aoi2 (18) | canterbury1 (21) |
+|---|---|---|---|---|
+| River stage | 1:20 | 1:43 | 1:27 | 8:34 |
+| Waterways | 1:20 | off | off | off |
+| Raw DEM | 0:42 | 0:46 | 0:41 | 5:29 |
+| Hydrologic DEM | **30:10** | 1:56 | 1:53 | 10:43 |
+| Hydrologic DEM without rivers | 0:18 | 0:18 | 0:18 | 1:59 |
+
+- **The burn fix works.** On SH12 the hydrologic stage went from 30 min to 2 min, and the whole river run from
+  about 34 min to 5 min. The burn itself is now about 1.6 min at SH12 and aoi2.
+- **What is left is per chunk, not per cell.** The burn now costs about 0.3-0.4 s of wall clock per 50 m chunk
+  of the whole grid: 300 chunks at SH12 (97 s), 1,316 at canterbury1 (about 8.7 min). GeoFabrics schedules every
+  chunk, and evaluates every cell of each chunk the river polygon touches. A larger AOI therefore pays roughly in
+  proportion to its area, whatever the river length. Tuning `burn_chunk_m` only moves this between the two
+  terms; the real fix is to evaluate only the cells inside the polygon (GeoFabrics issue 8).
+- **The river stage re-reads the LiDAR.** It builds its own ground and vegetation DEMs over the river corridor.
+  At canterbury1 that is four passes over two surveys (about 6.5 of its 8.5 min), on top of the raw DEM's own
+  read. Most of canterbury1's extra 17 minutes is this and the burn.
+- **For Stage 2:** both costs go away if the channel estimation reads the 1 m raw DEM once and burns only the cells
+  in the channel polygon (vectorised: 10,706 cells in 0.3 s, section 4b). Stage 1 keeps GeoFabrics' behaviour.
+
+**DEM agreement, geofabrics − raster (1 m, all valid cells; 0 gaps in all twelve products).**
+
+| AOI | median | p5 | p95 | max abs | > 0.2 m |
+|---|---|---|---|---|---|
+| SH12 | 0.001 | −0.095 | 0.129 | 2.41 | 4.4 % |
+| aoi2 | 0.002 | −0.103 | 0.118 | 3.63 | 4.4 % |
+| canterbury1 | 0.000 | −0.014 | 0.023 | 2.19 | 1.1 % |
+| canterbury2 | 0.000 | −0.016 | 0.020 | 3.22 | 0.9 % |
+
+No bias anywhere. In Canterbury (flat, open) the two agree to about 2 cm. In Northland the spread is about ±0.1 m
+with 4 % of cells beyond 0.2 m, which is what we would expect from different ground interpolation under
+vegetation and over water. The raster product labels every cell `data_source = 5`, so these reports could only
+break down by A. `terrain compare` now also breaks down by B's `data_source`, which separates GeoFabrics'
+interpolated cells (0) from LiDAR cells (1); rerun with `bash $S compare <raster id> <gf id>`.
+
+**Rivers, rivers − geofabrics.** Changes are confined to the channel: 10,625 cells at SH12 (1.5 %), 6,423 at aoi2,
+13,652 at canterbury1. At canterbury1, 10,819 of these were interpolated cells (`data_source` 0, water with no
+ground returns) and 2,833 LiDAR cells. Over the interpolated cells the burn lowers the bed by up to 5 m at SH12,
+6.3 m at aoi2 and 2.4 m at canterbury1. canterbury1's main stem: 10 reaches, 674 bathymetry points, widths 10-33 m
+(median 14 m), Rupp & Smart depth 1.1-2.3 m (median 1.9 m) below bank, bed 0.6 m median elevation.
+
+**canterbury2: no river.** The REC1 window had 34 reaches (28 junctions, all consistent), but none with a
+catchment of at least 10 km² (`area_threshold_m2`) meets the grid, so no river was run. Its data are identical
+to the geofabrics product. The product still got its own key (the empty river plan is in the source version), so
+it rebuilt the raw DEM (291 s) rather than reusing product 23. For small streams and drains, the route is the
+waterways stage (OSM), or a lower threshold per request.
+
 ## 5. Open
 
-1. **REC1 topology.** Built from the geometry (section 3). On the first live run, check the junction count in
-   the provenance (`rivers.network.connections_downstream_larger` against `connections`).
+1. **REC1 topology.** Built from the geometry (section 3). Confirmed on the W7 windows: 23/23, 28/28 and 41/41
+   junctions consistent, no reaches reversed.
 2. **OSM alignment.** GeoFabrics needs the OSM id per river (profile `rivers.osm: {<network_id>: {type, id}}`).
    Choosing it automatically (the OSM waterway that best overlaps the REC stem) is a small addition once we have
    seen the DEM-only alignment on SH12.

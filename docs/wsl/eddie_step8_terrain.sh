@@ -18,6 +18,8 @@
 #                     W7 comparison: the four example AOIs (or those named) x raster | geofabrics | geofabrics with
 #                     rivers, all product=dem; then 'terrain compare' geofabrics-raster and rivers-geofabrics;
 #                     summary.csv, compare.csv and the reports in D:\EDDIE\w7_<res>m_<time>\
+#   compare <a> <b>   W6 harness: 'terrain compare' of two registry products (B - A; by data_source of A and B,
+#                     data_source changes, instruction differences); report to D:\EDDIE\compare_<a>_<b>.md/.json
 #   timeline <id>     GeoFabrics stage timings for a product, from its log files (where the time went)
 #   read <WKT file>   diagnose the elevation reader for an AOI: surveys planned, and per tile its grid, nodata
 #                     and the valid fraction of the window read (no product written)
@@ -783,6 +785,29 @@ w7() {
     note "all outputs: D:\\EDDIE\\$(basename "$out")"
 }
 
+# ------------------------------------------------------------------------------------------------ compare (W6)
+compare_products() {
+    local a="${1:-}" b="${2:-}"
+    [ -n "$a" ] && [ -n "$b" ] || { note "usage: compare <product id A> <product id B>   (reports B - A)"; exit 2; }
+    cd "$INST" || exit 1
+    local na nb
+    na=$(docker compose exec -T db_postgres psql -U postgres -d db -At -c \
+        "select paths->>'netcdf' from terrain_product where id = $((a))" 2>/dev/null)
+    nb=$(docker compose exec -T db_postgres psql -U postgres -d db -At -c \
+        "select paths->>'netcdf' from terrain_product where id = $((b))" 2>/dev/null)
+    [ -n "$na" ] || { note "!! no product $a"; exit 1; }
+    [ -n "$nb" ] || { note "!! no product $b"; exit 1; }
+    local tmp="/terrain_data/compare_${a}_${b}"
+    say "terrain compare: B = product $b minus A = product $a"
+    docker compose exec -T terrain_worker terrain compare "$na" "$nb" --out "$tmp.md" >/dev/null \
+        || { note "!! compare failed"; exit 1; }
+    for ext in md json; do
+        cp "$DATA/cache/compare_${a}_${b}.$ext" "/mnt/d/EDDIE/compare_${a}_${b}.$ext" 2>/dev/null
+    done
+    sed 's/^/  /' "/mnt/d/EDDIE/compare_${a}_${b}.md"
+    note "saved: D:\\EDDIE\\compare_${a}_${b}.md (and .json)"
+}
+
 # ------------------------------------------------------------------------------------------------ timeline
 timeline() {
     local id="${1:-}"; [ -n "$id" ] || { note "usage: timeline <product id>"; exit 2; }
@@ -958,6 +983,7 @@ case "${1:-setup}" in
     rec1) rec1 ;;
     read) shift; read_diag "$@" ;;
     timeline) shift; timeline "$@" ;;
+    compare) shift; compare_products "$@" ;;
     w7) shift; w7 "$@" ;;
     shim) shim ;;
     products) products ;;

@@ -83,11 +83,12 @@ def compare(a, b) -> dict:
     rep["z_diff"] = _stats(d)
     if pa.data_source is not None and pb.data_source is not None:
         dsa, dsb = pa.data_source[sa], pb.data_source[sb]
-        by = {}
-        for code in np.unique(dsa[both]).astype(int):
-            m = both & (dsa == code)
-            by[str(code)] = _stats((zb - za)[m])
-        rep["z_diff_by_data_source_a"] = by
+        for tag, ds in (("a", dsa), ("b", dsb)):
+            by = {}
+            for code in np.unique(ds[both]).astype(int):
+                m = both & (ds == code)
+                by[str(code)] = _stats((zb - za)[m])
+            rep[f"z_diff_by_data_source_{tag}"] = by
         changed = both & (dsa != dsb)
         pairs = {}
         if changed.any():
@@ -127,8 +128,9 @@ def markdown(rep: dict) -> str:
         return (f"| {name} | {s['n']} | {s['median']:.3f} | {s['p5']:.3f} | {s['p95']:.3f} | {s['max_abs']:.3f} | "
                 f"{s['share_abs_gt_0.05']:.1%} | {s['share_abs_gt_0.2']:.1%} |")
     L.append(row("all", z))
-    for code, s in rep.get("z_diff_by_data_source_a", {}).items():
-        L.append(row(f"data_source {code} (A)", s))
+    for tag in ("a", "b"):
+        for code, s in rep.get(f"z_diff_by_data_source_{tag}", {}).items():
+            L.append(row(f"data_source {code} ({tag.upper()})", s))
     if rep.get("data_source_changes"):
         L += ["", "## data_source changes (A->B: cells)", "", json.dumps(rep["data_source_changes"])]
     if rep.get("instructions_diff"):
