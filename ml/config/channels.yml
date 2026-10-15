@@ -10,7 +10,10 @@
 councils:
   waimakariri:            {sources: [waimakariri_channels], positive_weight: 1.0, negatives: all,  ignore_unrecorded: true}
   hbrc:                   {sources: [hbrc_channels],        positive_weight: 1.0, negatives: all,  ignore_unrecorded: true}
-  environment_southland:  {sources: [es_drainage],          positive_weight: 1.5, negatives: all,  ignore_unrecorded: true}
+  # ES lines are coarse (a vertex every few hundred m) and drawn up to ~25 m off large scheme drains: on CD08_10000_0502,
+  # a +-15 m corridor "snapped" onto paddock furrows 25 m from the drain; +-40 m with a 0.3 m bed finds the drain (1.5 m)
+  environment_southland:  {sources: [es_drainage],          positive_weight: 1.5, negatives: all,  ignore_unrecorded: true,
+                           snap: {corridor_m: 40.0, bed_depth_m: 0.3}}
   auckland:               {sources: [auckland_channels],    positive_weight: 0.7, negatives: flat, ignore_unrecorded: true}
 negative_weight: 0.05
 ignore_ring_m: 3.0
@@ -42,4 +45,5 @@ width:
   physics_min_inside: 0.5
   physics_half_width_m: [0.5, 4.0]       # 4 m = the rivers' 8 m minimum width (network.river_polygons)
   river_min_inside: 0.5
+  river_reach_m: 20.0           # a river line labels its polygons only within this distance of the line
   default_half_width_m: {drain: 1.0, stream: 2.0, race: 0.75, other: 1.0}

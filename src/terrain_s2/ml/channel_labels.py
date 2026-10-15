@@ -30,7 +30,8 @@ DEFAULTS = dict(
     ignore_ring_m=3.0,
     form_weights={},
     width=dict(plausible_width_m=[0.3, 30.0], physics_min_inside=0.5, physics_half_width_m=[0.5, 4.0],
-               river_min_inside=0.5, default_half_width_m=dict(drain=1.0, stream=2.0, race=0.75, other=1.0)),
+               river_min_inside=0.5, river_reach_m=20.0,
+               default_half_width_m=dict(drain=1.0, stream=2.0, race=0.75, other=1.0)),
 )
 COLUMNS = ["council", "source", "source_id", "class", "form", "width_m", "base_width_m", "weight"]
 
@@ -158,7 +159,7 @@ def resolve_widths(lines, cfg: dict, edt=None, transform=None, rivers=None):
     return out
 
 
-SNAP_VERSION = 2              # 2: the bed check accepts a line in the lowest quarter of a banked cross-section
+SNAP_VERSION = 3              # 2: bed check for banked cross-sections; 3: per-council snapping, footprints, CRS 2D
 
 
 def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):
@@ -169,8 +170,12 @@ def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):
     Lines are clipped to the rasters (the tile core), so a line crossing a tile edge is snapped piecewise in each
     tile. Writes ``ml_channels.gpkg`` (layer ``council_channels``: the snapped geometry, the council geometry as
     WKT in ``geometry_council``, ``snapped``, ``bed_frac``, ``offset_med_m``, ``check_council``, ``check_snapped``,
-    ``half_width_m``, ``width_source``, ``weight``) and ``ml_channels.json`` (counts and length-weighted shares per
-    council). Returns (lines, summary)."""
+    ``half_width_m``, ``width_source``, ``physics_frac``, ``weight``), layer ``council_footprints`` (the label
+    polygons: the snapped line buffered by its half-width, or, for a river line, its wide-channel polygons within
+    ``width.river_reach_m`` of the line, so a short line does not label a whole river network), and
+    ``ml_channels.json`` (counts and length-weighted shares per council). Snapping parameters: ``snap``, overridden
+    per council by ``councils.<name>.snap`` (Environment Southland's coarse lines need a wider corridor and a deeper
+    bed). Returns (lines, summary)."""
     import geopandas as gpd
     import pyogrio
     import rasterio
@@ -181,7 +186,7 @@ def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):
     run, bundle = Path(run), Path(bundle)
     P = dict(S.DEFAULTS, **(cfg.get("snap") or {}))
     with rasterio.open(run / "features.tif") as s:
-        T, crs, bounds = s.transform, s.crs, s.bounds
+        T, crs, bounds = s.transform, _horizontal(s.crs), s.bounds
         names = list(s.descriptions)
         bands = {n: s.read(names.index(n) + 1) for n in S.DEPTH_BANDS if n in names}
     with rasterio.open(run / "hydro.tif") as s:
@@ -205,8 +210,16 @@ def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):
     if (run / "network.gpkg").exists() and "rivers" in {n for n, _ in pyogrio.list_layers(run / "network.gpkg")}:
         rivers = gpd.read_file(run / "network.gpkg", layer="rivers").to_crs(crs)
     if len(lines):
-        out = S.snap_lines(lines, depth, T, P, bed=bed)
+        import pandas as pd
+        parts = []
+        for c, g in lines.groupby("council", sort=False):
+            Pc = dict(P, **(((cfg.get("councils") or {}).get(c) or {}).get("snap") or {}))
+            parts.append(S.snap_lines(g, depth, T, Pc, bed=bed))
+        out = gpd.GeoDataFrame(pd.concat(parts), geometry="geometry", crs=crs).sort_index()
         out = resolve_widths(out, cfg, edt=edge_distance(mask, T), transform=T, rivers=rivers)
+        from scipy import ndimage as ndi
+        near_map = ndi.distance_transform_edt(~mask) * abs(T.a) <= 3.0
+        out["physics_frac"] = [S.share_on(g, near_map, T) for g in out.geometry]
         if dem is not None:
             out["check_council"] = [S.bed_check(g, dem, T, P) for g in out.geometry_council]
             out["check_snapped"] = [S.bed_check(g, dem, T, P) if ok else np.nan
@@ -216,9 +229,12 @@ def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):
         fw = float((cfg.get("snap") or {}).get("unsnapped_weight", 0.5))
         out["weight"] = [w if ok else w * fw for w, ok in zip(out.weight.astype(float), out.snapped)]
         out["geometry_council"] = gpd.GeoSeries(out.geometry_council, crs=crs).to_wkt()
+        foot = footprints(out, rivers, cfg)
     else:
+        foot = None
         out = gpd.GeoDataFrame(columns=COLUMNS + ["snapped", "bed_frac", "offset_med_m", "half_width_m",
-                                                  "width_source", "check_council", "check_snapped", "geometry_council"],
+                                                  "width_source", "check_council", "check_snapped", "physics_frac",
+                                                  "geometry_council"],
                                geometry=[], crs=crs)
     summary = summarise(out)
     summary.update(tile=run.name, snap_version=SNAP_VERSION)
@@ -228,8 +244,47 @@ def tile_channels(run, bundle, sources: dict, cfg: dict, write=True):
             f.unlink()
         if len(out):
             out.to_file(f, layer="council_channels", driver="GPKG")
+        if foot is not None and len(foot):
+            foot.to_file(f, layer="council_footprints", driver="GPKG")
         (run / "ml_channels.json").write_text(json.dumps(summary, indent=1, default=float))
     return out, summary
+
+
+def _horizontal(crs):
+    """The horizontal part of a compound CRS (rasters are NZTM + NZVD2016; vectors are written in NZTM alone, which
+    every PROJ version knows: an older one could not read the compound code back, 17 Oct)."""
+    if crs is None:
+        return crs
+    try:
+        from pyproj import CRS
+        c = CRS.from_user_input(crs.to_wkt() if hasattr(crs, "to_wkt") else crs)
+        if c.is_compound:
+            c = c.sub_crs_list[0]
+        e = c.to_epsg()
+        return f"EPSG:{e}" if e else c
+    except Exception:  # noqa: BLE001 - keep the raster's CRS if pyproj cannot split it
+        return crs
+
+
+def footprints(lines, rivers, cfg: dict):
+    """Label polygons per council line: buffered by ``half_width_m``; a river line (no half-width) takes the
+    wide-channel polygons within ``width.river_reach_m`` of it. Columns: council, source_id, width_source, snapped,
+    weight."""
+    import geopandas as gpd
+    W = dict(DEFAULTS["width"], **(cfg.get("width") or {}))
+    reach = float(W.get("river_reach_m", 20.0))
+    riv = None
+    if rivers is not None and len(rivers):
+        riv = (rivers.geometry if hasattr(rivers, "geometry") else rivers).union_all()
+    geo = []
+    for g, h, src in zip(lines.geometry, lines.half_width_m, lines.width_source):
+        if src == "river" and riv is not None:
+            geo.append(riv.intersection(g.buffer(reach)))
+        else:
+            geo.append(g.buffer(float(h) if np.isfinite(h) else 1.0, cap_style="flat"))
+    keep = ["council", "source_id", "width_source", "snapped", "weight"]
+    f = gpd.GeoDataFrame(lines[keep].copy(), geometry=geo, crs=lines.crs)
+    return f[~f.is_empty]
 
 
 def summarise(out) -> dict:
@@ -257,5 +312,6 @@ def summarise(out) -> dict:
                       check_council_all=wmean(out.check_council, nr, Lc),
                       check_council_snapped=wmean(out.check_council, sn, Lc),
                       check_snapped=wmean(out.check_snapped, sn, L),
-                      offset_med_m=round(float(np.nanmedian(np.asarray(out.offset_med_m, float)[sn])), 2) if sn.any() else None)
+                      offset_med_m=round(float(np.nanmedian(np.asarray(out.offset_med_m, float)[sn])), 2) if sn.any() else None,
+                      physics_frac=wmean(out.physics_frac, sn, L) if "physics_frac" in out else None)
     return dict(councils=res)

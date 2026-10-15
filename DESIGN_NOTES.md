@@ -1696,6 +1696,27 @@ BA31_10000_0305 and CD08_10000_0502 (`scripts/clip_run.py`) to look at (1) and (
 shares averaged over the tiles that had each source (they summed past 100 %); now a missing source counts as 0 %.
 Running the snapping beside the batch stopped WSL again (memory): run them one after the other.
 
+**Snapping, the two clips** (17 Oct; `clip_run.py` windows of BA31_10000_0305 and CD08_10000_0502):
+- *Environment Southland: false snaps.* The council lines are coarse (DR-0111: 12 vertices over 3 km) and drawn ~25 m
+  off the scheme drain. With +-15 m the drain was out of reach, and the path followed paddock furrows (11 m top-hat
+  0.1-0.3 m, common on Southland pasture), passing the 0.10 m bed test: "snapped", 25 m from the drain. The bed check
+  passed it too (0.62), so it does not catch this. Corridor and bed tested on the clip: +-25 m reached the drain at
+  0.10 m, +-40 m at 0.10 or 0.30 m (1.5 m from the drain, check 0.89); at +-15 m with a 0.30 m bed the line is
+  correctly left unsnapped. Now per-council snapping parameters, Environment Southland +-40 m and a 0.30 m bed; on the
+  clip 97 % snapped, check 0.24 -> 0.90, and the widths come from the physics map (97 %) instead of the 1 m default.
+  So the first pass's Environment Southland figures (91 % snapped, 4.3 m move) included false snaps.
+- *Auckland: the "river" lines are gully streams.* 52 of the tile's 67 km of council line lie in 200 wide-channel
+  polygons about 8-17 m across (2A/P), along the incised stream gullies of west Auckland: channels, not tidal flats,
+  but wider than the stream bed, and branching into gully arms that hold no council line. A river line now labels its
+  polygons only within 20 m of itself (`width.river_reach_m`). Widths in these gullies stay generous; the U-Net's
+  output is skeletonised to centrelines (ML-3c), so this matters less than the positions.
+- *A new diagnostic*, `physics_frac`: the share of a snapped line within 3 m of the physics channel mask (BW24 0.47,
+  BA31 0.96, CD08 0.88). With `bed_frac` and the move, it flags snaps onto weak features for review.
+- *Footprints*: `ml_channels.gpkg` now also has `council_footprints`, the label polygons per line (the half-width
+  buffer, or the river polygons within reach), with council, width source, snapped and weight: step 4 rasterises them.
+- Vectors are written in NZTM (EPSG:2193) even where the rasters carry NZTM + NZVD2016: the compound code written by
+  one PROJ could not be read by another. SNAP_VERSION 3.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

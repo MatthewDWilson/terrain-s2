@@ -84,3 +84,18 @@ def test_tile_channels_writes_layer_and_summary(tmp_path):
     back = gpd.read_file(run / "ml_channels.gpkg", layer="council_channels")
     assert len(back) == 2 and back.geometry_council.str.startswith("LINESTRING").all()
     assert json.loads((run / "ml_channels.json").read_text())["snap_version"] == CL.SNAP_VERSION
+    foot = gpd.read_file(run / "ml_channels.gpkg", layer="council_footprints")
+    assert len(foot) == 2 and back.crs.to_epsg() == 2193
+    assert 0.5 * d.loc["d1", "geometry"].length < foot.area.max() < 10 * d.loc["d1", "geometry"].length
+
+
+def test_per_council_snap_overrides_and_river_footprints():
+    from shapely.geometry import box
+    cfg = CL.load_config(ROOT / "ml" / "config" / "channels.yml")
+    assert cfg["councils"]["environment_southland"]["snap"]["corridor_m"] > cfg["snap"]["corridor_m"]
+    lines = gpd.GeoDataFrame({"council": ["w"], "source_id": ["r1"], "width_source": ["river"], "snapped": [True],
+                              "weight": [1.0], "half_width_m": [np.nan]},
+                             geometry=[LineString([(0, 0), (30, 0)])], crs=2193)
+    river = gpd.GeoSeries([box(-500, -20, 500, 20)], crs=2193)           # a long river; the line covers 30 m of it
+    f = CL.footprints(lines, river, cfg)
+    assert f.geometry.iloc[0].bounds[0] >= -20.5 and f.geometry.iloc[0].bounds[2] <= 50.5   # within 20 m of the line

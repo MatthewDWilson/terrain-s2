@@ -152,6 +152,15 @@ def snap_lines(lines, depth, transform, params=None, bed=None):
     return out
 
 
+def share_on(line, grid, transform, step=1.0):
+    """Share of a line's sample points (every ``step`` m) on True cells of ``grid``; NaN off the grid."""
+    n = max(int(np.ceil(line.length / step)), 1)
+    pts = [line.interpolate(d) for d in np.linspace(0.0, line.length, n + 1)]
+    r, c = _rc(transform, [p.x for p in pts], [p.y for p in pts])
+    ok = (r >= 0) & (r < grid.shape[0]) & (c >= 0) & (c < grid.shape[1])
+    return float(np.mean(grid[r[ok], c[ok]])) if ok.any() else np.nan
+
+
 def bed_check(line, dem, transform, params=None):
     """Share of a line's check points on the bed: across the line (+-check_half_m), the DEM's lowest point lies within
     check_tolerance_m of it, or the cross-section has relief >= check_relief_m and the line lies in its lowest
