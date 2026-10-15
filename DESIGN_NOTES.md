@@ -1717,6 +1717,34 @@ Running the snapping beside the batch stopped WSL again (memory): run them one a
 - Vectors are written in NZTM (EPSG:2193) even where the rasters carry NZTM + NZVD2016: the compound code written by
   one PROJ could not be read by another. SNAP_VERSION 3.
 
+**Snapping, all 349 tiles** (17 Oct, SNAP_VERSION 3, run alone; length-weighted; check over non-river lines that
+snapped, council -> snapped; `physics_frac`: share of the snapped length within 3 m of the physics channel mask):
+
+| Council | Tiles | km | Snapped | Check | physics_frac | Move | Widths: physics / default / river |
+|---|---|---|---|---|---|---|---|
+| Waimakariri | 43 | 1,088 | 85 % | 0.56 -> 0.87 | 0.62 | 2.6 m | 41 / 49 / 9 % |
+| HBRC | 38 | 758 | 82 % | 0.88 -> 0.95 | 0.90 | 0.3 m | 45 / 23 / 31 % |
+| Environment Southland | 165 | 1,393 | 92 % | 0.51 -> 0.92 | 0.92 | 3.2 m | 47 / 10 / 43 % |
+| Auckland | 101 | 805 | 84 % | 0.63 -> 0.85 | 0.63 | 1.3 m | 14 / 19 / 66 % |
+
+No failures; the check got worse on 2 tiles (Auckland). Environment Southland now lands on the physics map (0.92;
+its scheme drains are large, many over 8 m wide, hence 43 % river), where the +-15 m pass had moved its lines onto
+paddock furrows. Waimakariri and Auckland have the most snapped length off the physics map (0.62-0.63): drains the
+physics chain does not hold, the reason for ML-3. Ready for the label rasters.
+
+**Wave 3, first tranche** (17 Oct; Matt agreed the plan: ML-3 end to end on waves 1+2, wave 3 alongside, then
+brought in). Enabled in `sources.yml` from `sites/candidates/sources_candidates.yml` (probe findings kept in their
+comments): `waikato_lds_drains`, `wrc_floodgates` (licence to confirm), `hauraki_land_drains`,
+`otago_scheduled_drains`, `gisborne_rural_drains`, and `ecan_drains` replaced by the 2019 bylaw layer with its
+filter. `ml/config/wave3.yml`: selected by channels, at most 60 tiles per council (most council lines first), tiles
+of waves 1 and 2 excluded (`exclude_manifests`; ECan's drains also cover Waimakariri tiles, whose labels stay as
+they are), and Gisborne held out whole (`holdout_councils`: a new landscape never trained on, the test of a national
+rollout). Councils added to `channels.yml` at weight 1.0 (scheme drains only, unrecorded detections ignored), with
+the default snapping until their first pass is checked; `wrc_floodgates` added to the council crossing sources
+(through stopbanks, not under roads: report them apart). Ownership: this thread keeps `sources.yml`, `ml/` and the
+scripts; the council-data thread keeps `sites/candidates/` (licences, tranche 2, and visual checks of wave 3's
+snapping from a brief).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

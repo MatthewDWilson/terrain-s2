@@ -10,7 +10,8 @@ Folds (recorded, applied by the training code):
 - ``council``: leave-one-council-out (train on the others, test on this one);
 - ``sheet``: the group for blocked cross-validation within a council (tiles of one 1:50k sheet stay together);
 - ``holdout``: sheets never trained on (config ``holdout_sheets``: BW24, the sheet of canterbury1 and canterbury2,
-  whose manual labels are the long-term test set);
+  whose manual labels are the long-term test set), and whole councils never trained on (``holdout_councils``: a
+  new landscape, the test of a national rollout);
 - ``split``: the partition's train / validation / test per sheet, kept for reference. With a few sheets per
   council it is too coarse for evaluation (wave 1: every Waimakariri tile is test or validation, every HBRC
   tile train), hence the folds above.
@@ -37,6 +38,8 @@ def load_config(path) -> dict:
     c.setdefault("max_tiles_per_council", None)
     c.setdefault("seed", 0)
     c.setdefault("holdout_sheets", [])
+    c.setdefault("holdout_councils", [])
+    c.setdefault("exclude_tiles", [])          # tiles of earlier waves (select_tiles.py fills it from exclude_manifests)
     return c
 
 
@@ -60,6 +63,9 @@ def select(partition_tiles, index: dict, config: dict):
     label_sources = sorted({n for n, (_, p) in index.items() if p.get("enabled", True)
                             and set(p.get("provides", [])) & set(LABEL_TYPES)})
     counts = tile_counts(index, label_sources)
+    excluded = set(config.get("exclude_tiles") or [])
+    if excluded:
+        pt = pt[~pt.tile_id.isin(excluded)]
     rows = []
     for council, by_type in config["councils"].items():
         sel_sources = by_type.get(config["select_by"]) or []
@@ -80,7 +86,8 @@ def select(partition_tiles, index: dict, config: dict):
                        split=r.get("split"), sheet=r.get("sheet"), region=r.get("region"),
                        latest_survey=r.get("latest_survey"), has_dsm=r.get("has_dsm"),
                        n_neighbours_same_survey=r.get("n_neighbours_same_survey"), survey_edge=r.get("survey_edge"),
-                       holdout=r.get("sheet") in set(config["holdout_sheets"]))
+                       holdout=(r.get("sheet") in set(config["holdout_sheets"])
+                                or council in set(config.get("holdout_councils") or [])))
             for lt in LABEL_TYPES:
                 own = by_type.get(lt) or []
                 row[f"council_{lt}"] = sum(c.get(s, 0) for s in own)

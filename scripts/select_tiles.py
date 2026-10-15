@@ -24,6 +24,11 @@ def main():
     a = ap.parse_args()
     import geopandas as gpd
     cfg = S.load_config(a.config)
+    import pandas as pd
+    for m in cfg.get("exclude_manifests") or []:              # tiles of earlier waves keep their labels as they are
+        cfg["exclude_tiles"] = list(cfg["exclude_tiles"]) + list(pd.read_csv(ROOT / m).tile_id)
+    if cfg["exclude_tiles"]:
+        print(f"excluding {len(set(cfg['exclude_tiles']))} tiles of {', '.join(cfg.get('exclude_manifests') or [])}")
     tiles = gpd.read_file(a.partition, layer="tiles", ignore_geometry=True)
     m = S.select(tiles, registry.load_index(a.index), cfg)
     out = Path(a.out) if a.out else ROOT / "ml" / "manifests" / f"{cfg['name']}.csv"

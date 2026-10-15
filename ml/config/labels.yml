@@ -1,5 +1,7 @@
 # ML-0 step 3 (terrain_s2.ml.labels): which labels count and how much. DESIGN_NOTES sections 8 and 11.
-council_sources: [waimakariri_culverts, hbrc_culverts]     # council culvert registers: reliable
+council_sources: [waimakariri_culverts, hbrc_culverts, wrc_floodgates]     # council registers: reliable
+# wrc_floodgates (wave 3): culverts with flap gates through stopbanks; they cross embankments rather than roads, so
+# many may be misses for a road-crossing chain: report them apart before reading recall
 asset_sources: [kiwirail_culverts]                          # other asset registers: reliable
 weights: {council: 1.0, asset: 1.0, bridge: 1.0, manual: 0.6, implied: 0.7}
 # 25 m: wave 1 had 257 of 949 misses with a candidate 15-25 m away (positions of council lines and 1:50k road

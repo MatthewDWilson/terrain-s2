@@ -91,3 +91,15 @@ def test_manual_files_newest_wins(tmp_path):
                                                              dict(file="b.geojson", label="prev", round="v2")]))
     assert len(m) == 2 and set(m["round"]) == {"v1", "v2"}
     assert m.loc[m.geometry.x < 50, "raw"].tolist() == ["n"]                      # the later file wins at 2 m
+
+
+def test_select_excludes_earlier_waves_and_holds_out_councils():
+    tiles = pd.DataFrame([dict(tile_id=t, linz_tile=t, sheet=t[:4], split="train", region="r", latest_survey="s",
+                               has_dsm=True, n_neighbours_same_survey=8, survey_edge=False)
+                          for t in ["BW24_10000_0402", "BW23_10000_0101", "BW22_10000_0101", "BH41_10000_0303"]])
+    cfg = dict(name="w3", select_by="channels", min_features=1, max_tiles_per_council=None, seed=0, holdout_sheets=[],
+               holdout_councils=["hb"], exclude_tiles=["BW22_10000_0101"],
+               councils={"wdc": {"channels": ["wdc_channels"]}, "hb": {"channels": ["hb_culverts"]}})
+    m = S.select(tiles, _index(), cfg).set_index("tile_id")
+    assert "BW22_10000_0101" not in m.index and "BW24_10000_0402" in m.index
+    assert bool(m.loc["BH41_10000_0303", "holdout"]) and not bool(m.loc["BW24_10000_0402", "holdout"])

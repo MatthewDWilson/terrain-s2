@@ -15,6 +15,14 @@ councils:
   environment_southland:  {sources: [es_drainage],          positive_weight: 1.5, negatives: all,  ignore_unrecorded: true,
                            snap: {corridor_m: 40.0, bed_depth_m: 0.3}}
   auckland:               {sources: [auckland_channels],    positive_weight: 0.7, negatives: flat, ignore_unrecorded: true}
+  # wave 3 (17 Oct): scheme drains only (private and farm drains absent), so unrecorded detections are ignored;
+  # weights 1.0 until their snapping and the first model say otherwise. Snapping starts from the defaults; each
+  # council's offsets, physics_frac and a clip are checked after the first pass (Environment Southland needed +-40 m).
+  waikato:                {sources: [waikato_lds_drains],     positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  hauraki:                {sources: [hauraki_land_drains],    positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  otago:                  {sources: [otago_scheduled_drains], positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  gisborne:               {sources: [gisborne_rural_drains],  positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  ecan:                   {sources: [ecan_drains],            positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
 negative_weight: 0.05
 ignore_ring_m: 3.0
 # Forms (Auckland's SW_ASSET_TYPE; others have none): a multiplier on the positive weight. Swales are broad, shallow,

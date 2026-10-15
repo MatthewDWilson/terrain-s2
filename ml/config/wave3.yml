@@ -1,0 +1,29 @@
+# ML wave 3, first tranche (DESIGN_NOTES section 11, 17 Oct 2026): new landscapes with clean scheme-drain layers and
+# clear licences (docs/council_data_candidates.md, "Recommended order" 1 and 4). Selected by channels; the
+# positives for the crossing scorer are implied crossings plus the WRC floodgates (culverts through stopbanks) on the
+# Waikato and Hauraki plains, KiwiRail and bridges where they fall. Tiles of waves 1 and 2 are excluded, so their
+# labels stay as they are (ECan's drains also cover Waimakariri tiles).
+name: wave3
+select_by: channels
+min_features: 1
+# per council, the tiles with the most council lines: keeps wave 3 near wave 2's size (~1 TB with saved rasters)
+max_tiles_per_council: 60
+seed: 0
+holdout_sheets: [BW24]
+# never trained on: a new landscape (Poverty Bay flats), the test of a national rollout
+holdout_councils: [gisborne]
+exclude_manifests: [ml/manifests/wave1.csv, ml/manifests/wave2.csv]
+councils:
+  waikato:
+    channels: [waikato_lds_drains]
+    crossings: [wrc_floodgates]
+  hauraki:
+    channels: [hauraki_land_drains]
+    crossings: [wrc_floodgates]
+  otago:
+    channels: [otago_scheduled_drains]
+  gisborne:
+    channels: [gisborne_rural_drains]
+  ecan:
+    channels: [ecan_drains]
+    stopbanks: [ecan_stopbanks]

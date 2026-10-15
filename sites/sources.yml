@@ -187,17 +187,94 @@ sources:
     const: {type: stopbank}
     id_field: [OBJECTID]
     scope: ECan scheme stopbanks (regional council works); private and district stopbanks absent
-  ecan_drains:
+  # ---- ML wave 3, first tranche (17 Oct 2026): entries moved from sites/candidates/sources_candidates.yml
+  # (probe findings in their comments; assessment in docs/council_data_candidates.md)
+  waikato_lds_drains:
     kind: arcgis
-    # same service: Drains and watercourses, layer 3 (2019 amendment) or 16 (2013). Fields not probed yet.
-    url: https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/3
-    fallback_urls:
-      - https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/16
+    # WRC Land Drainage Schemes - Drains (RACS_LDS_DRAIN; Hub item d7ddc3c738b246218dc52bcbfd99600c), CC BY 4.0,
+    # modified 31 Jul 2026. 1,477 lines, all ASSET_TYPE Drain; DRAINAGE_SCHEME Waikato Central 746, Thames Valley 501,
+    # Franklin Waikato 182, Aka Aka/Otaua 48; PURPOSE/STATUS Drainage/Existing 1,396, NOT SPECIFIED/Existing 62,
+    # Pumping/Existing 12, Stopbank/Existing 4, Drainage/Disposed 3. The where keeps 1,470. No width/depth/form.
+    # Probe 16 Oct confirmed; SPATIAL_DATA_ACCURACY mostly empty, 55 'Hand digitised - lidar', 24 from aerial photo.
+    url: https://services.arcgis.com/2bzQ0Ix3iO7MItUa/arcgis/rest/services/WDP_RACS_LDS_DRAIN/FeatureServer/0
+    where: "STATUS <> 'Disposed' AND PURPOSE <> 'Stopbank'"
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [ASSET_ID, OBJECTID]
+    enabled: true
+    scope: >-
+      WRC-managed rural land-drainage scheme drains (lower Waikato, Thames Valley/Piako, Franklin, Aka Aka);
+      scheme drains only, private and farm drains absent; Hauraki Plains drains are Hauraki DC's (hauraki_land_drains)
+  wrc_floodgates:
+    kind: arcgis
+    # same service, layer 1 Floodgate (points). A floodgate is a culvert through a stopbank with a flap on its outlet:
+    # a crossing for the scorer. Probe 2: 486 points; DISTRICT Lower Waikato 309, Waihou Piako 147, Lake Taupo 25,
+    # Coromandel 5; FUNCTIONALREPORTING Flood Protection 453, Land Drainage 32. No size, type or owner fields
+    # (UNITTYPE empty). The where keeps the two lowland zones.
+    url: https://maps.waikatoregion.govt.nz/arcgis/rest/services/WRCMAPS/Flood_protection_and_land_drainage_assets/MapServer/1
+    where: "DISTRICT IN ('Zone - Lower Waikato', 'Zone - Waihou Piako')"
+    layer: crossings
+    const: {type: culvert}
+    id_field: [COMPKEY, OBJECTID]
+    enabled: true
+    scope: WRC scheme floodgates in the lower Waikato and Waihou-Piako (Hauraki Plains) zones (456)
+  hauraki_land_drains:
+    kind: arcgis
+    # Hauraki DC Land Drain (Asset-Finda; Hub item 179257d036914fe3a6ccf7d7e30fdbfc), CC BY 4.0. 776 lines:
+    # Land Drain 721 (Material = drain class: Type A 98, B 298, C 145, O 173, X 7), Stopbank 52, Culvert 3.
+    # DIAMETER on drains is a code per class (A 1, B 2, C 3, O 6, X 15): possibly a nominal width, unconfirmed,
+    # so not mapped. Community = drainage district (18, e.g. Kerepehi, Turua, Mackaytown, Waihi).
+    # Probe 16 Oct confirmed; US/DS_Invert all 0; layer served in EPSG:3857 (the query asks for 2193).
+    url: https://services9.arcgis.com/ph39VKR5KFKf0WbU/arcgis/rest/services/Land_Drain/FeatureServer/0
+    where: "Asset_Type = 'Land Drain'"
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [Asset_ID, FID]
+    enabled: true
+    scope: >-
+      Hauraki DC drainage-district drains (Hauraki Plains, Paeroa, Waihi); council-maintained, private drains absent;
+      drain class A/B/C/O/X in Material (meaning to confirm with HDC)
+  otago_scheduled_drains:
+    kind: arcgis
+    # ORC Flood Protection Management Bylaw 2022, Scheduled Drains (item d9542addf2184fec938a5792ec12924c), CC BY 4.0.
+    # 317 lines: West Taieri 97, Lower Clutha 81, East Taieri 74, Tokomairiro 65. Fields: label (drain number),
+    # Location. No class, width or pipe field. No public ORC culvert layer found.
+    url: https://services6.arcgis.com/ALxeDxaeNjQo1Mf0/arcgis/rest/services/Flood_Protection_Management_Bylaw_2022/FeatureServer/1
+    layer: channels
+    const: {exists: y, class: drain}
+    id_field: [label, OBJECTID]
+    enabled: true
+    scope: ORC scheme drains scheduled in the bylaw (Taieri Plain, Lower Clutha, Tokomairiro); private drains absent
+  gisborne_rural_drains:
+    kind: arcgis
+    # Gisborne DC Rural Drains (item 55765e67974c4fd38661f68f89ab4bcc), CC BY 4.0, modified Jul 2023. 325 lines:
+    # UNITTYPE DRAIN 283, STREAM 22, RIVER 19, DIVERSION 1. Fields: COMPKEY, UNITTYPE, Name.
+    url: https://services7.arcgis.com/8G10QCd84QpdcTJ9/arcgis/rest/services/rural_drains/FeatureServer/0
     layer: channels
     const: {exists: y}
-    id_field: [OBJECTID]
-    enabled: false
-    scope: ECan drainage scheme drains and watercourses; class field to check (probe --values)
+    class_map: {field: UNITTYPE, values: {DRAIN: drain, DIVERSION: drain, STREAM: stream, RIVER: stream}}
+    id_field: [COMPKEY, OBJECTID]
+    enabled: true
+    scope: council-owned public rural drains (Poverty Bay flats); private drains (landowner's) absent
+  ecan_drains:
+    kind: arcgis
+    # ECan bylaw drains, the 2019 amendment layer (PlanningZones/3); entry from sites/candidates (ecan_bylaw_drains_2019). Only 560
+    # lines: TYPE/CATEGORY Drain A 19, B 273, C 144; Modified waterway A 20, B 53; Natural waterway A 3, B 44;
+    # Grassed waterway B 4. Has SCHEME (Ashburton Hinds Drainage 160, Halswell Drainage 143, Waimakariri-Eyre-Cust 52,
+    # Kaikoura Drainage 48, Seadown 33, Clandeboye 33, ...) and CATEGORY. Likely only the drains the 2019 amendment
+    # changed or added: compare ASSET_NO with layer 16 before choosing.
+    # Probe 16 Oct: CATEGORY B 374, C 144, A 42; CLEANING filled on 176 (mechanical/spray); PLAN_ 'Topo' 16. One line
+    # has LENGTH_M 3,339,652 (a 3,300 km artefact): the where drops it. Drains 436 + modified waterways 73 vs 432
+    # drains in 2013: this looks like the current drain schedule, so prefer it for drains.
+    # Probe 2: 559 selected, longest now 43.8 km; Drain 436, Modified waterway 73, Natural waterway 46, Grassed 4.
+    url: https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/3
+    where: "LENGTH_M < 50000"
+    layer: channels
+    const: {exists: y}
+    class_map: {field: TYPE, values: {Drain: drain, Modified waterway: drain, Natural waterway: stream, Grassed waterway: drain}}
+    id_field: [ASSET_NO, OBJECTID]
+    enabled: true
+    scope: ECan bylaw drains (2019 amendment); scheme drains only
   boprc_defence_against_water:
     kind: arcgis
     # Bay of Plenty Regional Council "Defence Against Water". Probed 8 Oct 2026: the public layer holds only
