@@ -63,16 +63,16 @@ def collections(http, cache: Path, refresh=False, root=STAC, log=print):
         region, survey, product = m.groups()
         url = urljoin(root, link["href"].lstrip("./"))
         f = cache / f"{region}__{survey}__{product}.json"
-        if f.exists() and not refresh:
-            rec = json.loads(f.read_text())
-        else:
+        from terrain_s2.acquire import cachefile
+        rec = None if refresh else cachefile.read(f)
+        if rec is None:
             c = http.json(url)
             items = [Path(it["href"]).stem for it in c.get("links", []) if it.get("rel") == "item"]
             rec = dict(region=region, survey=c.get("linz:slug") or survey, product=product, url=url,
                        updated=c.get("updated"), end=(c["extent"]["temporal"]["interval"][0][1] or "")[:10],
                        start=(c["extent"]["temporal"]["interval"][0][0] or "")[:10], title=c.get("title"),
                        licence=c.get("license"), tiles=items)
-            f.write_text(json.dumps(rec))
+            cachefile.write(f, rec)
         out.append(rec)
     log(f"{len(out)} collections ({sum(r['product'] == 'dem' for r in out)} DEM, "
         f"{sum(r['product'] == 'dsm' for r in out)} DSM)")

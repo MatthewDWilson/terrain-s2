@@ -25,14 +25,15 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 
 ## In progress
 
-- **Wave 2 batch** (RTX 6000 machine): 266 tiles, Environment Southland and Auckland (`ml/config/wave2.yml`).
+- **Wave 2 batch** (RTX 6000 machine): 259 of 266 done; 7 Auckland tiles to rerun after the cache fix.
 - **ML-1 first results**: `train_scorer.py` on `wave1`.
 - **Stage 1 rivers** (Cowork, branch `stage1/rivers`): GeoFabrics river bathymetry for the ML-4 benchmark; merge when tested.
 - **Stage 1** (Cowork): remaining W items (W3 acceptance on the shared reader, W5 on PostGIS, W7, W10, W11).
 
 ## Next
 
-1. ML-1 results review; then the patch CNN (ML-1b) and integration into `run.network` (`p_structure`).
+1. Waves 1 + 2 in one dataset on the RTX 6000 machine (labels at 25 m), the scorer retrained: four councils.
+2. ML-3 (channel detection for small drains): most lost council culverts have no channel mapped.
 2. ML-1: gradient-boosting candidate scorer (weighted positive-unlabelled), evaluation on the folds
    (leave-one-council-out; BW24 held out), then the patch CNN (ML-1b, GPU).
 3. Wave 2 (Environment Southland 165, Auckland 101 tiles; `ml/config/wave2.yml`) on the RTX 6000 machine,

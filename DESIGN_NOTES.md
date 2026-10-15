@@ -1576,6 +1576,26 @@ environment, and pip saw it as installed. `train_cnn.py` now stops when it has a
 (`--cpu` to go on). Smoke run (2 epochs, CPU): CNN recall@100 0.13-0.25, between the tiers and the scorer; the
 ensemble below the scorer alone; manual AUC 0.60-0.64. To be judged on the GPU with 15 epochs.
 
+**Miss diagnosis, Waimakariri** (16 Oct, 12 tiles, 305 labels): council culverts 58 found, 14 within 30 m, and of the
+57 lost, 43 have *no channel* mapped within 10 m, 11 have the network passing with no crossing proposed, 3 were cleaned
+out of the network; implied crossings likewise (49 of 54 lost: no channel). Lost labels sit on tiny catchments
+(median upstream area 10^2.7 = ~500 m2 against 10^5.1 for those found), low DEM barriers (0.34 m against 0.92 m)
+and 32-49 m from the channel map: small field and roadside drains the channel map does not see. A scorer cannot
+recover them; channel detection must (ML-3). The 30 m "position" cases (36 of 305) and the 257 wave-1 misses with a
+candidate 15-25 m away point to the label radius: 25 m from now for council, asset, bridge and implied labels.
+
+**ML-1b, the CNN on the GPU** (`cnn_wave1`, 15 epochs): below the scorer on every fold (recall@100 0.20-0.27 against
+0.30-0.43; holdout AP 0.22 against 0.34); the rank-mean ensemble no better than the scorer except at 500 candidates;
+manual AUC 0.56-0.62 (scorer 0.60-0.61). The patches lack the scorer's main signal (distance to any way: tracks, OSM
+ways, rail; the patch has LINZ road distance only). Next for it: the scalar features into the CNN head (hybrid), or
+the CNN score as a stacked feature of the scorer; behind ML-3 in priority.
+
+**Wave 2** (16 Oct): 259 of 266 tiles; 7 Auckland tiles (AZ32, BB33) failed every retry, CPU or GPU, with "Expecting
+value: line 1 column 1 (char 0)" in the elevation step: an empty or half-written JSON cache file (parallel workers
+writing one STAC cache entry, or a worker stopped mid-write) that every retry read again, or a non-JSON response.
+Cache files are now written atomically and re-fetched when unreadable (`acquire/cachefile.py`: STAC documents, item
+indexes, mirror sidecars, partition collections); `Http.json` names the URL and the first bytes when a body is not JSON.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

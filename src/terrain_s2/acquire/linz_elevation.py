@@ -8,7 +8,6 @@ from the COGs (windowed HTTP range reads, no full-tile download). Native CRS is 
 """
 from __future__ import annotations
 
-import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urljoin
@@ -71,8 +70,10 @@ def tile_index(http, coll_url, coll, cache_dir, workers: int = 16):
     key = (coll.get("linz:slug", "c") + "_" + coll.get("linz:geospatial_category", "x") + "_" +
            str(coll.get("updated", ""))[:10] + "_" + hashlib.sha256(coll_url.encode()).hexdigest()[:8]).replace(":", "-")
     f = cache_dir / f"tiles_{key}.json"
-    if f.exists():
-        return json.loads(f.read_text())
+    from . import cachefile
+    cached = cachefile.read(f)
+    if cached is not None:
+        return cached
     links = [l for l in coll.get("links", []) if l.get("rel") == "item"]
 
     def one(l):
@@ -84,7 +85,7 @@ def tile_index(http, coll_url, coll, cache_dir, workers: int = 16):
                     checksum=(asset or {}).get("file:checksum"), item=url)
     with ThreadPoolExecutor(max_workers=workers) as ex:
         idx = [r for r in ex.map(one, links) if r["bbox"] and r["href"]]
-    f.write_text(json.dumps(idx))
+    cachefile.write(f, idx)
     return idx
 
 

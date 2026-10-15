@@ -153,3 +153,18 @@ def test_mirror_accepts_a_tile_another_worker_placed_first(tmp_path, monkeypatch
     path = src.local(it, sv)
     assert (src.read(plan).z == 3.0).all() and not list((tmp_path / "data" / "cog").rglob("*.part"))
     assert path.endswith(".tiff")
+
+
+def test_corrupt_cache_files_are_fetched_again(tmp_path):
+    from terrain_s2.acquire import cachefile
+    f = tmp_path / "c" / "x.json"
+    cachefile.write(f, {"a": 1})
+    assert cachefile.read(f) == {"a": 1} and not list(f.parent.glob("*.tmp"))
+    f.write_text("")                                                           # a half-written file
+    assert cachefile.read(f) is None and not f.exists()
+    http = _catalogue(tmp_path, [("canterbury", "c_2020", "2020-12-31T00:00:00Z", ["dem"], [("C", X0, Y1, 200, 200, 3.0)], False)])
+    src = E.ElevationSource(_profile(), http=http, cache_dir=tmp_path / "stac")
+    plan = src.plan((X0 + 10, Y1 - 100, X0 + 60, Y1 - 50))
+    for g in (tmp_path / "stac").rglob("*.json"):
+        g.write_text("")                                                       # every cache entry broken
+    assert (src.read(src.plan((X0 + 10, Y1 - 100, X0 + 60, Y1 - 50))).z == 3.0).all() and plan.surveys

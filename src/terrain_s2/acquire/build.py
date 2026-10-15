@@ -95,7 +95,6 @@ def build_site(site, sources: dict, out_root, cache_root, http=None, dry_run=Fal
 
 
 def _fetch(http, store, name, spec, window, dry_run):
-    import pandas as pd
     kind = spec["kind"]
     now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
     used = {}

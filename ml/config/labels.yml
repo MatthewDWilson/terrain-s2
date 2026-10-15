@@ -2,7 +2,9 @@
 council_sources: [waimakariri_culverts, hbrc_culverts]     # council culvert registers: reliable
 asset_sources: [kiwirail_culverts]                          # other asset registers: reliable
 weights: {council: 1.0, asset: 1.0, bridge: 1.0, manual: 0.6, implied: 0.7}
-radius_m: {council: 15, asset: 15, bridge: 15, manual: 10, implied: 15}
+# 25 m: wave 1 had 257 of 949 misses with a candidate 15-25 m away (positions of council lines and 1:50k road
+# centrelines); Matt's labels sit on candidates, so 10 m (DESIGN_NOTES 11, 16 Oct)
+radius_m: {council: 25, asset: 25, bridge: 25, manual: 10, implied: 25}
 # Matt's reviews (R1 rounds). Paths relative to manual_root (default TERRAIN_DATA_DIR/labels/manual).
 # In order: where two labels lie within 5 m, the later file wins. Round-2 crossing fields were never filled;
 # review2 files carry the round-1 labels as prev_culvert. v1 files give the crest as crest_x / crest_y.

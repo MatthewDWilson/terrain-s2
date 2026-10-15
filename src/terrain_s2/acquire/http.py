@@ -33,4 +33,9 @@ class Http:
         raise IOError(f"GET {url} failed after {self.retries} attempts: {last}")
 
     def json(self, url: str, params: dict | None = None, source: str | None = None, **kw):
-        return json.loads(self.get(url, params, source, "json", **kw))
+        body = self.get(url, params, source, "json", **kw)
+        try:
+            return json.loads(body)
+        except ValueError as e:               # name the document: an empty or HTML/XML body is otherwise anonymous
+            head = body[:120].decode("utf-8", "replace") if isinstance(body, bytes) else str(body)[:120]
+            raise ValueError(f"{url}: not JSON ({e}); {len(body)} bytes, starting {head!r}") from None

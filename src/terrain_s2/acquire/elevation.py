@@ -173,12 +173,14 @@ class ElevationSource:
 
     # --- STAC, with a short-lived local cache (item indexes are keyed by each collection's ``updated``) ---
     def _json(self, url: str):
+        from . import cachefile
         f = self.cache_dir / "json" / (hashlib.sha256(url.encode()).hexdigest()[:24] + ".json")
         if f.exists() and time.time() - f.stat().st_mtime < self.ttl_s:
-            return json.loads(f.read_text())
+            d = cachefile.read(f)                 # None if unreadable (removed): fetched again
+            if d is not None:
+                return d
         d = self.http.json(url)
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(d))
+        cachefile.write(f, d)
         return d
 
     def collections(self, product: str = "dem"):
@@ -273,7 +275,8 @@ class ElevationSource:
         f = d / (Path(href.split("?")[0]).name or f"{item.id}.tif")
         side = f.with_suffix(f.suffix + ".json")
         if f.exists() and side.exists():
-            meta = json.loads(side.read_text())
+            from . import cachefile
+            meta = cachefile.read(side) or {}
             if meta.get("checksum") == item.checksum and meta.get("href") == href:
                 return str(f)
         content = self.http.get(href, ext="tif")
