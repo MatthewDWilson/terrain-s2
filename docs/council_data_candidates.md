@@ -12,11 +12,12 @@ The draft entries are in `sites/candidates/sources_candidates.yml` (33 entries, 
 
 - **First run.** Two BOPRC probes failed on a macron printed to the Windows console. The value counts also covered whole layers, because `probe_source.py --values` filters on `--where` only. Both are fixed in `probe_candidates.py`: probes now run in UTF-8, and the runner passes each entry's `where` as `--where`.
 - **Second run.** All 42 probes succeeded. The findings are in each entry's comments, marked "probe 2".
-- **Not yet re-probed.** Three entries changed after the second run: `hurunui_sw_channels` (a form map, creeks dropped), `boprc_culverts_line` (unbuilt culverts filtered out) and `wrc_floodgates` (lowland zones only). Re-probing them is optional, since the changes only narrow the selection:
+- **Third run.** Three entries changed after the second run and were re-probed; all three came out as expected, with every mapped field present.
+  - `hurunui_sw_channels`: form map, creeks dropped; 527 lines.
+  - `boprc_culverts_line`: unbuilt culverts filtered out; 187 lines.
+  - `wrc_floodgates`: lowland zones only; 456 points.
 
-  ```
-  python scripts/probe_candidates.py --only hurunui_sw_channels boprc_culverts_line wrc_floodgates
-  ```
+  No probe output across the three runs reports a missing field.
 
 - **Note for enabling CCC.** The CCC StormWater server stopped paging early: the values covered 1,814 of the 2,007 selected culverts. When enabling CCC, check that the number of features fetched matches the server's count.
 
