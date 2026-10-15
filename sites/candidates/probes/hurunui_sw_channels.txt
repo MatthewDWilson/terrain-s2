@@ -1,5 +1,5 @@
-# OK in 4 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source hurunui_sw_channels --fields --values --where "Asset_Type IN ('Open Drain', 'Rateable Drain', 'Open Channel', 'Channel', 'Creek', 'Swale')"
+# OK in 3 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source hurunui_sw_channels --fields --values --where "Asset_Type IN ('Open Drain', 'Rateable Drain', 'Open Channel', 'Channel', 'Swale')"
 
 using https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5
 layer: Stormwater Lines | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
@@ -32,28 +32,28 @@ fields used by sources.yml: Asset_Type, Asset_ID, OBJECTID  (all present)
   field GlobalID (GlobalID) GlobalID
   field Shape__Length (Double) Shape__Length
 site window (EPSG:2193): 1566446, 5210017, 1639179, 5333981
-count where "Asset_Type IN ('Open Drain', 'Rateable Drain', 'Open Channel', 'Channel', 'Creek', 'Swale')": 568
-    https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5/query?where=Asset_Type+IN+%28%27Open+Drain%27%2C+%27Rateable+Drain%27%2C+%27Open+Channel%27%2C+%27Channel%27%2C+%27Creek%27%2C+%27Swale%27%29&geometry=1566445.972%2C5210016.8456%2C1639178.9472000003%2C5333981.4574&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where "Asset_Type IN ('Open Drain', 'Rateable Drain', 'Open Channel', 'Channel', 'Swale')": 527
+    https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5/query?where=Asset_Type+IN+%28%27Open+Drain%27%2C+%27Rateable+Drain%27%2C+%27Open+Channel%27%2C+%27Channel%27%2C+%27Swale%27%29&geometry=1566445.972%2C5210016.8456%2C1639178.9472000003%2C5333981.4574&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 2853
     https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5/query?where=1%3D1&geometry=1566445.972%2C5210016.8456%2C1639178.9472000003%2C5333981.4574&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 568 feature(s) in the window (where Asset_Type IN ('Open Drain', 'Rateable Drain', 'Open Channel', 'Channel', 'Creek', 'Swale')):
-  Asset_Type: 'Swale' 261; 'Open Drain' 184; 'Creek' 41; 'Rateable Drain' 40; 'Channel' 28; 'Open Channel' 14
-  Community: 'Amberley ' 284; 'Cheviot ' 72; 'Hanmer Springs ' 50; 'Amberley (Ward) ' 33; 'Hawarden ' 21; 'Rotherham ' 21; 'Leithfield Beach ' 21; 'Motunau Beach ' 14; 'Waiau' 14; 'Waipara ' 11; 'Waikari ' 10; 'Cheviot (Ward) ' 7; 'Greta Valley ' 4; 'Scargill' 4; 'Parnassus ' 2
-  Material: 'Grass' 493; 'AC' 26; 'Concrete' 25; 'Unknown' 9; 'PVC' 4; 'Concrete V Channel' 4; 'Concrete Lining with few rip rap rock' 3; 'Rip Rap rock' 2; 'Concrete Lining' 2
-  Notes: None 568
-  Asset_Owner: None 568
-  Condition: None 568
-  Criticality: None 568
-  Performance: None 568
-  Accuracy: None 568
-  District: None 568
-  created_user: None 568
-  last_edited_user: None 568
+value counts, all 527 feature(s) in the window (where Asset_Type IN ('Open Drain', 'Rateable Drain', 'Open Channel', 'Channel', 'Swale')):
+  Asset_Type: 'Swale' 261; 'Open Drain' 184; 'Rateable Drain' 40; 'Channel' 28; 'Open Channel' 14
+  Community: 'Amberley ' 269; 'Cheviot ' 67; 'Hanmer Springs ' 48; 'Amberley (Ward) ' 31; 'Hawarden ' 21; 'Leithfield Beach ' 21; 'Rotherham ' 18; 'Motunau Beach ' 13; 'Waipara ' 10; 'Waikari ' 10; 'Cheviot (Ward) ' 7; 'Greta Valley ' 4; 'Scargill' 4; 'Waiau' 2; 'Parnassus ' 2
+  Material: 'Grass' 452; 'AC' 26; 'Concrete' 25; 'Unknown' 9; 'PVC' 4; 'Concrete V Channel' 4; 'Concrete Lining with few rip rap rock' 3; 'Rip Rap rock' 2; 'Concrete Lining' 2
+  Notes: None 527
+  Asset_Owner: None 527
+  Condition: None 527
+  Criticality: None 527
+  Performance: None 527
+  Accuracy: None 527
+  District: None 527
+  created_user: None 527
+  last_edited_user: None 527
 numeric fields with values (non-null count, min, median, max); 1 others all null:
-  Diameter: 568, -99, -99.0, 500
-  US_Invert: 568, 0, 0.0, 414.72
-  DS_Invert: 568, 0, 0.0, 407.91
-  Height: 568, -99, -99.0, 450
-  Shape__Length: 568, 1.6338246564770742, 67.43536490649015, 2535.4381567418473
+  Diameter: 527, -99, -99, 500
+  US_Invert: 527, 0, 0, 414.72
+  DS_Invert: 527, 0, 0, 407.91
+  Height: 527, -99, -99, 450
+  Shape__Length: 527, 1.6338246564770742, 65.93929452162631, 1552.4736480637446
 first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":119732,"geometry":{"type":"LineString","coordinates":[[172.738130701575,-43.1468729783537],[172.73815134691,-43.1469027848381],[172.738169453784,-43.1469326314345],[172.738250115437,-43.1469997445502],[172.738330532198,-43.1471280594257],[172.738402503518,-43.1480579739888],[172.738408493139,-43.1481221976696],[172.738474150169,-43.1493729016296],[172.738505693294,-43.1494332170589]]},"properties":{"OBJECTID":119732,"Asset_ID":"SWL10
-     https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5/query?where=Asset_Type+IN+%28%27Open+Drain%27%2C+%27Rateable+Drain%27%2C+%27Open+Channel%27%2C+%27Channel%27%2C+%27Creek%27%2C+%27Swale%27%29&geometry=1566445.972%2C5210016.8456%2C1639178.9472000003%2C5333981.4574&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2
+     https://services.arcgis.com/yz3Bly07x1dczMks/arcgis/rest/services/Three_Waters_view/FeatureServer/5/query?where=Asset_Type+IN+%28%27Open+Drain%27%2C+%27Rateable+Drain%27%2C+%27Open+Channel%27%2C+%27Channel%27%2C+%27Swale%27%29&geometry=1566445.972%2C5210016.8456%2C1639178.9472000003%2C5333981.4574&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

@@ -79,3 +79,7 @@ x_search_tasman: OK (1 s)
 x_search_tararua: OK (1 s)
 x_search_greater_wellington_drains: OK (1 s)
 x_search_hastings_drains: OK (1 s)
+--- run 2026-10-16 11:20 ---
+hurunui_sw_channels: OK (3 s)
+boprc_culverts_line: OK (4 s)
+wrc_floodgates: OK (2 s)
