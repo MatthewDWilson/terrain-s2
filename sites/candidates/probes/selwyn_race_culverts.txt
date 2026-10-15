@@ -1,11 +1,11 @@
 # OK in 1 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source selwyn_race_culverts --fields --values
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source selwyn_race_culverts --fields --values --where "TYPE = 'CULVERT' AND STATUS = 'In Service'"
 
 using https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6
 layer: WRace_ln | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
 layer extent: 1503725, 5140438, 1564055, 5202612 (wkid 2193)
 definition expression: None
-fields used by sources.yml: DIAPIPE, ASSETID, OBJECTID, TYPE  (all present)
+fields used by sources.yml: DIAPIPE, ASSETID, OBJECTID, TYPE, STATUS  (all present)
   field OBJECTID (OID) OBJECTID
   field LOCATION (String) LOCATION
   field STNAME (String) STNAME
@@ -41,32 +41,32 @@ fields used by sources.yml: DIAPIPE, ASSETID, OBJECTID, TYPE  (all present)
   field EditDate (Date) EditDate
   field Shape_Length (Double) Shape_Length
 site window (EPSG:2193): 1503725, 5140438, 1564055, 5202612
-count where "TYPE = 'CULVERT'": 1571
-    https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=TYPE+%3D+%27CULVERT%27&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where "TYPE = 'CULVERT' AND STATUS = 'In Service'": 1555
+    https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=TYPE+%3D+%27CULVERT%27+AND+STATUS+%3D+%27In+Service%27&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 4101
     https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=1%3D1&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 4101 feature(s) in the window (where 1=1):
-  LOCATION: 'MALVERN' 1780; 'PAPARUA' 1131; None 727; 'ELLESMERE' 420; '' 25; ' ' 8; 'DF' 4; 'ROAD' 2; 'Road' 2; 'Shadbolts acces' 1; 'Site_Boundary' 1
-  AMS2: 'Channel' 4057; '' 21; None 13; '0' 4; 'Exterior' 3; 'Pipe' 2; 'Land Use' 1
-  AMS3: 'Culvert' 1579; 'Local' 1312; 'Main' 782; 'Lateral' 355; '' 21; 'Siphon' 14; None 13; 'Tunnel' 9; 'Aqueduct' 5; ' ' 4; 'Kerbing' 3; 'Gravity' 2; 'Monitoring' 1; 'Pipe Sock' 1
-  TYPE: 'CULVERT' 1571; 'LOCAL' 1338; 'MAIN' 805; 'LATERAL' 329; 'SIPHON' 14; 'INTAKE' 12; 'TUNNEL' 9; 'TRACK' 8; 'AQUEDUCT' 6; 'NON SDC SERVICE' 4; 'OUTLINE' 3; 'EMERGENCY DISCHARGE' 2
-  MATL: None 2875; 'CC' 919; 'PVCU' 124; 'Concrete' 33; 'PVC' 28; '' 21; 'PE100' 19; 'PE-MD' 14; 'EW' 10; 'BOSS' 10; 'ST' 9; 'Corrugated Stee' 8; 'PE-HD' 7; 'RCRRJ' 6; 'Timber' 4; 'AC' 4; 'Farm Boss' 3; 'Precast Concret' 2; 'PP-Profile' 1; 'PE80' 1; 'FARMTU' 1; 'Clay' 1; 'PERFOR' 1
-  Capture_Method: '' 3192; None 751; 'PLAN' 62; 'DIG_ASBUILTS' 41; 'DIG_PLAN' 18; 'DIg-ASBUILTS' 14; 'ASBUILTS' 9; 'DIG' 4; 'DIG-ASBUILTS' 3; 'SDC_OPRE_SJM' 1; 'DIG_APLAN' 1; 'DIG_PLAN_GPS' 1; 'PLANA4' 1; 'MM' 1; 'DIG_GPS' 1; 'dIG_PLAN' 1
-  OWNERSHIP: 'Selwyn District Council' 3755; 'Private' 285; '' 21; None 17; 'Stormwater Utilities' 17; 'Stormwater Roading' 2; 'Christchurch City Council' 2; 'Strm outside township no work' 1; 'SDC Property& Reserves' 1
-  DIVISION: 'Water Race' 4057; None 34; 'WATER' 4; 'P&E Plant Site' 3; 'Stormwater' 2; 'Site' 1
-  SCHEME: 'Malvern Water Race' 1934; 'Paparua Water Race' 1671; 'Ellesmere Water Race' 438; None 34; 'West Melton' 13; ' ' 4; 'Rolleston' 3; 'Darfield' 1; 'Leeston' 1; 'Doyleston' 1; 'Burnham' 1
-  AMSProcessed: 'AMS attributes updated on: Oct 11 2026  4:30AM' 4063; None 38
-  LastFault: None 4095; 'Apr 24 2013 10:30AM' 1; 'Feb 26 2014 12:00AM' 1; 'Jul 15 2011  9:18AM' 1; 'Jun 30 2010 12:00AM' 1; 'Aug 23 2019  3:30PM' 1; 'May  1 2020 11:54AM' 1
-  STATUS: 'In Service' 4041; None 38; 'Decommissioned Perm' 11; 'Decommissioned Temp' 5; 'X Captured in Error' 4; 'Abandoned or Disused' 2
-  Creator: 'STUARTREYNOLDS-ADMIN' 4101
-  Editor: 'STUARTREYNOLDS-ADMIN' 4101
+value counts, all 1555 feature(s) in the window (where TYPE = 'CULVERT' AND STATUS = 'In Service'):
+  LOCATION: 'MALVERN' 528; None 494; 'PAPARUA' 380; 'ELLESMERE' 145; ' ' 4; 'DF' 2; '' 2
+  AMS2: 'Channel' 1553; 'Pipe' 2
+  AMS3: 'Culvert' 1549; 'Gravity' 2; 'Main' 2; 'Lateral' 1; 'Pipe Sock' 1
+  TYPE: 'CULVERT' 1555
+  MATL: 'CC' 914; None 385; 'PVCU' 114; 'Concrete' 30; 'PVC' 23; 'PE100' 19; 'PE-MD' 11; 'EW' 10; 'BOSS' 10; 'ST' 9; 'Corrugated Stee' 8; 'PE-HD' 7; 'RCRRJ' 5; 'Farm Boss' 3; 'AC' 2; 'PP-Profile' 1; 'PE80' 1; 'FARMTU' 1; 'Clay' 1; 'PERFOR' 1
+  Capture_Method: '' 973; None 511; 'DIG_ASBUILTS' 20; 'DIg-ASBUILTS' 14; 'PLAN' 11; 'ASBUILTS' 9; 'DIG_PLAN' 9; 'DIG-ASBUILTS' 3; 'SDC_OPRE_SJM' 1; 'DIG_PLAN_GPS' 1; 'MM' 1; 'DIG_GPS' 1; 'DIG' 1
+  OWNERSHIP: 'Selwyn District Council' 1279; 'Private' 257; 'Stormwater Utilities' 14; 'Christchurch City Council' 2; 'Stormwater Roading' 1; 'Strm outside township no work' 1; 'SDC Property& Reserves' 1
+  DIVISION: 'Water Race' 1553; 'Stormwater' 2
+  SCHEME: 'Paparua Water Race' 786; 'Malvern Water Race' 605; 'Ellesmere Water Race' 148; 'West Melton' 11; 'Darfield' 1; 'Leeston' 1; 'Doyleston' 1; 'Rolleston' 1; 'Burnham' 1
+  AMSProcessed: 'AMS attributes updated on: Oct 11 2026  4:30AM' 1555
+  LastFault: None 1550; 'Apr 24 2013 10:30AM' 1; 'Jul 15 2011  9:18AM' 1; 'Jun 30 2010 12:00AM' 1; 'Aug 23 2019  3:30PM' 1; 'May  1 2020 11:54AM' 1
+  STATUS: 'In Service' 1555
+  Creator: 'STUARTREYNOLDS-ADMIN' 1555
+  Editor: 'STUARTREYNOLDS-ADMIN' 1555
 numeric fields with values (non-null count, min, median, max); 2 others all null:
-  AMSKEY: 1718, 0, 74840.5, 703724
-  DIAPIPE: 686, 0, 300.0, 3600
-  LENGTH: 1983, 0, 54, 5972.8
-  PlannedVisits: 145, 0, 0, 6
-  ReactiveVisits: 1243, 0, 2, 70
-  NumberOfFaults: 1962, 0, 0.0, 4
-  Shape_Length: 2000, 0.568506816671539, 57.976654406554545, 7350.883461341288
-first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":5,"geometry":{"type":"LineString","coordinates":[[172.39732786433936,-43.61294724709542],[172.3973712856419,-43.61300194538385]]},"properties":{"OBJECTID":5,"LOCATION":null,"STNAME":null,"AMSKEY":null,"AMS2":null,"AMS3":null,"TYPE":"CULVERT","DIAPIPE":null,"MATL":null,"LENGTH":null,"Data_Source":null,"Capture_Method":null,"RAMM_ID":null,"COMMENT":null,"OWNERSHIP":null,"DIVISION":null,"SCHEME":null,"POSITION":null,"AMSProcessed":null,"ASSETID":"679222","URL":"http://sdcsql4/ReportServer/Pages/ReportViewer.aspx?%2fAdaptProd%2fSystem%
-     https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=TYPE+%3D+%27CULVERT%27&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2
+  AMSKEY: 1334, 22845, 74622.0, 712081
+  DIAPIPE: 1203, 50, 310, 3600
+  LENGTH: 1555, 0, 12.28, 4400
+  PlannedVisits: 148, 0, 0.0, 5
+  ReactiveVisits: 952, 0, 1.0, 35
+  NumberOfFaults: 1555, 0, 0, 4
+  Shape_Length: 1555, 0.02207306041132829, 12.002318861344833, 609.0465920480474
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":43,"geometry":{"type":"LineString","coordinates":[[171.96109517704403,-43.640979681511766],[171.96109614744924,-43.640980063097494],[171.96118670729339,-43.64098599772565],[171.96118769359435,-43.640985744672719]]},"properties":{"OBJECTID":43,"LOCATION":"ELLESMERE","STNAME":"SAUNDERS","AMSKEY":76071,"AMS2":"Channel","AMS3":"Culvert","TYPE":"CULVERT","DIAPIPE":750,"MATL":"Corrugated Stee","LENGTH":10.029999999999999,"Data_Source":"","Capture_Method":"","RAMM_ID":"RAMM ID: 1983","COMMENT":"","OWNERSHIP":"Selwyn District Council","DIV
+     https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=TYPE+%3D+%27CULVERT%27+AND+STATUS+%3D+%27In+Service%27&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

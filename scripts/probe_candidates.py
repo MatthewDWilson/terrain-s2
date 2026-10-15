@@ -8,8 +8,9 @@
     python scripts/probe_candidates.py --tile CE09_5000_0505            # window = one LINZ tile instead of the layer
 
 Candidates come from sites/candidates/sources_candidates.yml (--sources). Each is probed with --fields --values
-over the whole layer (its own extent) unless --tile/--bbox is given, so the value counts cover every feature the
-entry's ``where`` selects. Outputs go to sites/candidates/probes/<name>.txt (--out), with the command at the top,
+over the whole layer (its own extent) unless --tile/--bbox is given. The entry's ``where`` is passed as --where, so
+the value counts cover exactly the features the entry selects (the two counts at the top still give the whole layer).
+The child processes write UTF-8 (macrons in council values otherwise fail on a Windows console code page). Outputs go to sites/candidates/probes/<name>.txt (--out), with the command at the top,
 and a one-line status per probe is printed. A probe that fails or times out is recorded and the run continues.
 
 The extra probes look at layers that could not be read from the drafting thread (servers that refuse automated
@@ -18,6 +19,7 @@ open-data drains layer against hbrc_channels, the Waimakariri water-race layer, 
 This script only reads; it changes no source file.
 """
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -63,7 +65,8 @@ def main():
     from terrain_s2.acquire.site import load_sources
     cands = load_sources(a.sources)
     window = ["--tile", a.tile] if a.tile else ["--bbox", a.bbox] if a.bbox else []
-    jobs = {n: ["--sources", a.sources, "--source", n, "--fields", "--values", *window] for n in cands}
+    jobs = {n: ["--sources", a.sources, "--source", n, "--fields", "--values", *window,
+                *(["--where", s["where"]] if s.get("where") else [])] for n, s in cands.items()}
     if not a.no_extras:
         jobs.update({n: (args if "--search" in args else [*args, *window]) for n, args in EXTRAS.items()})
     if a.only:
@@ -74,7 +77,8 @@ def main():
 
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    summary = []
+    summary = [f"--- run {time.strftime('%Y-%m-%d %H:%M')} ---"]
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     for name, args in jobs.items():
         f = out / f"{name}.txt"
         if a.skip_done and f.exists() and f.read_text(encoding="utf-8", errors="replace").startswith("# OK"):
@@ -84,7 +88,7 @@ def main():
         t0 = time.time()
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=a.timeout, cwd=ROOT,
-                               encoding="utf-8", errors="replace")
+                               encoding="utf-8", errors="replace", env=env)
             status = "OK" if r.returncode == 0 else f"FAILED (exit {r.returncode})"
             body = r.stdout + (f"\n--- stderr ---\n{r.stderr}" if r.stderr.strip() else "")
         except subprocess.TimeoutExpired as e:
@@ -96,7 +100,8 @@ def main():
         line = f"{name}: {status} ({dt:.0f} s)"
         print(line, flush=True)
         summary.append(line)
-    (out / "_summary.txt").write_text("\n".join(summary) + "\n", encoding="utf-8")
+    with open(out / "_summary.txt", "a", encoding="utf-8") as fh:              # one block per run
+        fh.write("\n".join(summary) + "\n")
     print(f"outputs in {out}")
 
 

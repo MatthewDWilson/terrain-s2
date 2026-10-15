@@ -1,0 +1,26 @@
+# OK in 2 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source wrc_fp_canals --fields --values
+
+using https://maps.waikatoregion.govt.nz/arcgis/rest/services/WRCMAPS/Flood_protection_and_land_drainage_assets/MapServer/5
+layer: Canal | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
+layer extent: 1740911, 5653618, 1903604, 5960976 (wkid 2193)
+definition expression: None
+fields used by sources.yml: COMPKEY, OBJECTID  (all present)
+  field OBJECTID (OID) OBJECTID
+  field LEGACYASSETID (Integer) Legacy AssetID
+  field COMPKEY (Integer) CompKey
+  field UNITDESC (String) Asset Description
+  field FUNCTIONALREPORTING (String) Functional Reporting
+  field DISTRICT (String) Zone
+  field Shape (Geometry) Shape
+site window (EPSG:2193): 1740911, 5653618, 1903604, 5960976
+count where '1=1': 26
+    https://maps.waikatoregion.govt.nz/arcgis/rest/services/WRCMAPS/Flood_protection_and_land_drainage_assets/MapServer/5/query?where=1%3D1&geometry=1740910.7796%2C5653617.97%2C1903603.9243%2C5960976.3674&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+value counts, all 26 feature(s) in the window (where 1=1):
+  FUNCTIONALREPORTING: 'River Management' 24; 'RIVERMAN' 2
+  DISTRICT: 'Zone - Waihou Piako' 15; 'Zone - Lower Waikato' 4; 'Zone - Coromandel' 3; None 2; 'Zone - Lake Taupo' 2
+numeric fields with values (non-null count, min, median, max); 0 others all null:
+  LEGACYASSETID: 26, 16, 18855.5, 82751
+  COMPKEY: 26, 3259, 3271.5, 3284
+first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":221,"geometry":{"type":"LineString","coordinates":[[175.55527896434816,-37.350998682935078],[175.55556186806436,-37.351223521794758],[175.55588627472932,-37.351547427299217],[175.55745947734189,-37.353216425697617],[175.56116489010071,-37.357228295281828],[175.56801716790707,-37.36455353420719],[175.56828188495274,-37.364902913908452],[175.57108046035134,-37.370894887496],[175.57094992456987,-37.370976856539691],[175.57107504670384,-37.371223939585086]]},"properties":{"OBJECTID":221,"LEGACYASSETID":82751,"COMPKEY":3284,"UNITDESC":"
+     https://maps.waikatoregion.govt.nz/arcgis/rest/services/WRCMAPS/Flood_protection_and_land_drainage_assets/MapServer/5/query?where=1%3D1&geometry=1740910.7796%2C5653617.97%2C1903603.9243%2C5960976.3674&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

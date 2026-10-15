@@ -1,4 +1,4 @@
-# OK in 4 s
+# OK in 3 s
 # python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source ccc_watercourses --fields --values
 
 using https://gis.ccc.govt.nz/server/rest/services/OpenData/WaterCourse/MapServer/29

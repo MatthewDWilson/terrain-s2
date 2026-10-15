@@ -1,5 +1,5 @@
 # OK in 4 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source horizons_drainage_channels --fields --values
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source horizons_drainage_channels --fields --values --where "AMIS_AssetClass2 IN ('Drainage Channel', 'Toe Drain', 'River Channel')"
 
 using https://services1.arcgis.com/VuN78wcRdq1Oj69W/arcgis/rest/services/River_Management_Public_view/FeatureServer/1
 layer: River Management Asset (Polyline) | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
@@ -20,11 +20,12 @@ count where "AMIS_AssetClass2 IN ('Drainage Channel', 'Toe Drain', 'River Channe
     https://services1.arcgis.com/VuN78wcRdq1Oj69W/arcgis/rest/services/River_Management_Public_view/FeatureServer/1/query?where=AMIS_AssetClass2+IN+%28%27Drainage+Channel%27%2C+%27Toe+Drain%27%2C+%27River+Channel%27%29&geometry=1769131.3646%2C5488624.7621%2C1875800.2761000004%2C5696523.4575&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 3090
     https://services1.arcgis.com/VuN78wcRdq1Oj69W/arcgis/rest/services/River_Management_Public_view/FeatureServer/1/query?where=1%3D1&geometry=1769131.3646%2C5488624.7621%2C1875800.2761000004%2C5696523.4575&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 3090 feature(s) in the window (where 1=1):
-  AMIS_AssetClass1: 'Bank Protection' 1582; 'Vegetation Management' 799; 'Flood Protection' 626; 'Control Structure' 61; 'Enhancement' 19; 'Equipment' 2; None 1
-  AMIS_ServiceStatus: 'In Service' 3090
-  AMIS_Owner: 'Horizons Regional Council' 3066; 'Whanganui District Council' 14; 'Tunnel Hill' 9; 'Tararua District Council' 1
+value counts, all 800 feature(s) in the window (where AMIS_AssetClass2 IN ('Drainage Channel', 'Toe Drain', 'River Channel')):
+  AMIS_AssetClass1: 'Vegetation Management' 799; 'Flood Protection' 1
+  AMIS_AssetClass2: 'Drainage Channel' 765; 'River Channel' 34; 'Toe Drain' 1
+  AMIS_ServiceStatus: 'In Service' 800
+  AMIS_Owner: 'Horizons Regional Council' 800
 numeric fields with values (non-null count, min, median, max); 0 others all null:
-  Shape__Length: 2000, 1.684989744940534, 179.77842739532804, 100792.26659621934
+  Shape__Length: 800, 32.215938335920185, 1161.5533730240807, 102356.6818639997
 first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[175.25490930501,-40.624286849744],[175.254924445133,-40.6244232295265],[175.249615533445,-40.6295176363535],[175.249485381938,-40.6295174929958],[175.248346715573,-40.6305955643937],[175.248401140979,-40.6307499393224]]},"properties":{"OBJECTID":1,"AMIS_AssetID":"42889","AMIS_AssetClass1":"Vegetation Management","AMIS_AssetClass2":"Drainage Channel","AMIS_Scheme":"Hokio Drainage","Glo
      https://services1.arcgis.com/VuN78wcRdq1Oj69W/arcgis/rest/services/River_Management_Public_view/FeatureServer/1/query?where=AMIS_AssetClass2+IN+%28%27Drainage+Channel%27%2C+%27Toe+Drain%27%2C+%27River+Channel%27%29&geometry=1769131.3646%2C5488624.7621%2C1875800.2761000004%2C5696523.4575&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

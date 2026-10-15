@@ -1,11 +1,11 @@
-# OK in 2 s
+# OK in 3 s
 # python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source waimakariri_drain_channels_all --fields --values
 
 using https://gisservices.waimakariri.govt.nz/arcgis/rest/services/Drainage_Areas_Water_Races/Drainage_Areas_and_Water_Races/MapServer/5
 layer: Drain Channel | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
 layer extent: 1524839, 5192212, 1577002, 5212390 (wkid 2193)
 definition expression: None
-fields used by sources.yml: topwidth, bottomwidth, assnbri, OBJECTID  (all present)
+fields used by sources.yml: type, assnbri, OBJECTID  (all present)
   field OBJECTID (OID) OBJECTID
   field Shape (Geometry) Shape
   field assnbri (String) Asset No.

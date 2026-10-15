@@ -1,4 +1,4 @@
-# OK in 3 s
+# OK in 1 s
 # python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --url https://maps.waikatoregion.govt.nz/arcgis/rest/services/WRCMAPS/Flood_protection_and_land_drainage_assets/MapServer/0 --layers --fields --values
 
 using https://maps.waikatoregion.govt.nz/arcgis/rest/services/WRCMAPS/Flood_protection_and_land_drainage_assets/MapServer/0

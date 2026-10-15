@@ -1,5 +1,5 @@
-# OK in 8 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source hauraki_land_drains --fields --values
+# OK in 11 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source hauraki_land_drains --fields --values --where "Asset_Type = 'Land Drain'"
 
 using https://services9.arcgis.com/ph39VKR5KFKf0WbU/arcgis/rest/services/Land_Drain/FeatureServer/0
 layer: Land_Drain | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
@@ -21,15 +21,15 @@ count where "Asset_Type = 'Land Drain'": 721
     https://services9.arcgis.com/ph39VKR5KFKf0WbU/arcgis/rest/services/Land_Drain/FeatureServer/0/query?where=Asset_Type+%3D+%27Land+Drain%27&geometry=1801887.2335979785%2C5853472.952267585%2C1839217.416538749%2C5893925.381742366&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 776
     https://services9.arcgis.com/ph39VKR5KFKf0WbU/arcgis/rest/services/Land_Drain/FeatureServer/0/query?where=1%3D1&geometry=1801887.2335979785%2C5853472.952267585%2C1839217.416538749%2C5893925.381742366&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 776 feature(s) in the window (where 1=1):
-  Asset_Type: 'Land Drain' 721; 'Stopbank' 52; 'Culvert' 3
-  Material: 'Type B' 298; 'Type O' 173; 'Type C' 145; 'Type A' 98; 'Silt' 35; 'Clay' 17; 'Type X' 7; 'Reinforced Concrete' 3
-  Community: 'Mackaytown' 106; 'Waihi' 80; 'Kaihere' 77; 'Turua' 74; 'Kopuarahi' 63; 'Whiritoa' 53; 'Netherton' 52; 'Miranda' 50; 'Kerepehi' 47; 'Waikino' 39; 'Mangatarata' 34; 'Orongo' 27; 'Patetonga' 27; 'Waitakaruru' 19; 'Kaiaua' 13; 'Paeroa' 12; 'Ngatea' 2; 'Waimata' 1
+value counts, all 721 feature(s) in the window (where Asset_Type = 'Land Drain'):
+  Asset_Type: 'Land Drain' 721
+  Material: 'Type B' 298; 'Type O' 173; 'Type C' 145; 'Type A' 98; 'Type X' 7
+  Community: 'Mackaytown' 89; 'Waihi' 79; 'Kaihere' 77; 'Turua' 70; 'Kopuarahi' 56; 'Whiritoa' 53; 'Netherton' 52; 'Miranda' 45; 'Kerepehi' 43; 'Waikino' 34; 'Mangatarata' 31; 'Orongo' 27; 'Patetonga' 25; 'Waitakaruru' 19; 'Kaiaua' 13; 'Paeroa' 8
 numeric fields with values (non-null count, min, median, max); 0 others all null:
-  DIAMETER: 776, 1, 2.0, 1800
-  Quantity_L: 776, 1.98, 767.0999999999999, 5617.03
-  US_Invert: 776, 0, 0.0, 0
-  DS_Invert: 776, 0, 0.0, 0
-  Shape__Length: 776, 2.48017523239579, 966.1277020067113, 7068.077215452483
+  DIAMETER: 721, 1, 2, 15
+  Quantity_L: 721, 1.98, 734.61, 5617.03
+  US_Invert: 721, 0, 0, 0
+  DS_Invert: 721, 0, 0, 0
+  Shape__Length: 721, 2.48017523239579, 919.3012120032631, 7068.077215452483
 first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[175.506155702808,-37.2204604198183],[175.506732705307,-37.2211835018163]]},"properties":{"FID":1,"Asset_ID":"1002325","Asset_Type":"Land Drain","Material":"Type C","DIAMETER":3,"Quantity_L":95.22,"US_Invert":0,"DS_Invert":0,"Community":"Turua","Shape__Length":119.76392864261891}},{"type":"Feature","id":2,"geometry":{"type":"LineString","coordinates":[[175.359607472488,-37.256792568868
      https://services9.arcgis.com/ph39VKR5KFKf0WbU/arcgis/rest/services/Land_Drain/FeatureServer/0/query?where=Asset_Type+%3D+%27Land+Drain%27&geometry=1801887.2335979785%2C5853472.952267585%2C1839217.416538749%2C5893925.381742366&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

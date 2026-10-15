@@ -1,11 +1,11 @@
-# OK in 13 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source hastings_culverts --fields --values
+# OK in 6 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source hastings_culverts --fields --values --where "IPS_UnitType = 'CULV' AND IPS_Service_Status = 'INS'"
 
 using https://services1.arcgis.com/8L3DQUzjrkgEmDpQ/arcgis/rest/services/OpenData_StormwaterMains/FeatureServer/21
 layer: Hastings DC Stormwater Mains | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
 layer extent: 1909835, 5583796, 1942951, 5642739 (wkid 2193)
 definition expression: None
-fields used by sources.yml: IPS_Diameter, IPS_Compkey, OBJECTID, IPS_UnitType  (all present)
+fields used by sources.yml: IPS_Diameter, IPS_Compkey, OBJECTID, IPS_UnitType, IPS_Service_Status  (all present)
   field OBJECTID (OID) OBJECTID
   field asbltINT (Integer) asbltINT
   field SUFI (Integer) SUFI
@@ -25,27 +25,27 @@ fields used by sources.yml: IPS_Diameter, IPS_Compkey, OBJECTID, IPS_UnitType  (
   field IPS_UnitDesc (String) IPS_UnitDesc
   field Shape__Length (Double) Shape__Length
 site window (EPSG:2193): 1909835, 5583796, 1942951, 5642739
-count where "IPS_UnitType = 'CULV'": 341
-    https://services1.arcgis.com/8L3DQUzjrkgEmDpQ/arcgis/rest/services/OpenData_StormwaterMains/FeatureServer/21/query?where=IPS_UnitType+%3D+%27CULV%27&geometry=1909835.0926%2C5583796.2564%2C1942951.1904999996%2C5642739.3481&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
+count where "IPS_UnitType = 'CULV' AND IPS_Service_Status = 'INS'": 340
+    https://services1.arcgis.com/8L3DQUzjrkgEmDpQ/arcgis/rest/services/OpenData_StormwaterMains/FeatureServer/21/query?where=IPS_UnitType+%3D+%27CULV%27+AND+IPS_Service_Status+%3D+%27INS%27&geometry=1909835.0926%2C5583796.2564%2C1942951.1904999996%2C5642739.3481&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 14018
     https://services1.arcgis.com/8L3DQUzjrkgEmDpQ/arcgis/rest/services/OpenData_StormwaterMains/FeatureServer/21/query?where=1%3D1&geometry=1909835.0926%2C5583796.2564%2C1942951.1904999996%2C5642739.3481&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 14018 feature(s) in the window (where 1=1):
-  Utility_Name: 'STORM' 14018
-  IPS_Table_Name: 'STORM MAIN' 14018
-  IPS_Diameter_Confidence: 'GD' 9696; 'EX' 2220; 'MD' 1628; 'PR' 368; 'VP' 102; None 3; ' ' 1
-  IPS_Material: 'RC' 11227; 'CONC' 1545; 'PVC' 605; 'UPVC' 269; 'AC' 89; 'NOVAF' 62; 'HDPE' 48; 'MPVC' 35; 'GEW' 28; 'MDPE' 26; 'STL' 25; 'GALV' 18; 'COR-S' 12; 'AC-P' 6; 'COR-A' 6; 'PVC-P' 6; 'UNKN' 6; 'PP' 3; ' ' 1; 'CLS' 1
-  IPS_Material_Confidence: 'GD' 8992; 'EX' 2230; 'MD' 1750; 'VP' 926; 'PR' 116; ' ' 4
-  IPS_Date_Confidence: 'GD' 4700; 'MD' 4603; 'EX' 2171; 'VP' 1722; 'PR' 819; None 3
-  IPS_Ownership: 'PUB' 11420; 'VEST' 1509; 'HRDG' 844; 'HCOM' 137; 'HSOL' 51; 'H-W' 43; 'HBRC' 11; 'SHA' 3
-  IPS_Service_Status: 'INS' 13822; 'ABIN' 156; 'CHK' 35; 'TOUT' 3; 'NUKE' 2
-  IPS_UnitType: 'GRVTY' 7665; 'LEAD' 5960; 'CULV' 341; 'OVRFLO' 19; 'FLUME' 12; 'PAG' 8; 'RM' 8; 'F TILE' 3; 'SIPHON' 1; 'CARIER' 1
-  IPS_UnitType_Description: 'STM Gravity Main' 7665; 'STM Sump Lead' 5960; 'STM Culvert' 341; 'STM Overflow' 19; 'STM Artificial Channel' 12; 'STM Pump Assisted Gravity' 8; 'STM Rising Main' 8; 'STM Field Tile' 3; 'STM Submerged Siphon' 1; 'STM Carrier Pipe (Retic)' 1
-  IPS_UnitDesc: None 13965; 'Te Kahika Stream' 21; 'School Stream' 9; 'Here Here Stream Culvert' 6; 'Karituwhenua Stream' 5; 'Mangarau Stream Culvert' 2; 'RESERVOIR DRAINAGE' 2; 'RESERVOIR OVERFLOW PIPE' 2; 'SCHOOL DAM' 2; 'HEREHERE DAM' 2; 'KARITUWHENUA DAM' 1; '{Outlet} Riverslea Drain' 1
+value counts, all 340 feature(s) in the window (where IPS_UnitType = 'CULV' AND IPS_Service_Status = 'INS'):
+  Utility_Name: 'STORM' 340
+  IPS_Table_Name: 'STORM MAIN' 340
+  IPS_Diameter_Confidence: 'MD' 191; 'GD' 104; 'EX' 34; 'VP' 6; 'PR' 5
+  IPS_Material: 'RC' 314; 'CONC' 14; 'COR-S' 6; 'GEW' 2; 'GALV' 1; 'PVC' 1; 'STL' 1; 'COR-A' 1
+  IPS_Material_Confidence: 'GD' 270; 'EX' 30; 'VP' 24; 'MD' 10; 'PR' 6
+  IPS_Date_Confidence: 'VP' 213; 'MD' 61; 'GD' 33; 'EX' 18; 'PR' 15
+  IPS_Ownership: 'HRDG' 286; 'PUB' 30; 'VEST' 16; 'HBRC' 7; 'SHA' 1
+  IPS_Service_Status: 'INS' 340
+  IPS_UnitType: 'CULV' 340
+  IPS_UnitType_Description: 'STM Culvert' 340
+  IPS_UnitDesc: None 314; 'Te Kahika Stream' 15; 'Karituwhenua Stream' 5; 'Here Here Stream Culvert' 4; 'Mangarau Stream Culvert' 2
 numeric fields with values (non-null count, min, median, max); 0 others all null:
-  asbltINT: 2000, 50000163, 51140740.5, 80004129
-  SUFI: 2000, 50000163, 51140740.5, 80004129
-  IPS_Diameter: 2000, 50, 300.0, 3000
-  IPS_Compkey: 2000, 26889, 34333.5, 260860
-  Shape__Length: 2000, 0.11362750622086135, 11.102441007078987, 313.71449195586706
-first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1623,"geometry":{"type":"LineString","coordinates":[[176.813464860812,-39.6411786785128],[176.813441283617,-39.6413767113242]]},"properties":{"OBJECTID":1623,"asbltINT":51142435,"SUFI":51142435,"Utility_Name":"STORM","IPS_Table_Name":"STORM MAIN","IPS_Diameter":1500,"IPS_Diameter_Confidence":"GD","IPS_Material":"RC","IPS_Material_Confidence":"GD","IPS_Install_Date":725846400000,"IPS_Date_Confidence":"GD","IPS_Ownership":"PUB","IPS_Se
-     https://services1.arcgis.com/8L3DQUzjrkgEmDpQ/arcgis/rest/services/OpenData_StormwaterMains/FeatureServer/21/query?where=IPS_UnitType+%3D+%27CULV%27&geometry=1909835.0926%2C5583796.2564%2C1942951.1904999996%2C5642739.3481&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2
+  asbltINT: 340, 50004092, 51148506.5, 80003747
+  SUFI: 340, 50004092, 51148506.5, 80003747
+  IPS_Diameter: 340, 100, 300.0, 5500
+  IPS_Compkey: 340, 28872, 134038.5, 250968
+  Shape__Length: 340, 1.2818997816879076, 5.744152236054465, 114.7615778564456
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":1763,"geometry":{"type":"LineString","coordinates":[[176.819332006225,-39.6505637353816],[176.819364494184,-39.6505436300748]]},"properties":{"OBJECTID":1763,"asbltINT":51144316,"SUFI":51144316,"Utility_Name":"STORM","IPS_Table_Name":"STORM MAIN","IPS_Diameter":300,"IPS_Diameter_Confidence":"MD","IPS_Material":"GALV","IPS_Material_Confidence":"GD","IPS_Install_Date":-631152000000,"IPS_Date_Confidence":"VP","IPS_Ownership":"HRDG","IPS
+     https://services1.arcgis.com/8L3DQUzjrkgEmDpQ/arcgis/rest/services/OpenData_StormwaterMains/FeatureServer/21/query?where=IPS_UnitType+%3D+%27CULV%27+AND+IPS_Service_Status+%3D+%27INS%27&geometry=1909835.0926%2C5583796.2564%2C1942951.1904999996%2C5642739.3481&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

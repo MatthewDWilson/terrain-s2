@@ -1,5 +1,5 @@
 # OK in 1 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source selwyn_land_drains --fields --values
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source selwyn_land_drains --fields --values --where "TYPE IN ('DRAIN', 'ECan') AND (AMS2 IS NULL OR AMS2 <> 'Pipe')"
 
 using https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_Drain/MapServer/12
 layer: CDrain_ln | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
@@ -46,31 +46,31 @@ count where "TYPE IN ('DRAIN', 'ECan') AND (AMS2 IS NULL OR AMS2 <> 'Pipe')": 56
     https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_Drain/MapServer/12/query?where=TYPE+IN+%28%27DRAIN%27%2C+%27ECan%27%29+AND+%28AMS2+IS+NULL+OR+AMS2+%3C%3E+%27Pipe%27%29&geometry=1506398.7507999996%2C5142891.0376%2C1569250.5571999997%2C5184222.4382&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 597
     https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_Drain/MapServer/12/query?where=1%3D1&geometry=1506398.7507999996%2C5142891.0376%2C1569250.5571999997%2C5184222.4382&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 597 feature(s) in the window (where 1=1):
-  Location: 'D6' 242; 'ECAN' 120; 'D5' 109; '' 46; 'D1' 30; None 28; 'D2' 17; 'D7' 5
-  AMS2: 'Channel' 443; '' 145; None 7; 'Pipe' 2
-  AMS3: 'Drain' 443; '' 145; None 9
-  TYPE: 'DRAIN' 445; 'ECan' 120; 'OUTLINE' 30; 'Site Outline' 1; 'SITE_BOUNDARY' 1
-  OWNERSHIP: 'Stormwater Land Drainage' 445; 'ECAN' 120; '' 27; None 5
-  Division: 'Land Drainage' 443; '' 118; 'CLASSIFIEDDRAIN' 27; None 7; 'P&E Pipework' 2
-  SCHEME: 'L.D Leeston ' 263; None 152; 'L.D L2(Liffey) ' 114; 'L.D Ellesmere ' 30; 'L.D Greenpark ' 17; 'L.D Taumutu' 9; 'L.D Osbournes' 7; 'L.D Wairiri Valley' 5
-  AMSProcessed: 'AMS attributes updated on: Oct 11 2026  4:30AM' 445; None 152
-  LastFault: None 597
-  STATUS: 'In Service' 445; None 152
-  Creator: 'STUARTREYNOLDS-ADMIN' 597
-  Editor: 'STUARTREYNOLDS-ADMIN' 597
-  DataSource: '' 566; None 31
-  CaptureMethod: 'OLD DRAIN MAPS' 340; '' 118; 'MOSSICMAP' 33; None 30; 'OLD_DRAIN_MAPS' 28; 'OLD DRAINAGE MAPS' 13; 'OLD DRAINMAPS' 12; 'ASBUILTS' 6; 'OLD_DRAIN MAPS' 5; 'OLD DRAIN MAP' 3; 'OLD LAND DRAINAGE MA' 3; 'OLD DRAINAGE MAP' 2; 'OLD DRAN MAPS' 1; 'MOSICMAP' 1; 'OLDMAP PLANS' 1; 'OLDDRAIN MAPS' 1
-  Comments: 'CLASSIFIED DRAIN' 412; 'ECAN CLASSIFIED DRAINS NOT SDC' 119; 'OUTLINE OF OBJECTS ON THE CLASSIFIED DRAIN' 27; None 26; '' 6; 'L2 CLASSIFIED' 1; 'L2 CLASSIFIED DRAIN' 1; 'CLASSIFIED DRAIN-GREEPARK' 1; 'Osbornes LD Site Outline  621276' 1; '621276 OSBOURNES MONITORING SITE LD' 1; ' CLASSIFIED DRAIN' 1; 'ECAN CLASSIFIED DR' 1
-  Criticality: 'L' 319; None 156; 'V' 77; 'M' 30; 'H' 15
-  PIPECLASS: None 597
+value counts, all 563 feature(s) in the window (where TYPE IN ('DRAIN', 'ECan') AND (AMS2 IS NULL OR AMS2 <> 'Pipe')):
+  Location: 'D6' 242; 'ECAN' 120; 'D5' 109; 'D1' 30; None 21; '' 19; 'D2' 17; 'D7' 5
+  AMS2: 'Channel' 443; '' 118; None 2
+  AMS3: 'Drain' 443; '' 118; None 2
+  TYPE: 'DRAIN' 443; 'ECan' 120
+  OWNERSHIP: 'Stormwater Land Drainage' 443; 'ECAN' 120
+  Division: 'Land Drainage' 443; '' 118; None 2
+  SCHEME: 'L.D Leeston ' 263; None 120; 'L.D L2(Liffey) ' 114; 'L.D Ellesmere ' 30; 'L.D Greenpark ' 17; 'L.D Taumutu' 9; 'L.D Wairiri Valley' 5; 'L.D Osbournes' 5
+  AMSProcessed: 'AMS attributes updated on: Oct 11 2026  4:30AM' 443; None 120
+  LastFault: None 563
+  STATUS: 'In Service' 443; None 120
+  Creator: 'STUARTREYNOLDS-ADMIN' 563
+  Editor: 'STUARTREYNOLDS-ADMIN' 563
+  DataSource: '' 539; None 24
+  CaptureMethod: 'OLD DRAIN MAPS' 340; '' 118; 'OLD_DRAIN_MAPS' 28; None 23; 'OLD DRAINAGE MAPS' 13; 'OLD DRAINMAPS' 12; 'ASBUILTS' 6; 'MOSSICMAP' 6; 'OLD_DRAIN MAPS' 5; 'OLD DRAIN MAP' 3; 'OLD LAND DRAINAGE MA' 3; 'OLD DRAINAGE MAP' 2; 'OLD DRAN MAPS' 1; 'MOSICMAP' 1; 'OLDMAP PLANS' 1; 'OLDDRAIN MAPS' 1
+  Comments: 'CLASSIFIED DRAIN' 412; 'ECAN CLASSIFIED DRAINS NOT SDC' 119; None 21; '' 6; 'L2 CLASSIFIED' 1; 'L2 CLASSIFIED DRAIN' 1; 'CLASSIFIED DRAIN-GREEPARK' 1; ' CLASSIFIED DRAIN' 1; 'ECAN CLASSIFIED DR' 1
+  Criticality: 'L' 319; None 122; 'V' 77; 'M' 30; 'H' 15
+  PIPECLASS: None 563
 numeric fields with values (non-null count, min, median, max); 2 others all null:
-  AMSKEY: 590, 0, 106601.0, 700350
-  PlannedVisits: 445, 0, 3, 41
-  ReactiveVisits: 164, 1, 2.0, 25
-  NumberOfFaults: 445, 0, 0, 0
-  Shape_Length: 597, 1.613325807444483, 631.9855423067368, 9383.84230714406
-  ID: 567, 0, 45, 142
-  PipeDia: 566, 0, 0.0, 0
+  AMSKEY: 561, 0, 106625, 700350
+  PlannedVisits: 443, 2, 3, 41
+  ReactiveVisits: 162, 1, 2.0, 25
+  NumberOfFaults: 443, 0, 0, 0
+  Shape_Length: 563, 1.613325807444483, 691.5475567965972, 9383.84230714406
+  ID: 540, 0, 48.0, 142
+  PipeDia: 539, 0, 0, 0
 first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":1,"geometry":{"type":"LineString","coordinates":[[172.30207545686687,-43.755778050107629],[172.30219722905875,-43.755912022045884]]},"properties":{"OBJECTID":1,"Location":"D6","STNAME":"MANSE","AMSKEY":95358,"AMS2":"Channel","AMS3":"Drain","TYPE":"DRAIN","OWNERSHIP":"Stormwater Land Drainage","Division":"Land Drainage","SCHEME":"L.D Leeston ","AMSProcessed":"AMS attributes updated on: Oct 11 2026  4:30AM","ASSETID":"562622","URL":"http://sdcsql4/ReportServer/Pages/ReportViewer.aspx?%2fAdaptProd%2fSystem%2fPingAssetDetail&rs:Command
      https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_Drain/MapServer/12/query?where=TYPE+IN+%28%27DRAIN%27%2C+%27ECan%27%29+AND+%28AMS2+IS+NULL+OR+AMS2+%3C%3E+%27Pipe%27%29&geometry=1506398.7507999996%2C5142891.0376%2C1569250.5571999997%2C5184222.4382&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

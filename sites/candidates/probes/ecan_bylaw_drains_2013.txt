@@ -1,4 +1,4 @@
-# OK in 1 s
+# OK in 2 s
 # python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source ecan_bylaw_drains_2013 --fields --values
 
 using https://gis.ecan.govt.nz/arcgis/rest/services/Public/PlanningZones/MapServer/16

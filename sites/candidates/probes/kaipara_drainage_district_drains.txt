@@ -1,11 +1,11 @@
-# OK in 3 s
+# OK in 4 s
 # python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source kaipara_drainage_district_drains --fields --values
 
 using https://services9.arcgis.com/DUYVFPAJ5YcaFDs0/arcgis/rest/services/KDC_Drainage_(External)/FeatureServer/4
 layer: Drains | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
 layer extent: 1667575, 5990452, 1699626, 6035104 (wkid 2193)
 definition expression: None
-fields used by sources.yml: Drain_no, OBJECTID  (all present)
+fields used by sources.yml: Width, Drain_no, OBJECTID  (all present)
   field Drain_no (SmallInteger) Drain_no
   field Size (String) Size
   field Width (Double) Width

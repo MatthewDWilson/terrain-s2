@@ -1,11 +1,11 @@
-# OK in 7 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source manawatu_dc_culverts --fields --values
+# OK in 5 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source manawatu_dc_culverts --fields --values --where "asset_type = 'Culvert'"
 
 using https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0
 layer: GIS_STORMWATER_LINE_LN | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
 layer extent: 19505181, -4920331, 19569107, -4873711 (wkid 3857)
 definition expression: None
-fields used by sources.yml: asset_id, OBJECTID, asset_type  (all present)
+fields used by sources.yml: diameter, height, asset_id, OBJECTID, asset_type  (all present)
   field FID (OID) FID
   field OBJECTID (Integer) OBJECTID
   field asset_id (String) asset_id
@@ -36,22 +36,28 @@ count where "asset_type = 'Culvert'": 121
     https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0/query?where=asset_type+%3D+%27Culvert%27&geometry=1788302.477466248%2C5527071.06926494%2C1838178.2634869134%2C5563954.1364044435&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 6887
     https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0/query?where=1%3D1&geometry=1788302.477466248%2C5527071.06926494%2C1838178.2634869134%2C5563954.1364044435&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 6887 feature(s) in the window (where 1=1):
-  Category: 'None' 5003; '_None' 1879; ' ' 5
-  status: 'Existing' 6102; '224 Certified' 672; 'New' 50; 'Renewal' 33; 'Found' 27; 'Abandoned' 2; 'Dummy' 1
-  asset_type: 'Main' 4122; 'Service' 2082; 'Sump Lead' 507; 'Culvert' 121; 'Sub Soil Drain' 48; 'Open Drain' 3; 'Main (Relined)' 2; 'Service (Bulk)' 1; 'Placeholder' 1
-  material: 'Reinforced Concrete' 3660; 'PVC-u' 2795; 'Other' 118; 'Polyethylene' 99; 'Concrete' 43; 'Vitreous Clay' 41; 'Asbestos' 24; 'None' 23; 'Novaflo' 22; 'Concrete Box Culvert' 19; 'Trapezoidal' 15; 'Steel' 12; 'Boss Pipe' 11; 'Open Drain' 3; 'PE-100' 2
-  community: 'Feilding' 6288; 'Sanson' 209; 'Rongotea' 159; 'Halcombe' 140; 'Cheltenham' 21; 'Tangimoana' 21; 'Kimbolton' 19; 'Himatangi Beach' 14; 'Pohangina' 11; 'Bainesse' 2; 'Awahuri' 2; 'Waituna West RWS' 1
-  asset_owne: 'Utilities' 4291; 'Road Asset' 1829; 'Private' 715; 'Parks & Reserves' 21; 'Wastewater Plant' 16; 'Water_Plant' 11; 'None' 4
-  condition: 'Excellent' 3250; 'Good' 2142; 'Poor' 796; 'Average' 507; 'N/A' 151; 'Very Poor' 41
+value counts, all 121 feature(s) in the window (where asset_type = 'Culvert'):
+  Category: 'None' 82; '_None' 38; ' ' 1
+  status: 'Existing' 104; 'New' 11; '224 Certified' 4; 'Found' 2
+  asset_type: 'Culvert' 121
+  material: 'Reinforced Concrete' 88; 'Concrete' 13; 'Concrete Box Culvert' 11; 'Boss Pipe' 3; 'Steel' 2; 'PVC-u' 2; 'Asbestos' 1; 'Polyethylene' 1
+  install_da: '2000-01-01T00:00:00' 68; '1977-07-07T00:00:00' 12; '2021-03-05T00:00:00' 10; '2026-01-13T00:00:00' 9; '1970-07-07T00:00:00' 2; '1970-01-01T00:00:00' 2; '1959-01-01T00:00:00' 1; '2020-03-02T00:00:00' 1; '1950-01-01T00:00:00' 1; '2017-08-25T00:00:00' 1; '2020-03-30T00:00:00' 1; '2018-08-17T00:00:00' 1; '2022-07-18T00:00:00' 1; '2018-08-07T00:00:00' 1; '2018-07-01T00:00:00' 1; '1931-01-01T00:00:00' 1; '1990-01-01T00:00:00' 1; '2023-11-22T00:00:00' 1; '2024-06-07T00:00:00' 1; '2024-09-03T00:00:00' 1; '2025-05-12T00:00:00' 1; '2025-11-18T00:00:00' 1; '2025-08-08T00:00:00' 1; '2026-04-14T00:00:00' 1
+  notes: ' ' 109; 'Unknown installation date' 2; 'unknown outlet' 1; 'Dual 450mm culvert' 1; 'unknown endpoint' 1; 'unknown inlet' 1; 'Galvanised Spiral - default date' 1; 'Levels are not determined on asbuilt' 1; 'Boxed culvert 1.5 X 24' 1; 'Exact installation unknown' 1; 'unknown installation date' 1; 'HDPE Culvert - civil pipe 300mm SN8 twinwall' 1
+  found_date: '2017-10-04T00:00:00' 38; ' ' 35; '2017-10-05T00:00:00' 28; '2017-10-19T00:00:00' 6; '2017-01-26T00:00:00' 5; '2022-08-04T00:00:00' 2; '2017-10-11T00:00:00' 1; '2017-10-18T00:00:00' 1; '2022-02-17T00:00:00' 1; '2021-03-05T00:00:00' 1; '2018-08-20T00:00:00' 1; '2023-04-13T00:00:00' 1; '2024-04-26T00:00:00' 1
+  community: 'Halcombe' 69; 'Feilding' 22; 'Rongotea' 15; 'Tangimoana' 10; 'Sanson' 2; 'Kimbolton' 1; 'Bainesse' 1; 'Awahuri' 1
+  asset_owne: 'Road Asset' 89; 'Utilities' 26; 'Private' 5; 'Wastewater Plant' 1
+  source: ' ' 76; 'Central District Surveys Ltd' 11; 'Loaders As Built' 11; 'MDC Retic' 9; 'As Built' 7; 'Survey' 2; 'Blackley Construction' 1; 'C4-1534' 1; 'Resonant' 1; 'MD Retic' 1; 'Contract Drainlaying Services - MDC asbuilt' 1
+  contract_n: ' ' 93; 'MDC1122-1' 10; 'MDC1469' 7; 'MDC1195 ST' 1; 'C4-1534' 1; 'DP526379' 1; 'CCR45942' 1; 'RD1027 005 WR8797' 1; 'ST1031 005 WR9319' 1; 'ST1031 106 WR9805' 1; 'ST1024 003 WR10166' 1; 'ST9999 001 CCR90443' 1; 'SW2005 110 WR11084' 1; 'RD1030 004 WR11877' 1
+  project_id: ' ' 99; 'MDC1122' 10; 'MDC1195 ST' 1; 'ST1013-003 C4-1534' 1; 'DP526379' 1; 'ST9999 001 SB10020' 1; '26-03-09-3055 WR2100' 1; 'RD1027 005 WR8797' 1; 'ST1031 005 WR9319' 1; 'ST1031 106 WR9805' 1; 'ST1024 003 WR10166' 1; 'ST9999 001 CCR90443' 1; 'SW2005 110 WR11084' 1; 'RD1030 004 WR11877' 1
+  condition: 'Excellent' 90; 'Good' 16; 'N/A' 9; 'Average' 4; 'Very Poor' 2
 numeric fields with values (non-null count, min, median, max); 0 others all null:
-  OBJECTID: 2000, 2, 3448.5, 6886
-  asset_clas: 2000, 49, 49.0, 49
-  diameter: 2000, 0, 225.0, 2100
-  height: 2000, 0, 282.0, 2005
-  quantity_l: 2000, 0.01, 7.6, 301.2
-  us_invert: 2000, -999, 0.0, 140.68
-  ds_invert: 2000, -999, 0.0, 142.91
-  Shape__Length: 2000, 0.013129086688846766, 9.79244559768447, 395.17317367493706
+  OBJECTID: 121, 2178, 4796, 6749
+  asset_clas: 121, 49, 49, 49
+  diameter: 121, 80, 375, 2100
+  height: 121, 0, 367, 2730
+  quantity_l: 121, 2.47, 12.73, 100.97
+  us_invert: 121, -999, 110.93, 126.89
+  ds_invert: 121, -999, 109.03, 125.91
+  Shape__Length: 121, 3.2317876915119164, 16.476194590314623, 132.39383004853835
 first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":2797,"geometry":{"type":"LineString","coordinates":[[175.556026846693,-40.2263508448543],[175.556018838467,-40.2263910170994]]},"properties":{"FID":2797,"OBJECTID":2178,"asset_id":"12301","asset_clas":49,"short_id":"2280","Category":"None","status":"Existing","asset_type":"Culvert","material":"Concrete Box Culvert","diameter":2000,"height":1450,"quantity_l":4.6,"us_invert":67.44,"ds_invert":-999,"install_da":"1970-07-07T00:00:00","no
      https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/GIS_STORMWATER_LINE_LN/FeatureServer/0/query?where=asset_type+%3D+%27Culvert%27&geometry=1788302.477466248%2C5527071.06926494%2C1838178.2634869134%2C5563954.1364044435&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

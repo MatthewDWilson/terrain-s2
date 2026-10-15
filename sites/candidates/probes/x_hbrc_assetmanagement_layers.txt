@@ -1,4 +1,4 @@
-# OK in 1 s
+# OK in 2 s
 # python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --url https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/3 --layers
 
 using https://gis.hbrc.govt.nz/server/rest/services/ExternalServices/AssetManagement/MapServer/3

@@ -1,5 +1,5 @@
-# OK in 5 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source boprc_culverts_point --fields --values
+# OK in 4 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source boprc_culverts_point --fields --values --where "AssetType IN ('Culvert', 'Culvert Pipe')"
 
 using https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/0
 layer: Asset Register - Point | esriGeometryPoint | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
@@ -59,40 +59,38 @@ count where "AssetType IN ('Culvert', 'Culvert Pipe')": 327
     https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/0/query?where=AssetType+IN+%28%27Culvert%27%2C+%27Culvert+Pipe%27%29&geometry=1881820.8619%2C5767581.0599%2C1982607.4441999998%2C5818353.5524&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 1029
     https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/0/query?where=1%3D1&geometry=1881820.8619%2C5767581.0599%2C1982607.4441999998%2C5818353.5524&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 1029 feature(s) in the window (where 1=1):
-  AssetClassification: None 511; 'AC27' 240; 'AC13' 95; 'AC20' 52; 'AC12' 51; 'AC26' 18; 'AC3' 14; 'AC7' 7; 'AC17' 5; 'AC29' 4; 'AC30' 4; 'AC18' 4; 'AC5' 3; 'AC45' 3; 'AC28' 3; 'AC19' 3; 'AC37' 2; 'AC40' 2; 'AC43' 2; 'AC44' 2; 'AC22' 1; 'AC10' 1; 'AC42' 1; 'AC15' 1
-  SchemeName: 'Rangitaiki Drainage' 279; 'Rangitaiki Tarawera' 227; 'Whakatane Tauranga' 218; 'Kaituna' 149; 'Waioeka Otara' 134; 'Unknown' 11; 'Non Scheme' 6; None 4; '' 1
-  Reach: 'Reach 10' 273; 'Reach 1' 254; 'Reach 2' 152; 'Unknown' 125; 'Reach 4' 75; 'Reach 3' 54; 'Reach 7' 52; None 23; 'Reach 0' 14; 'Reach 9' 2; 'reach 7' 1; '' 1; 'Reach 5' 1; 'Reach 10 ' 1; 'reach 1' 1
-  BatterRatio: None 1029
-  Consented: None 547; 'Insert Consent No' 437; 'TBD' 32; 'Y' 12; '63912' 1
-  AssetOwner: 'Council' 790; 'NA' 171; 'Private' 54; 'TA' 8; None 5; 'Crown' 1
-  ManagedBy: None 528; 'Council' 390; 'BOPRC' 102; 'TA' 7; 'Private' 2
-  CriticalAsset: None 638; 'Y' 273; 'N' 116; '' 1; 'TBD' 1
-  Photo_2: None 982; 'https://objective.envbop.net/id:A645701/document/versions/latest' 32; 'https://objective.envbop.net/id:A1897838/document/versions/latest' 1; 'https://objective.envbop.net/id:A1894521/document/versions/latest' 1; 'https://objective.envbop.net/id:A1894511/document/versions/latest' 1; 'https://objective.envbop.net/id:A1894531/document/versions/latest' 1; 'W:\\Images\\Rivers and Drainage Asset Images\\GIS_Layer\\101308_Bell_Road_Box_Culvert_Outlet.JPG' 1; 'https://objective.envbop.net/id:A1897989/document/versions/latest' 1; 'https://objective.envbop.net/id:A1897955/document/versions/latest' 1; 'https://objective.envbop.net/id:A1897837/document/versions/latest' 1; 'https://objective.envbop.net/id:A1897831/document/versions/latest' 1; '' 1; 'https://objective.envbop.net/id:A1897849/document/versions/latest' 1; 'https://objective.envbop.net/id:A1897919/document/versions/latest' 1; 'https://objective.envbop.net/id:A2071704/document/versions/latest' 1; 'https://objective.envbop.net/id:A1897845/document/versions/latest' 1; 'https://objective.envbop.net/id:A1894530/document/versions/latest' 1
-  Building: None 979; 'BT03' 50
-  AssetFunction: None 593; 'FN05' 245; 'FN06' 176; 'FN04' 12; 'FN02' 1; 'FN01' 1; 'FN03' 1
-  ConstructionMaterial: None 835; 'CM19' 55; 'CM16' 22; 'CM01' 20; 'CM09' 20; 'TBD' 16; 'CM02' 14; 'CM13' 12; 'CM04' 12; 'CM12' 9; 'CM07' 4; 'CM15' 3; 'CM08' 3; 'CM14' 2; 'NA' 1; 'CM17' 1
-  Power: None 1029
-  Voltage: None 1029
-  Amps: None 1029
-  DesignLevel: None 1029
-  AssetStatus: None 1014; 'UnConst' 15
-  NewAsset: None 891; 'No' 138
-  Sync: 'No' 519; 'Yes' 508; None 2
-  created_user: 'Daniel.VanNistelrooy@boprc.govt.nz_BOPRC' 1029
-  last_edited_user: 'Daniel.VanNistelrooy@boprc.govt.nz_BOPRC' 1029
-numeric fields with values (non-null count, min, median, max); 3 others all null:
-  AssetID: 694, 0, 102457.0, 101016439
-  Width: 38, 0, 2.5, 1800
-  Height: 28, 0.4, 2.5, 2000
-  Length: 328, 0, 15.0, 2000
-  DiameterMM: 574, 0, 530.0, 1900
-  Mass: 1, 155, 155, 155
-  ThicknessMM: 1, 100, 100, 100
-  NumberBarrelsUnits: 4, 0, 1.0, 1
-  YearBuiltRenewed: 501, 1956, 2000, 2023
-  Weight: 1, 0, 0, 0
-  DutyFlow: 3, 0, 600, 600
-  Depth: 32, 6, 6.0, 6
+value counts, all 327 feature(s) in the window (where AssetType IN ('Culvert', 'Culvert Pipe')):
+  AssetType: 'Culvert' 325; 'Culvert Pipe' 2
+  AssetClassification: None 326; 'AC5' 1
+  Accuracy: 'Survey Grade' 212; '+/-10m' 49; '+/-5m' 16; 'aerial photo 2011' 14; 'site plans ' 8; 'Unknown' 5; 'Digitised 2018 aerial' 5; 'estimated from R747' 4; 'Sub Meter GPS' 3; None 3; 'digitised from 2011 aerial' 3; 'approximated from dwgs ' 1; '+/- 15m' 1; 'site plans' 1; 'estimated from 2011 aerial' 1; 'from aerial' 1
+  SchemeName: 'Rangitaiki Drainage' 222; 'Whakatane Tauranga' 72; 'Kaituna' 26; 'Rangitaiki Tarawera' 4; 'Waioeka Otara' 3
+  Reach: 'Reach 10' 169; 'Unknown' 55; 'Reach 1' 39; 'Reach 7' 19; 'Reach 4' 18; 'Reach 2' 14; 'Reach 0' 7; None 2; 'reach 7' 1; 'Reach 9' 1; 'Reach 10 ' 1; 'Reach 3' 1
+  Waterway: 'Rangitaiki' 103; 'Whakatane' 97; 'Unknown' 60; 'Lower Kaituna' 22; 'Tarawera' 17; 'Te Rahu Drain' 6; 'Waioho Canal' 5; 'Te Rahu Canal' 3; 'Whakatane ' 2; 'Rangitaiki Drainage' 2; 'Kopeopeo West Canal' 1; 'Reids Central Canal' 1; 'Kopuaroa' 1; 'Puarenga Stream' 1; 'Awakaponga' 1; 'Kopeopeo East Canal' 1; 'Whakatane\r\n' 1; 'Otara River' 1; 'Waioeka' 1; 'Otara' 1
+  BatterRatio: None 327
+  Consented: 'Insert Consent No' 282; None 44; '63912' 1
+  AssetOwner: 'Council' 274; 'NA' 51; 'TA' 1; None 1
+  ManagedBy: None 326; 'TA' 1
+  CriticalAsset: None 306; 'Y' 17; 'N' 4
+  Photo_2: None 319; 'https://objective.envbop.net/id:A1894521/document/versions/latest' 1; 'https://objective.envbop.net/id:A1894511/document/versions/latest' 1; 'https://objective.envbop.net/id:A1894531/document/versions/latest' 1; 'W:\\Images\\Rivers and Drainage Asset Images\\GIS_Layer\\101308_Bell_Road_Box_Culvert_Outlet.JPG' 1; 'https://objective.envbop.net/id:A1897989/document/versions/latest' 1; 'https://objective.envbop.net/id:A1897955/document/versions/latest' 1; 'https://objective.envbop.net/id:A1897919/document/versions/latest' 1; 'https://objective.envbop.net/id:A1894530/document/versions/latest' 1
+  Building: None 327
+  AssetFunction: None 326; 'FN06' 1
+  ConstructionMaterial: None 322; 'CM02' 4; 'CM14' 1
+  Power: None 327
+  Voltage: None 327
+  Amps: None 327
+  DesignLevel: None 327
+  AssetStatus: None 327
+  NewAsset: None 327
+  Sync: 'No' 327
+  created_user: 'Daniel.VanNistelrooy@boprc.govt.nz_BOPRC' 327
+  last_edited_user: 'Daniel.VanNistelrooy@boprc.govt.nz_BOPRC' 327
+numeric fields with values (non-null count, min, median, max); 8 others all null:
+  AssetID: 159, 0, 101407, 102207
+  Width: 9, 0.45, 1.4, 1.8
+  Height: 1, 1.5, 1.5, 1.5
+  Length: 263, 0.5, 15.5, 101.1
+  DiameterMM: 267, 0, 600, 1900
+  NumberBarrelsUnits: 1, 1, 1, 1
+  YearBuiltRenewed: 171, 1961, 1968, 2019
 first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":12597,"geometry":{"type":"Point","coordinates":[176.927909567295,-37.9822953680814]},"properties":{"OBJECTID":12597,"AssetID":101359,"AssetType":"Culvert","AssetDescription":"Culvert and Cast Flapgate","AssetClassification":null,"Accuracy":"Survey Grade","SchemeName":"Rangitaiki Drainage","Reach":"Reach 10","Waterway":"Te Rahu Canal","CanalDrain":null,"DisplayName":"TR10 Travurzas Outlet","BatterRatio":null,"Width":null,"Height":null
      https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/0/query?where=AssetType+IN+%28%27Culvert%27%2C+%27Culvert+Pipe%27%29&geometry=1881820.8619%2C5767581.0599%2C1982607.4441999998%2C5818353.5524&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

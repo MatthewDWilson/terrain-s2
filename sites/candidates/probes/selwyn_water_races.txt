@@ -1,5 +1,5 @@
 # OK in 1 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source selwyn_water_races --fields --values
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source selwyn_water_races --fields --values --where "TYPE IN ('MAIN', 'LOCAL', 'LATERAL') AND STATUS = 'In Service'"
 
 using https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6
 layer: WRace_ln | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
@@ -45,28 +45,30 @@ count where "TYPE IN ('MAIN', 'LOCAL', 'LATERAL') AND STATUS = 'In Service'": 24
     https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=TYPE+IN+%28%27MAIN%27%2C+%27LOCAL%27%2C+%27LATERAL%27%29+AND+STATUS+%3D+%27In+Service%27&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 4101
     https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=1%3D1&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 4101 feature(s) in the window (where 1=1):
-  LOCATION: 'MALVERN' 1780; 'PAPARUA' 1131; None 727; 'ELLESMERE' 420; '' 25; ' ' 8; 'DF' 4; 'ROAD' 2; 'Road' 2; 'Shadbolts acces' 1; 'Site_Boundary' 1
-  AMS2: 'Channel' 4057; '' 21; None 13; '0' 4; 'Exterior' 3; 'Pipe' 2; 'Land Use' 1
-  AMS3: 'Culvert' 1579; 'Local' 1312; 'Main' 782; 'Lateral' 355; '' 21; 'Siphon' 14; None 13; 'Tunnel' 9; 'Aqueduct' 5; ' ' 4; 'Kerbing' 3; 'Gravity' 2; 'Monitoring' 1; 'Pipe Sock' 1
-  TYPE: 'CULVERT' 1571; 'LOCAL' 1338; 'MAIN' 805; 'LATERAL' 329; 'SIPHON' 14; 'INTAKE' 12; 'TUNNEL' 9; 'TRACK' 8; 'AQUEDUCT' 6; 'NON SDC SERVICE' 4; 'OUTLINE' 3; 'EMERGENCY DISCHARGE' 2
-  MATL: None 2875; 'CC' 919; 'PVCU' 124; 'Concrete' 33; 'PVC' 28; '' 21; 'PE100' 19; 'PE-MD' 14; 'EW' 10; 'BOSS' 10; 'ST' 9; 'Corrugated Stee' 8; 'PE-HD' 7; 'RCRRJ' 6; 'Timber' 4; 'AC' 4; 'Farm Boss' 3; 'Precast Concret' 2; 'PP-Profile' 1; 'PE80' 1; 'FARMTU' 1; 'Clay' 1; 'PERFOR' 1
-  Capture_Method: '' 3192; None 751; 'PLAN' 62; 'DIG_ASBUILTS' 41; 'DIG_PLAN' 18; 'DIg-ASBUILTS' 14; 'ASBUILTS' 9; 'DIG' 4; 'DIG-ASBUILTS' 3; 'SDC_OPRE_SJM' 1; 'DIG_APLAN' 1; 'DIG_PLAN_GPS' 1; 'PLANA4' 1; 'MM' 1; 'DIG_GPS' 1; 'dIG_PLAN' 1
-  OWNERSHIP: 'Selwyn District Council' 3755; 'Private' 285; '' 21; None 17; 'Stormwater Utilities' 17; 'Stormwater Roading' 2; 'Christchurch City Council' 2; 'Strm outside township no work' 1; 'SDC Property& Reserves' 1
-  DIVISION: 'Water Race' 4057; None 34; 'WATER' 4; 'P&E Plant Site' 3; 'Stormwater' 2; 'Site' 1
-  SCHEME: 'Malvern Water Race' 1934; 'Paparua Water Race' 1671; 'Ellesmere Water Race' 438; None 34; 'West Melton' 13; ' ' 4; 'Rolleston' 3; 'Darfield' 1; 'Leeston' 1; 'Doyleston' 1; 'Burnham' 1
-  AMSProcessed: 'AMS attributes updated on: Oct 11 2026  4:30AM' 4063; None 38
-  LastFault: None 4095; 'Apr 24 2013 10:30AM' 1; 'Feb 26 2014 12:00AM' 1; 'Jul 15 2011  9:18AM' 1; 'Jun 30 2010 12:00AM' 1; 'Aug 23 2019  3:30PM' 1; 'May  1 2020 11:54AM' 1
-  STATUS: 'In Service' 4041; None 38; 'Decommissioned Perm' 11; 'Decommissioned Temp' 5; 'X Captured in Error' 4; 'Abandoned or Disused' 2
-  Creator: 'STUARTREYNOLDS-ADMIN' 4101
-  Editor: 'STUARTREYNOLDS-ADMIN' 4101
+value counts, all 2454 feature(s) in the window (where TYPE IN ('MAIN', 'LOCAL', 'LATERAL') AND STATUS = 'In Service'):
+  LOCATION: 'MALVERN' 1224; 'PAPARUA' 743; 'ELLESMERE' 267; None 210; '' 8; 'DF' 2
+  AMS2: 'Channel' 2453; 'Exterior' 1
+  AMS3: 'Local' 1306; 'Main' 779; 'Lateral' 354; 'Culvert' 14; 'Kerbing' 1
+  TYPE: 'LOCAL' 1324; 'MAIN' 801; 'LATERAL' 329
+  MATL: None 2430; 'PVCU' 6; 'PVC' 4; 'CC' 3; 'Concrete' 3; 'Timber' 2; 'Precast Concret' 2; 'AC' 2; 'PE-MD' 1; 'RCRRJ' 1
+  Data_Source: '' 2159; None 212; 'SDC_OPRE_KH' 28; 'PRO-XR' 15; 'SDC_OPRE_VR' 10; 'SDC_OPTR_SJM' 4; 'SDC_OPTR_KH' 4; 'SDC_OPTR' 3; 'DAVIELOVEL' 3; 'SDC_OPRE_SJM' 2; 'CONNELWAG' 2; 'SDC_OPRE-VR' 2; 'SDC_OPTR_GW' 1; 'SICON' 1; 'SD_OPRE_KH' 1; 'ELIOTSINCALIR' 1; 'SDC_OPRE)CT' 1; 'SDC_OPRE_CT' 1; 'SDC_OPRE_SM' 1; 'SDC_OPRT_VR' 1; 'SDC_OPRE_VH' 1; 'SDC_OPTR_VR' 1
+  Capture_Method: '' 2157; None 212; 'PLAN' 49; 'DIG_ASBUILTS' 21; 'DIG_PLAN' 9; 'DIG' 3; 'DIG_APLAN' 1; 'PLANA4' 1; 'dIG_PLAN' 1
+  RAMM_ID: '' 2242; None 212
+  OWNERSHIP: 'Selwyn District Council' 2430; 'Private' 21; 'Stormwater Utilities' 3
+  DIVISION: 'Water Race' 2453; 'P&E Plant Site' 1
+  SCHEME: 'Malvern Water Race' 1298; 'Paparua Water Race' 874; 'Ellesmere Water Race' 280; 'West Melton' 2
+  AMSProcessed: 'AMS attributes updated on: Oct 11 2026  4:30AM' 2454
+  LastFault: None 2454
+  STATUS: 'In Service' 2454
+  Creator: 'STUARTREYNOLDS-ADMIN' 2454
+  Editor: 'STUARTREYNOLDS-ADMIN' 2454
 numeric fields with values (non-null count, min, median, max); 2 others all null:
-  AMSKEY: 1718, 0, 74840.5, 703724
-  DIAPIPE: 686, 0, 300.0, 3600
-  LENGTH: 1983, 0, 54, 5972.8
-  PlannedVisits: 145, 0, 0, 6
-  ReactiveVisits: 1243, 0, 2, 70
-  NumberOfFaults: 1962, 0, 0.0, 4
-  Shape_Length: 2000, 0.568506816671539, 57.976654406554545, 7350.883461341288
+  AMSKEY: 1943, 0, 74672, 662845
+  DIAPIPE: 17, 20, 300, 450
+  LENGTH: 2000, 0.56, 418.85, 5972.8
+  PlannedVisits: 104, 0, 1.0, 8
+  ReactiveVisits: 1296, 0, 3.0, 79
+  NumberOfFaults: 2000, 0, 0.0, 0
+  Shape_Length: 2000, 0.39894566049300173, 405.39863057454977, 6238.661360459338
 first response (geojson, 2 records): {"type":"FeatureCollection","features":[{"type":"Feature","id":39,"geometry":{"type":"LineString","coordinates":[[171.87478034461159,-43.658768823187344],[171.87486836862496,-43.65896729342559],[171.87497167014325,-43.658934500363586],[171.87502969258503,-43.658952760643793],[171.87489781003191,-43.659033676839677],[171.87668843422193,-43.66307077539161]]},"properties":{"OBJECTID":39,"LOCATION":"ELLESMERE","STNAME":"TE PIRITA","AMSKEY":76628,"AMS2":"Channel","AMS3":"Main","TYPE":"MAIN","DIAPIPE":null,"MATL":null,"LENGTH":502.10000000000002,"Data_Source":"","Capture_Method":"","RAMM_ID":"","COM
      https://gis.selwyn.govt.nz/arcgis/rest/services/SDC_Public/WATER_WaterRace/MapServer/6/query?where=TYPE+IN+%28%27MAIN%27%2C+%27LOCAL%27%2C+%27LATERAL%27%29+AND+STATUS+%3D+%27In+Service%27&geometry=1503724.9403%2C5140438.2493%2C1564054.6676000003%2C5202612.2957&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

@@ -1,5 +1,5 @@
-# FAILED (exit 1) in 5 s
-# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source boprc_waterways --fields --values
+# OK in 5 s
+# python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source boprc_waterways --fields --values --where "AssetType IN ('Waterway Drain', 'Waterway Canal', 'Waterway Stream')"
 
 using https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1
 layer: Asset Register - Line | esriGeometryPolyline | maxRecordCount 2000 | paging True | formats JSON, geoJSON, PBF
@@ -57,18 +57,41 @@ count where "AssetType IN ('Waterway Drain', 'Waterway Canal', 'Waterway Stream'
     https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1/query?where=AssetType+IN+%28%27Waterway+Drain%27%2C+%27Waterway+Canal%27%2C+%27Waterway+Stream%27%29&geometry=1856672.6290999996%2C5734666.573%2C1983512.7412%2C5841031.8217&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
 count where '1=1': 2186
     https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1/query?where=1%3D1&geometry=1856672.6290999996%2C5734666.573%2C1983512.7412%2C5841031.8217&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json
-value counts, all 2186 feature(s) in the window (where 1=1):
-  AssetClassification: 'AC21' 535; 'AC23' 387; 'AC8' 332; 'AC25' 288; 'AC24' 197; 'AC5' 160; 'AC9' 66; 'AC6' 35; 'AC4' 33; 'AC2' 30; 'AC14' 29; None 20; 'AC22' 19; 'AC32' 18; 'AC13' 14; 'AC16' 10; 'AC39' 4; 'AC34' 4; 'AC35' 2; 'AC27' 2; 'AC1' 1
-  DesignLevel: None 1826; '1' 215; '20' 58; '10' 49; '5' 32; '50' 4; '2' 2
-  Freeboard: 'Unknown' 1141; None 793; '300mm' 98; '300' 31; '500mm' 28; '600mm' 24; '450mm' 18; '800mm' 16; '600' 9; '250mm' 7; '150mm' 6; '800' 4; '150' 4; '500' 3; 'unknown' 1; '450' 1; '400mm' 1; '' 1
-
---- stderr ---
-Traceback (most recent call last):
-  File "D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py", line 204, in <module>
-    main()
-  File "D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py", line 108, in main
-    print(f"  {f}: " + "; ".join(f"{v!r} {c}" for v, c in counts))
-  File "C:\Users\mwi104\miniforge3\envs\terrain-s2\Lib\encodings\cp1252.py", line 19, in encode
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\u012b' in position 201: character maps to <undefined>
+value counts, all 309 feature(s) in the window (where AssetType IN ('Waterway Drain', 'Waterway Canal', 'Waterway Stream')):
+  AssetType: 'Waterway Drain' 285; 'Waterway Canal' 19; 'Waterway Stream' 5
+  AssetClassification: 'AC25' 287; 'AC32' 18; 'AC39' 4
+  Accuracy: 'Digitised from RDAM 2003' 282; 'Not Defined' 15; 'digitised from aerial in 2015' 7; None 3; 'digitised from 2011 aerial' 1; 'Aerial' 1
+  DesignLevel: None 309
+  Freeboard: 'Unknown' 297; None 12
+  SchemeName: 'Rangitaiki Drainage' 230; 'Kaituna' 54; 'Waioeka Otara' 16; 'Waiotahe Drainage District' 6; 'Huntress Creek Drainage Area' 2; 'Rangitaiki Tarawera' 1
+  Reach: None 229; 'Reach 3' 53; 'Unknown' 10; 'Reach 2' 5; 'Reach 1' 5; 'Reach 0' 3; 'Reach 4' 3; 'Reach 10' 1
+  CanalDrain: 'Regional Drain' 237; 'Drainage Scheme' 51; 'Arterial Canal/Drain' 16; None 5
+  BatterRatio: None 308; '0.5:1' 1
+  GeofabricInstalled: None 309
+  Toe: None 309
+  ConstructionMaterial: None 309
+  AssetFunction: 'FN06' 309
+  Consented: 'Insert Consent No' 238; None 63; 'TBD' 5; 'Y' 2; 'N' 1
+  AssetOwner: 'Council' 300; 'Private' 8; 'TA' 1
+  Photo_1: None 309
+  Photo_2: None 309
+  CriticalAsset: 'N' 298; None 9; 'Y' 2
+  ManagedBy: 'Council' 309
+  AssetStatus: None 309
+  NewAsset: None 309
+  Sync: 'Yes' 294; 'No' 13; None 2
+  created_user: 'Daniel.VanNistelrooy@boprc.govt.nz_BOPRC' 309
+  last_edited_user: 'Daniel.VanNistelrooy@boprc.govt.nz_BOPRC' 309
+  Bank: None 307; 'Right' 1; 'Left' 1
+numeric fields with values (non-null count, min, median, max); 4 others all null:
+  AssetID: 294, 100807, 100953.5, 101013826
+  Width: 244, 1.5, 3.8, 53
+  Height: 3, 0.7, 1.5, 1.5
+  Length: 309, 75.94437075, 1067.9633385, 10641.55376943
+  DiameterMM: 1, 3.8, 3.8, 3.8
+  Volume: 293, 288.6, 4401.8, 415020.6
+  AssetArea: 6, 3.38, 10.795, 39
+  YearBuiltRenewed: 6, 0, 2010.0, 2020
+  Shape__Length: 309, 76.02634608489561, 1065.5924071766499, 10653.8183663768
+first response (geojson, 2 records): {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"properties":{"exceededTransferLimit":true},"features":[{"type":"Feature","id":22708,"geometry":{"type":"LineString","coordinates":[[176.350530385229,-37.751308136045],[176.349243088585,-37.7514101185667],[176.348122960361,-37.7516557069815],[176.347338413116,-37.7520257334121],[176.346245065732,-37.7520703114315],[176.332441925065,-37.7520733192421],[176.31890043263,-37.752062416816],[176.305996813708,-37.7520551274951],[176.305648092828,-37.7520367430856],[176.305411767583,-37.7518694878696],[176.304750289739
+     https://services1.arcgis.com/TWsoAGve3wb3oFHK/arcgis/rest/services/Asset_Register_Oct_2023/FeatureServer/1/query?where=AssetType+IN+%28%27Waterway+Drain%27%2C+%27Waterway+Canal%27%2C+%27Waterway+Stream%27%29&geometry=1856672.6290999996%2C5734666.573%2C1983512.7412%2C5841031.8217&geometryType=esriGeometryEnvelope&inSR=2193&spatialRel=esriSpatialRelIntersects&outFields=%2A&outSR=4326&f=geojson&resultRecordCount=2

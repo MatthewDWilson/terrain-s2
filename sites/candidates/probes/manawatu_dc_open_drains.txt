@@ -1,4 +1,4 @@
-# OK in 3 s
+# OK in 4 s
 # python D:\EDDIE_Terrain\terrain-s2\scripts\probe_source.py --sources D:\EDDIE_Terrain\terrain-s2\sites\candidates\sources_candidates.yml --source manawatu_dc_open_drains --fields --values
 
 using https://services9.arcgis.com/CzWZ8m5FuciqBibe/arcgis/rest/services/Stormwater_Open_Drains/FeatureServer/7
