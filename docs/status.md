@@ -69,7 +69,8 @@ Smart Ideas used for `8m_geofabric.nc` (run offline, not recorded: 4e).
 
 ## Wave 3 (first tranche, 17 Oct)
 
-Sources enabled, indexed and selected: 220 tiles (`ml/manifests/wave3.csv`, DESIGN_NOTES 11). To run: on the workstation, index the six
+Sources enabled, indexed and selected: 220 tiles (`ml/manifests/wave3.csv`, DESIGN_NOTES 11); the batch is
+running (restarted with the LINZ key); after it, `terrain_hpc.sh check-runs` on the manifest. To run: on the workstation, index the six
 sources (`index_sources.py --only ...`) and select (`select_tiles.py --config ml/config/wave3.yml`), commit
 `sites/sources_coverage.geojson` and `ml/manifests/wave3.csv`; on the RTX 6000 machine, after the disk move,
 `update`, then `start ml/manifests/wave3.csv --param rasters=all`, then `channels` for the manifest.

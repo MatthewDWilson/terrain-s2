@@ -23,6 +23,7 @@
 #   torch             install PyTorch (CUDA 12.8 build: Blackwell GPUs need it) into the environment, for ML-1b
 #   channels <manifest...> [--workers N]  council channel lines snapped to the bed, then label rasters (ML-3a)
 #   chips <name> <manifest...> [--workers N]  training chips for the channel model (ML-3a step 5)
+#   check-runs <manifest...> [--stage S]    completeness and data issues of bundles and runs
 #   dataset <manifest...> --name N
 #                     build_labels + build_dataset for the manifest(s)
 #
@@ -401,6 +402,14 @@ channels() {  # ML-3a steps 3-4: council channel lines snapped to the bed, then 
         && in_env python scripts/build_channel_labels.py --manifest "${manifests[@]}" "${opts[@]}")
 }
 
+check_runs() {  # completeness and data issues of a manifest's bundles and runs (scripts/check_runs.py)
+    load_env
+    [ $# -gt 0 ] || die "usage: check-runs <manifest...> [--stage batch|channels|chips] [--dataset NAME] [--list ISSUE]"
+    local manifests=() opts=()
+    while [ $# -gt 0 ]; do case "$1" in --*) opts+=("$@"); break ;; *) manifests+=("$1"); shift ;; esac; done
+    (cd "$TS2" && in_env python scripts/check_runs.py --manifest "${manifests[@]}" "${opts[@]}")
+}
+
 chips() {  # ML-3a step 5: training chips from the saved rasters and label rasters
     load_env
     [ $# -ge 2 ] || die "usage: chips <dataset name> <manifest...> [--workers N] [--per-tile N] [--rerun]"
@@ -441,6 +450,7 @@ case "$mode" in
     dataset) dataset "$@" ;;
     channels) channels "$@" ;;
     chips) chips "$@" ;;
+    check-runs) check_runs "$@" ;;
     labels) labels "$@" ;;
     partition) partition ;;
     *) die "unknown mode '$mode' (setup | update | check | labels | partition | batch | start | status | stop | torch | dataset)" ;;

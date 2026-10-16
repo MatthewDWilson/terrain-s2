@@ -58,6 +58,16 @@ class Context:
         return self._near[radius_m]
 
 
+
+def _dsm_stats(diff):
+    """(max, mean) of DSM - DEM over a crest span; NaN, without numpy's all-NaN warnings, where the DSM has no data
+    there (a DSM gap: water, or a survey edge where the DSM covers less than the DEM)."""
+    diff = np.asarray(diff, dtype=float)
+    ok = np.isfinite(diff)
+    if not ok.any():
+        return float("nan"), float("nan")
+    return float(diff[ok].max()), float(diff[ok].mean())
+
 def _xy(transform, flat_idx, ncols):
     r, c = np.divmod(np.asarray(flat_idx), ncols)
     return transform.c + (c + 0.5) * transform.a, transform.f + (r + 0.5) * transform.e
@@ -219,8 +229,7 @@ def candidates(ctx: Context, p: CandidateParams | None = None):
         )
         if ctx.dsm is not None:
             diff = ctx.dsm.ravel()[span] - zs
-            rec["dsm_minus_dem_max"] = float(np.nanmax(diff))
-            rec["dsm_minus_dem_mean"] = float(np.nanmean(diff))
+            rec["dsm_minus_dem_max"], rec["dsm_minus_dem_mean"] = _dsm_stats(diff)
         # geometry: cutline from bed_window upstream to bed_window downstream
         g_sel = (d >= d[s_p] - p.bed_window_m) & (d <= d[e_p] + p.bed_window_m)
         gx, gy = _xy(ctx.transform, prof[g_sel], ncols)
@@ -523,8 +532,7 @@ def test_a(ctx: Context, p: CandidateParams | None = None):
                                                                        and kind == "crossing"))
         if ctx.dsm is not None:
             diff = ctx.dsm.ravel()[span] - zf[span]
-            rec["dsm_minus_dem_max"] = float(np.nanmax(diff))
-            rec["dsm_minus_dem_mean"] = float(np.nanmean(diff))
+            rec["dsm_minus_dem_max"], rec["dsm_minus_dem_mean"] = _dsm_stats(diff)
         cx, cy = _xy(ctx.transform, [crest], ncols)
         rec["crest_x"], rec["crest_y"] = float(cx[0]), float(cy[0])
         px, py = _xy(ctx.transform, path, ncols)

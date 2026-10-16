@@ -1793,6 +1793,17 @@ positive and ignored shares: `train.folds` applies to it as to the scorer's data
 council and kind; per-band mean and standard deviation for normalisation). On the three clips, 60 chips each:
 positive, label and ways aligned; Environment Southland's sparse positives filled with random chips.
 
+**Wave 3: the LINZ key, and DSM gaps** (16 Oct). The rebuilt distro's `env.sh` had an empty `LINZ_API_KEY`, so the
+first wave-3 bundles had no LINZ roads, tracks, rail, buildings, bridges, embankments or dams (each source's failure
+is recorded in site.json and the build carries on, and a bundle with a DEM counts as built). Stopped, key set, the
+affected bundles' site.json and runs' done.json removed, restarted. The batch log then filled with numpy's all-NaN
+warnings from `crossings.py` (DSM - DEM over a crest where the DSM has no data: water, or a survey edge where the
+DSM covers less than the DEM); harmless (the values are NaN, which the scorer takes), now computed quietly
+(`_dsm_stats`). `scripts/check_runs.py` (`terrain_hpc.sh check-runs`) scans a manifest's bundles and runs after a
+batch, and after the channel and chip steps: source errors (the LINZ key called out), DEM and DSM valid fractions and
+DSM gaps, done / failed, the outputs a finished run has, probes errors, then snapping, label rasters, positives, the
+ways raster and the chips; one row per tile with its issues, and `--list ISSUE` for a rerun list.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
