@@ -74,7 +74,8 @@ from GPU memory; add `--workers N --gpu-workers N` to choose (a warning says whe
 85 % of the memory WSL has). It runs detached from the terminal, restarts the batch after an interruption until
 every tile is done (at most 5 attempts; finished tiles are skipped), keeps Windows from sleeping while it runs, and
 records out-of-memory kills in `~/terrain/run/supervisor.log`. `batch` runs the same in the terminal (closing the
-terminal stops it). Results are readable from Windows at `\\wsl.localhost\terrain\home\<user>\terrain_data`.
+terminal stops it). Results are readable from Windows at `\\wsl.localhost\terrain\home\<user>\terrain_data`, or at
+`\\wsl.localhost\terrain\mnt\wsl\terrain_data` with the data on their own disk (section 5).
 
 If a batch stops on its own: `status` shows the last log lines and any out-of-memory kills. If WSL itself closed
 (the terminal drops back to PowerShell, and the supervisor log has no "ended" line), look for low-memory events:
@@ -124,14 +125,20 @@ In WSL: copy, check, swap in a link, and only then delete the old copy (about 1 
 ```bash
 sudo chown "$USER": /mnt/wsl/terrain_data
 rsync -a --info=progress2 ~/terrain_data/ /mnt/wsl/terrain_data/
-rsync -an --delete --itemize-changes ~/terrain_data/ /mnt/wsl/terrain_data/ | head    # nothing listed: identical
+rsync -an --delete --itemize-changes --exclude=lost+found ~/terrain_data/ /mnt/wsl/terrain_data/ | head   # nothing: identical
 mv ~/terrain_data ~/terrain_data.old && ln -s /mnt/wsl/terrain_data ~/terrain_data
 bash ~/terrain/terrain_hpc.sh status                                                   # reads through the link
 rm -rf ~/terrain_data.old && sudo fstrim -av
 ```
 
 `terrain_hpc.sh` stops with the `schtasks` command if the link is there but the disk is not attached, rather than
-writing into an empty folder. Last, shrink the system disk's file (administrator PowerShell):
+writing into an empty folder.
+
+**Optional, and at your own risk: shrinking the system disk's file.** On 16 Oct 2026 the compaction below reported
+success, but WSL then refused the compacted `ext4.vhdx` (`Wsl/Service/CreateInstance/MountDisk/HCS/ERROR_FILE_CORRUPT`;
+the file copied cleanly, the drive checked clean, diskpart could still open it), and the distro had to be rebuilt
+(below). The data, on their own disk, were untouched. If you do it, copy `ext4.vhdx` elsewhere first. In an
+administrator PowerShell:
 
 ```powershell
 $base = (Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | Get-ItemProperty |
@@ -143,6 +150,23 @@ schtasks /run /tn "WSL terrain_data disk"
 ```
 
 The system disk keeps its 2 TB limit (only the file shrinks), which costs nothing.
+
+**Rebuilding the distro** (the system disk lost; the data disk intact). Administrator PowerShell:
+`wsl --unregister terrain`, `wsl --install -d Ubuntu-24.04 --name terrain` (the same user name),
+`wsl --manage terrain --move <drive>:\WSL\terrain`, `schtasks /run /tn "WSL terrain_data disk"`. In the distro, link
+the data *before* setup, and fetch the script from GitHub (a copy from a Windows clone has CRLF line endings, which
+bash rejects):
+
+```bash
+ln -s /mnt/wsl/terrain_data ~/terrain_data
+curl -fsSL https://raw.githubusercontent.com/MatthewDWilson/terrain-s2/main/docs/wsl/terrain_hpc.sh -o ~/terrain_hpc.sh
+bash ~/terrain_hpc.sh setup && bash ~/terrain_hpc.sh update && rm ~/terrain_hpc.sh
+```
+
+`setup` does not install the script into `~/terrain`; `update` does. PyTorch again with `torch` when needed. From
+Windows the data disk is at `\\wsl.localhost\terrain\mnt\wsl\terrain_data` (the home-folder link does not open from
+Explorer); `net use T: <that path> /persistent:yes` gives it a letter while the distro runs. Never attach the data
+VHDX in Windows while WSL uses it.
 
 ## Notes
 

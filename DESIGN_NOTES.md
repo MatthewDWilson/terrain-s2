@@ -1765,6 +1765,34 @@ Environment Southland 0.24 % and 1.3 %; Auckland 0.9 % and 40.6 % (the flat rule
 positive : negative weight ratio, 0.07-0.6, is left to the loss (class weighting in ML-3b). Brief for the
 council-data thread's visual check of wave 3's snapping: `docs/qa_wave3_snapping.md`.
 
+**HPC: the data on their own disk, and the system disk lost** (16 Oct): `~/terrain_data` (1.0 TB, 17,392 files) was
+copied with rsync (17 min at ~900 MB/s) to an ext4 VHDX on E: attached with `wsl --mount` (a logon task reattaches it)
+and linked from `~/terrain_data`; rsync's check listed only `lost+found` (made by mkfs, root's: now excluded). The
+optional compaction of the system disk (diskpart, attach read-only, compact) reported success, but WSL then refused the
+file (`HCS/ERROR_FILE_CORRUPT`) although it copied cleanly, was neither sparse nor compressed, and chkdsk found the
+drive clean; cause unknown. The distro was rebuilt in under an hour (`terrain_hpc.md` section 5): the data disk was
+untouched. Lessons in the doc: back up before compacting (now marked optional), link the data before `setup`, fetch
+the script from GitHub (a Windows clone's copy has CRLF endings), and `update` installs it into `~/terrain`.
+
+**ML-3a step 4 on waves 1 + 2** (16 Oct; `channel_labels_summary.csv`, 349 tiles, no failures): positives 0.24 %
+(Waimakariri), 0.28 % (HBRC), 0.13 % (Environment Southland), 0.20 % (Auckland) of cells, 21.7 M cells in all;
+ignored 4.2 %, 13.3 %, 4.7 %, 39.1 % (Auckland's flat-only negatives); 21 tiles without positives (lines unsnapped or
+at the edge). Positive weight is 4-7 % of the negative weight: the sampling (half the chips on channels) and the loss
+rebalance it.
+
+**ML-3a step 5: chips** (16 Oct; `ml/chips.py`, `scripts/build_chips.py`, `terrain_hpc.sh chips`). 128 m windows of
+23 bands (features.tif's 17; REM, log10 upstream area, breach and depression depth, DSM - DEM from hydro.tif; the
+distance to any way, capped at 500 m, rasterised once per tile into `ml_ways.tif` from the bundle's roads, rail,
+tracks and OSM ways, so the scorer's key context is an input without saying whose inventory a way is in) with the
+label raster's label and weight; read across tile edges from the other runs of the manifests (a cell no run covers
+is ignored). The physics channel mask is not an input. 300 per tile: half on positives, a quarter hard (unrecorded
+physics channels; crests of labels the chain lost, `no_channel` and `not_in_network` in the probes), the rest random,
+centres jittered by up to 32 m and 40 m apart. Stored float16 per tile (`<dataset>/chips/<tile>.npz`, ~0.38 MB a
+chip compressed, ~115 MB a tile, ~65 GB for waves 1-3) with `chips.parquet` (tile, council, wave, holdout, kind,
+positive and ignored shares: `train.folds` applies to it as to the scorer's dataset) and the card (counts per
+council and kind; per-band mean and standard deviation for normalisation). On the three clips, 60 chips each:
+positive, label and ways aligned; Environment Southland's sparse positives filled with random chips.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
