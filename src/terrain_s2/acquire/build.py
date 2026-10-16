@@ -94,6 +94,53 @@ def build_site(site, sources: dict, out_root, cache_root, http=None, dry_run=Fal
     return prov
 
 
+
+def refresh_source(bundle, name, sources: dict, cache_root, http=None, log=print):
+    """Fetch one source again for a built bundle and merge it in: its layers replace that source's rows in
+    labels.gpkg / context.gpkg (rows of other sources kept), roads.gpkg is written from OSM roads only if the
+    bundle has none, and site.json loses the source's errors and gains its record (``refreshed``). For a source that
+    failed in a batch (Overpass under many parallel workers, wave 3): fix the bundle here, then rerun the tile.
+    Implied crossings are not redone (they come from the LINZ roads where those were fetched). Returns the record;
+    raises if the fetch fails again (site.json unchanged)."""
+    import geopandas as gpd
+    import pandas as pd
+    import pyogrio
+    from shapely.geometry import box
+
+    from .http import Http
+    bundle = Path(bundle)
+    prov = json.loads((bundle / "site.json").read_text())
+    window = prov["site"]["window"]
+    store = SnapshotStore(Path(cache_root) / "snapshots")
+    http = http or Http(store)
+    if getattr(http, "store", None) is None:
+        http.store = store
+    got = _fetch(http, store, name, sources[name], window, False)
+    label_layers = ("channels", "crossings", "stopbanks", "bridges")
+    for lyr, g in got.get("layers", {}).items():
+        is_label = lyr in label_layers or lyr.endswith("_raw")
+        f = bundle / ("labels.gpkg" if is_label else "context.gpkg")
+        g = gpd.GeoDataFrame(g, crs=2193)
+        if not is_label and len(g):
+            g = g.clip(box(*window))
+            g = g[~g.geometry.is_empty]
+        have = f.exists() and lyr in {n for n, _ in pyogrio.list_layers(f)}
+        if have and not lyr.endswith("_raw"):
+            old = gpd.read_file(f, layer=lyr)
+            if "source" in old:
+                old = old[old["source"] != name]
+            g = gpd.GeoDataFrame(pd.concat([old.to_crs(2193), g], ignore_index=True), crs=2193)
+        if len(g):
+            _to_gpkg(g.reset_index(drop=True), f, lyr)
+        if lyr == "osm_roads" and not (bundle / "roads.gpkg").exists() and len(g):
+            _to_gpkg(g, bundle / "roads.gpkg", "roads")
+    prov["errors"] = [e for e in prov.get("errors", []) if e.get("step") != f"source:{name}"]
+    prov["sources"] = [x for x in prov.get("sources", []) if x.get("name") != name] + [
+        dict(name=name, refreshed=_dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), **got["meta"])]
+    (bundle / "site.json").write_text(json.dumps(prov, indent=2, default=str))
+    log(f"[{bundle.name}] {name}: " + (", ".join(f"{k} {len(v)}" for k, v in got.get("layers", {}).items()) or "0 features"))
+    return prov
+
 def _fetch(http, store, name, spec, window, dry_run):
     kind = spec["kind"]
     now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")

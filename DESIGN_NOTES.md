@@ -1804,6 +1804,15 @@ batch, and after the channel and chip steps: source errors (the LINZ key called 
 DSM gaps, done / failed, the outputs a finished run has, probes errors, then snapping, label rasters, positives, the
 ways raster and the chips; one row per tile with its issues, and `--list ISSUE` for a rerun list.
 
+**Wave 3: OSM failures** (17 Oct; `check_runs.py`). After the batch, 70 of 220 bundles had no OSM layers (Overpass
+failed on every server through all retries); rebuilding them with 6 workers left 22. The public Overpass servers
+limit each address to a couple of concurrent queries, so parallel workers fail however patient each one is. OSM feeds
+no labels, and road crossings use the LINZ roads, but OSM ways are part of the distance to any way (the scorer's key
+feature, and a chip band), so tiles without them would skew it. `acquire.build.refresh_source` fetches one source
+again for a built bundle and merges it (that source's rows replaced, others kept; site.json's error removed);
+`scripts/refresh_source.py` does it one tile at a time with pauses and retries, then removes done.json so the next
+batch reruns the network and features with the bundle as it is (it counts as built, so it is not rebuilt).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
