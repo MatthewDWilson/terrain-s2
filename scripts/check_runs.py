@@ -9,7 +9,8 @@ Per tile, from the files only (fast; nothing is recomputed):
     bundle      site.json present; source errors (by source; LINZ_API_KEY missing called out); DEM and DSM present,
                 their valid fractions; a DSM covering clearly less than the DEM (DSM gaps: crossings there get no
                 DSM - DEM, and the chips' DSM - DEM band is 0)
-    run         done.json (and its parameters: saved rasters), failed.json, the outputs a finished run has
+    run         done.json (and its parameters: saved rasters), failed.json (stale_failed when done.json is newer:
+                an earlier attempt), the outputs a finished run has
                 (network.gpkg, ml_features.parquet, ml_patches.npy, ml_probes.parquet, the three rasters),
                 probes_error, candidates and channel km
     channels    ml_channels.json (snap version), ml_channel_labels (label version), ml_ways.tif, and whether the
@@ -66,7 +67,8 @@ def check_tile(t, runs, bundles, stage, chips_dir, dsm_gap):
         issues.append("dsm_gap")
     done = _json(r / "done.json")
     if (r / "failed.json").exists():
-        issues.append("failed")
+        stale = (r / "done.json").exists() and (r / "done.json").stat().st_mtime > (r / "failed.json").stat().st_mtime
+        issues.append("stale_failed" if stale else "failed")      # stale: an earlier attempt, done since
         f = _json(r / "failed.json") or {}
         row["failed_error"] = str(f.get("error", ""))[:200]
     if done is None:

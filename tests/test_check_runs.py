@@ -34,3 +34,15 @@ def test_issues(tmp_path):
     assert "not_done" in rows["C"]["issues"]
     assert "missing_outputs" in rows["D"]["issues"] and "ml_features.parquet" in rows["D"]["missing"]
     assert CR.check_tile("A", runs, bundles, "batch", None, 0.02)["issues"] == ""
+
+
+def test_stale_failed(tmp_path):
+    import os
+    import time
+    _tile(tmp_path, "A")
+    r = tmp_path / "runs" / "A"
+    (r / "failed.json").write_text("{}")
+    old = time.time() - 100
+    os.utime(r / "failed.json", (old, old))
+    row = CR.check_tile("A", tmp_path / "runs", tmp_path / "tiles", "batch", None, 0.02)
+    assert row["issues"] == "stale_failed"

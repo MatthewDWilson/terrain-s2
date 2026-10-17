@@ -1867,6 +1867,16 @@ test run aborted ("Fatal Python error: Aborted") in numpy.linalg.solve under ras
 Windows that kills the process at the next threaded linear algebra. The U-Net checks now run in their own process
 (`tests/unet_cases.py`, started by `test_ml_unet`), so the pytest process never loads PyTorch.
 
+**Chips for waves 1-3** (17 Oct; `ml3_waves123`): 170,700 chips from 569 tiles (300 each): positive 57,454,
+hard 42,675, random 70,571; positive cells 2.2 % of a chip on average, ignored 12.7 %. The scan after the chips:
+19 tiles without positives, 23 mostly sea, the 3 DSM gaps; 11 "failed" were failed.json files left by earlier
+attempts of tiles done since (now reported as `stale_failed`); and 60 bundles of waves 1 + 2 (Environment Southland
+53) still lack OSM from the original Overpass fetches. Their chips' distance-to-way band misses OSM-only ways
+(driveways, farm tracks); the fix: `refresh_source.py --keep-done` from the OSM extract (no network rerun: the network
+uses LINZ roads), then `build_chips.py --redo <tiles>` remakes their ways rasters and chips, and the U-Net unpacks
+chips newer than its cache again. Their scorer features (ctx_dist_osm_way_m) wait for the next scorer dataset, which
+reruns those tiles. First U-Net run (blocks:1/5, holdout) started on the RTX 6000 machine.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

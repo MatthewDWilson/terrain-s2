@@ -6,7 +6,8 @@
 Needs each run's saved rasters and label raster (terrain_hpc.sh channels). First writes ml_ways.tif (distance to any
 way) where missing, then the chips: <datasets>/<name>/chips/<tile>.npz (+ <tile>.json), the index chips.parquet and
 the card (card.json, card.md). Chips are read across tile edges from the other tiles of the manifests. Tiles whose
-chips exist are kept unless --rerun.
+chips exist (this chips version) are kept unless --rerun; --redo FILE makes the listed tiles' ways rasters and chips
+again (after an OSM refresh: refresh_source.py --keep-done). The U-Net unpacks chips newer than its cache again.
 """
 import argparse
 import hashlib
@@ -64,6 +65,8 @@ def main():
     ap.add_argument("--per-tile", type=int)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--rerun", action="store_true")
+    ap.add_argument("--redo", help="file of tile ids whose ways raster and chips are made again (e.g. after an OSM "
+                                   "refresh); the others are kept")
     a = ap.parse_args()
     import pandas as pd
     from terrain_s2.acquire.elevation import default_data_dir
@@ -79,7 +82,8 @@ def main():
     have = {t: runs / t for t in m.tile_id if (runs / t / "features.tif").exists() and (runs / t / "hydro.tif").exists()}
     labelled = [t for t in have if (have[t] / "ml_channel_labels.tif").exists()]
     print(f"{len(m)} tiles: {len(have)} with saved rasters, {len(labelled)} with label rasters")
-    ways = [(str(have[t]), str(bundles / t)) for t in have if not (have[t] / "ml_ways.tif").exists()]
+    redo = set(Path(a.redo).expanduser().read_text().split()) if a.redo else set()
+    ways = [(str(have[t]), str(bundles / t)) for t in have if t in redo or not (have[t] / "ml_ways.tif").exists()]
     if ways:
         print(f"distance to any way: {len(ways)} tiles")
         with ProcessPoolExecutor(max_workers=max(1, a.workers)) as ex:
@@ -91,7 +95,7 @@ def main():
             return json.loads((chips_dir / f"{t}.json").read_text()).get("chips_version") == C.CHIPS_VERSION
         except (OSError, ValueError):
             return False
-    todo = [t for t in labelled if a.rerun or not current(t)]
+    todo = [t for t in labelled if a.rerun or t in redo or not current(t)]
     print(f"chips: {len(todo)} tiles to cut, {len(labelled) - len(todo)} done")
     chips_dir.mkdir(parents=True, exist_ok=True)
     with ProcessPoolExecutor(max_workers=max(1, a.workers), initializer=_init,

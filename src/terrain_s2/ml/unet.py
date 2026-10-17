@@ -73,10 +73,13 @@ class ChipStore:
         """Write the tile's .npy files from its .npz (once); returns their paths."""
         names = ("x", "label", "weight", "physics")
         paths = {n: self.cache / f"{tile}_{n}.npy" for n in names}
-        if all(p.exists() for p in paths.values()):
-            return paths
+        src = self.dir / "chips" / f"{tile}.npz"
+        if all(p.exists() for p in paths.values()) and \
+                min(p.stat().st_mtime for p in paths.values()) >= src.stat().st_mtime:
+            return paths                                             # unpacked, and not older than the chips
         self.cache.mkdir(parents=True, exist_ok=True)
-        z = np.load(self.dir / "chips" / f"{tile}.npz")
+        self._mm.pop(tile, None)
+        z = np.load(src)
         for n in names:
             a = z[n] if n in z.files else np.zeros(z["label"].shape, np.uint8)
             tmp = paths[n].with_suffix(".tmp.npy")
