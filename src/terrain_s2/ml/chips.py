@@ -19,7 +19,7 @@ Chip centres lie in the tile core, so each chip belongs to one tile (and so to o
 
 Centres are jittered by up to ``jitter_m`` (a channel is not always in the middle) and kept ``min_sep_m`` apart.
 Written per tile as ``<dataset>/chips/<tile>.npz`` (``x`` float16 (n, bands, size, size), ``label`` uint8, ``weight``
-float16, ``cx``, ``cy``, ``kind``) with an index of all chips (``chips.parquet``: tile, council, wave, holdout and the
+float16, ``physics`` uint8 (the physics channel mask, for the baseline), ``cx``, ``cy``, ``kind``) with an index of all chips (``chips.parquet``: tile, council, wave, holdout and the
 chip's centre, kind, positive and ignored shares) and a card (``card.json``, ``card.md``: counts per council and
 kind, bands, per-band mean and standard deviation over the chips' valid cells for normalisation).
 """
@@ -39,7 +39,7 @@ WAY_BAND = "dist_any_way_m"
 BANDS = FEATURE_BANDS + HYDRO_BANDS + (WAY_BAND,)
 WAY_CAP_M = 500.0
 WAY_LAYERS = ("roads", "rail", "tracks", "osm_roads")
-CHIPS_VERSION = 1
+CHIPS_VERSION = 2              # 2: the physics channel mask kept per chip (not an input: the baseline in ML-3b)
 DEFAULTS = dict(size=128, per_tile=300, shares=dict(positive=0.5, hard=0.25), jitter_m=32.0, min_sep_m=40.0,
                 hard_reasons=["no_channel", "not_in_network"], seed=0)
 
@@ -90,7 +90,7 @@ class Mosaic:
     features.tif's (the tile core). Datasets are opened lazily and a few kept open."""
 
     FILES = (("features.tif", FEATURE_BANDS), ("hydro.tif", HYDRO_BANDS), ("ml_ways.tif", (WAY_BAND,)),
-             ("ml_channel_labels.tif", ("label", "weight")))
+             ("ml_channel_labels.tif", ("label", "weight")), ("hydro.tif", ("channel_mask",)))
 
     def __init__(self, tiles: dict, keep_open=24):
         import rasterio
@@ -122,11 +122,11 @@ class Mosaic:
         self._open.clear()
 
     def read(self, x0, y1, size, cs=1.0):
-        """(inputs (len(BANDS), size, size) float32 with NaN where no run, label uint8, weight float32) for the window
-        with top-left corner (x0, y1)."""
+        """(inputs (len(BANDS), size, size) float32 with NaN where no run, label uint8, weight float32, physics
+        channel mask uint8) for the window with top-left corner (x0, y1)."""
         import rasterio.windows as W
         x1, y0 = x0 + size * cs, y1 - size * cs
-        out = np.full((len(BANDS) + 2, size, size), np.nan, np.float32)
+        out = np.full((len(BANDS) + 3, size, size), np.nan, np.float32)
         for t, (bx0, by0, bx1, by1) in self.bounds.items():
             if bx0 >= x1 or bx1 <= x0 or by0 >= y1 or by1 <= y0:
                 continue
@@ -159,7 +159,8 @@ class Mosaic:
         bad = ~np.isfinite(x).all(axis=0) | ~np.isfinite(lab)
         label = np.where(bad, 255, np.nan_to_num(lab, nan=255)).astype(np.uint8)
         weight = np.where(bad | (label == 255), 0.0, np.nan_to_num(wt, nan=0.0)).astype(np.float32)
-        return x, label, weight
+        physics = (np.nan_to_num(out[len(BANDS) + 2], nan=0.0) > 0).astype(np.uint8)
+        return x, label, weight, physics
 
 
 def _thin(cands, n, sep, taken, rng):
@@ -241,25 +242,26 @@ def tile_chips(tile_id, run, mosaic, out_dir, cfg=None, seed=0):
     X = np.zeros((len(centres), len(BANDS), size, size), np.float16)
     Y = np.full((len(centres), size, size), 255, np.uint8)
     Wt = np.zeros((len(centres), size, size), np.float16)
+    Ph = np.zeros((len(centres), size, size), np.uint8)
     s1 = np.zeros(len(BANDS))
     s2 = np.zeros(len(BANDS))
     cnt = np.zeros(len(BANDS))
     rows = []
     for i, (cx, cy, kind) in enumerate(centres):
         x0, y1 = np.floor(cx - size / 2), np.ceil(cy + size / 2)
-        x, lab, wt = mosaic.read(x0, y1, size)
+        x, lab, wt, ph = mosaic.read(x0, y1, size)
         ok = np.isfinite(x)
         xv = np.where(ok, x, 0.0)
         s1 += xv.sum(axis=(1, 2))
         s2 += (xv.astype(np.float64) ** 2).sum(axis=(1, 2))
         cnt += ok.sum(axis=(1, 2))
         X[i] = np.clip(xv, -65000, 65000).astype(np.float16)
-        Y[i], Wt[i] = lab, wt.astype(np.float16)
+        Y[i], Wt[i], Ph[i] = lab, wt.astype(np.float16), ph
         rows.append(dict(tile_id=tile_id, i=i, cx=cx, cy=cy, kind=kind, pos_frac=float((lab == 1).mean()),
                          ignored_frac=float((lab == 255).mean())))
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(out_dir / f"{tile_id}.npz", x=X, label=Y, weight=Wt,
+    np.savez_compressed(out_dir / f"{tile_id}.npz", x=X, label=Y, weight=Wt, physics=Ph,
                         cx=np.array([c[0] for c in centres]), cy=np.array([c[1] for c in centres]),
                         kind=np.array([c[2] for c in centres]), bands=np.array(BANDS))
     return rows, dict(s1=s1.tolist(), s2=s2.tolist(), n=cnt.tolist())

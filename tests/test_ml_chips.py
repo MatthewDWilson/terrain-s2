@@ -41,13 +41,14 @@ def test_mosaic_reads_across_the_edge_and_marks_missing(tmp_path):
     a = _run(tmp_path, "A", 0, 1.0)
     b = _run(tmp_path, "B", N, 2.0)
     M = C.Mosaic({"A": a, "B": b})
-    x, lab, wt = M.read(X0 + 80, Y0 - 34, 32)                  # 20 m in A, 12 m in B
+    x, lab, wt, ph = M.read(X0 + 80, Y0 - 34, 32)                  # 20 m in A, 12 m in B
     i = C.BANDS.index("relief_med5")
     assert (x[i, :, :20] == 1).all() and (x[i, :, 20:] == 2).all()
     assert (lab[15:18, :] == 1).all() and (lab[18, :] == 0).all() and wt[16, 5] == 1.0   # raster rows 49-51
+    assert ph[16, 5] == 1 and ph[25, 5] == 0                            # the physics mask kept
     way = x[C.BANDS.index(C.WAY_BAND)]
     assert way[0, 0] == np.float32(14.0) or abs(float(way[0, 0]) - 14.0) <= 1.0   # the road at Y0 - 20
-    x2, lab2, wt2 = M.read(X0 + 180, Y0 - 34, 32)              # 20 m in B, 12 m beyond any run
+    x2, lab2, wt2, _ = M.read(X0 + 180, Y0 - 34, 32)              # 20 m in B, 12 m beyond any run
     assert (lab2[:, 20:] == 255).all() and (wt2[:, 20:] == 0).all() and np.isnan(x2[:, :, 20:]).all()
     M.close()
 

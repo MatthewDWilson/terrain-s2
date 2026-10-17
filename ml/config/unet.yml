@@ -1,0 +1,19 @@
+# ML-3b: the channel U-Net (terrain_s2.ml.unet; scripts/train_unet.py). DESIGN_NOTES 11 and docs/ml3_channel_model.md.
+base: 32                 # channels at the top level (x2 per level)
+depth: 4                 # 128 -> 8 cells at the bottom
+epochs: 30
+batch: 64
+lr: 0.001                # one-cycle schedule
+weight_decay: 0.0001
+cldice: 0.5              # weight of the soft clDice term (0: per-cell loss only)
+cldice_iter: 5
+council_balance: 0.5     # chip sampling weight ~ (chips of its council) ** -0.5
+val_share: 0.1           # training tiles kept for early stopping and the threshold
+patience: 6
+tolerance_m: 3.0         # centreline recall and precision tolerance
+folds: [blocks, council, holdout]
+block_folds: 5
+workers: 8
+amp: true                # bfloat16 on the GPU
+seed: 0
+max_val_chips: 4000

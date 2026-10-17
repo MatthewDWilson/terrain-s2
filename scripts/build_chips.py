@@ -47,7 +47,8 @@ def _chips(job):
     try:
         seed = int(hashlib.sha1(f"{tile}:{cfg.get('seed', 0)}".encode()).hexdigest()[:8], 16)
         rows, sums = tile_chips(tile, run, _M, out_dir, cfg, seed)
-        (Path(out_dir) / f"{tile}.json").write_text(json.dumps(dict(rows=rows, sums=sums)))
+        from terrain_s2.ml.chips import CHIPS_VERSION
+        (Path(out_dir) / f"{tile}.json").write_text(json.dumps(dict(rows=rows, sums=sums, chips_version=CHIPS_VERSION)))
         return tile, len(rows), None
     except Exception as e:  # noqa: BLE001
         return tile, 0, f"{type(e).__name__}: {e}"
@@ -85,7 +86,12 @@ def main():
             for err in ex.map(_ways, ways):
                 if err:
                     print(f"  FAILED {err}")
-    todo = [t for t in labelled if a.rerun or not (chips_dir / f"{t}.json").exists()]
+    def current(t):                      # chips of this CHIPS_VERSION (older ones are cut again)
+        try:
+            return json.loads((chips_dir / f"{t}.json").read_text()).get("chips_version") == C.CHIPS_VERSION
+        except (OSError, ValueError):
+            return False
+    todo = [t for t in labelled if a.rerun or not current(t)]
     print(f"chips: {len(todo)} tiles to cut, {len(labelled) - len(todo)} done")
     chips_dir.mkdir(parents=True, exist_ok=True)
     with ProcessPoolExecutor(max_workers=max(1, a.workers), initializer=_init,

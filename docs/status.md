@@ -36,8 +36,8 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 
 ## Next
 
-1. ML-3a: snapping (step 3) and label rasters (step 4) done on waves 1 + 2; chips (step 5) built, to run on the
-   RTX 6000 machine (`terrain_hpc.sh chips ml3_waves12 ...`) once wave 3's batch is done; then ML-3b, the U-Net;
+1. ML-3a done for waves 1-3 (labels v2 and chips v2 to rerun: `channels`, then `chips ml3_waves123`); ML-3b, the
+   U-Net (`terrain_hpc.sh unet`), built: first runs on the first block fold, the holdout and the learning curve;
    chips from the saved rasters; review sets for Matt. Step 1 (widths) done: no council records widths usably, so
    widths come from the fallbacks in `ml/config/channels.yml` (DESIGN_NOTES 11).
 2. ML-3b-d: the U-Net, its integration into the run, the end-to-end check on found labels, the stream/drain head.

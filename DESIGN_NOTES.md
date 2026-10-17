@@ -1843,6 +1843,24 @@ river line takes its polygons within max(20 m, the polygon's mean width 2A/P) of
 wide river still labels the river across, while a short line in a gully still does not label the side arms. Labels
 and chips rerun; the snapping stands. Labels before the fix: positives 0.19-0.39 % of cells, ignored 5-15 %.
 
+**ML-3b: the U-Net, first version** (17 Oct; `ml/unet.py`, `scripts/train_unet.py`, `ml/config/unet.yml`,
+`terrain_hpc.sh unet`). A plain U-Net (32 channels at the top, 4 levels, group norm) on the 23 bands standardised by
+the card. Loss on cells not ignored: BCE balanced between the classes (the label weights rank cells within a class)
+plus 0.5 x soft clDice (its soft skeletons reward unbroken centrelines). Chips sampled with councils balanced
+(weight ~ council size ** -0.5), flips and quarter turns (every band is direction-free), bfloat16 on the GPU,
+one-cycle learning rate, early stopping on 10 % of the training tiles, which also set the threshold (best centreline
+F1). Each tile's chips are unpacked once into memory-mapped .npy files (~230 MB a tile, ~130 GB for waves 1-3).
+Evaluation per council, against the physics channel mask as the baseline (kept in the chips from CHIPS_VERSION 2, not
+an input): AP over cells not ignored, centreline recall and precision at 3 m (skeletons; predicted centreline in
+ignored cells is not counted against precision), and recall by upstream area (< 0.1 ha, 0.1-1 ha, 1-10 ha, > 10 ha):
+the design's check is recall well above the physics map's below 1 ha. The physics map's precision and AP are not
+reported: its channel cells off council lines are ignored in the labels (unrecorded channels), so it cannot score a
+false positive and would show 1 by construction; the model's precision is judged by the review sets. Folds from `train.folds` (blocks, council,
+holdout) and "final"; `--subsets` trains on a share of the training tiles for the learning curve. Chips overlap, so
+the measures compare model and physics on the same cells rather than measure lengths. First check on CPU, the three clips
+(120 training chips, 6 epochs, base 16, BW24 tested): AP 0.76, centreline recall 0.72 (physics 0.78), precision 0.63;
+it learns, and nothing more can be read from so little.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
