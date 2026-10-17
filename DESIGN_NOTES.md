@@ -1823,6 +1823,26 @@ NZTM, R-tree indexed, with a .json giving the source file's date. The `osm` entr
 number of workers), and the source record says which extract and its date; otherwise Overpass as before. Not the
 Geofabrik shapefile or GeoPackage: they drop tags such as tunnel=culvert.
 
+**Wave 3: snapping and labels** (17 Oct; all 220 tiles, default snapping; length-weighted, check over non-river
+snapped lines, council -> snapped):
+
+| Council | Tiles | km | Snapped | Check | physics_frac | Move | Widths: physics / default / river |
+|---|---|---|---|---|---|---|---|
+| Waikato | 63 | 1,796 | 98 % | 0.50 -> 0.92 | 0.93 | 1.8 m | 83 / 4 / 13 % |
+| ECan | 60 | 970 | 98 % | 0.62 -> 0.91 | 0.86 | 1.4 m | 72 / 12 / 15 % |
+| Hauraki | 26 | 678 | 99 % | 0.78 -> 0.98 | 0.98 | 0.8 m | 69 / 0 / 30 % |
+| Otago | 28 | 510 | 94 % | 0.47 -> 0.90 | 0.93 | 1.5 m | 76 / 8 / 16 % |
+| Gisborne (held out) | 44 | 581 | 68 % | 0.86 -> 0.97 | 0.98 | 0.5 m | 40 / 13 / 47 % |
+
+(Councils by line length per tile, so Hauraki and Waikato share some tiles.) No tile got worse; the scheme drains of
+the new councils snap cleanly with the default settings. Gisborne's 32 % unsnapped are its long river lines (13-16 km
+in a tile) on wide flat beds, where the 11 m top-hat bed test fails; their tiles had no positives (12 of 44), because
+unsnapped lines' corridors were ignored. A river line's label is the polygon wherever the line was drawn, so river
+lines are now positive whether snapped or not (LABEL_VERSION 2), and the footprints are rebuilt in the label step: a
+river line takes its polygons within max(20 m, the polygon's mean width 2A/P) of it, so a line along one bank of a
+wide river still labels the river across, while a short line in a gully still does not label the side arms. Labels
+and chips rerun; the snapping stands. Labels before the fix: positives 0.19-0.39 % of cells, ignored 5-15 %.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

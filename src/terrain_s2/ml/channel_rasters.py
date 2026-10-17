@@ -9,9 +9,11 @@ Two bands in ``ml_channel_labels.tif`` beside the run (float32, deflate):
 From the tile's ``ml_channels.gpkg`` (snapping, step 3) and saved rasters, in order (a later rule never turns a
 positive into anything else):
 
-1. *Positives*: the council footprints of snapped lines (``council_footprints``), each with its line's weight; where
-   footprints overlap, the larger weight.
-2. *Unsnapped lines* (``unsnapped: ignore``, the default): their corridor (+-``snap.corridor_m`` of the council
+1. *Positives*: the council footprints (rebuilt here from the lines and the run's wide-channel polygons, and written
+   back to ``council_footprints``) of snapped lines and of river lines, snapped or not (a river line's label is the
+   polygon, wherever the line was drawn: Gisborne's long river lines on wide flat beds failed the bed test and had
+   lost their labels, 17 Oct), each with its line's weight; where footprints overlap, the larger weight.
+2. *Unsnapped lines* other than river lines (``unsnapped: ignore``, the default): their corridor (+-``snap.corridor_m`` of the council
    geometry, per council) is ignored rather than labelled. A line the snapping could not put on a bed is either drawn
    further off than the corridor or not visible in the DEM (piped, filled): a positive at the council position would
    be wrong either way. ``unsnapped: positive`` keeps their footprints as positives at their (halved) weight.
@@ -33,7 +35,7 @@ from pathlib import Path
 import numpy as np
 
 POS, NEG, IGNORE = 1, 0, 255
-LABEL_VERSION = 1
+LABEL_VERSION = 2              # 2: river lines positive whether snapped or not; river footprints by width
 DEFAULTS = dict(unsnapped="ignore", flat_depth_m=0.05)
 
 
@@ -61,7 +63,8 @@ def label_raster(shape, transform, footprints, lines, mask, depth11, depth21, va
 
     use = footprints
     if footprints is not None and len(footprints) and D["unsnapped"] == "ignore":
-        use = footprints[footprints.snapped.astype(bool)]
+        river = footprints["width_source"].eq("river") if "width_source" in footprints else False
+        use = footprints[footprints.snapped.astype(bool).to_numpy() | np.asarray(river, bool)]
     pos_w = np.zeros(shape, np.float32)
     if use is not None and len(use):
         order = np.argsort(use.weight.to_numpy(float))                 # larger weights burnt last: the max wins
@@ -74,7 +77,8 @@ def label_raster(shape, transform, footprints, lines, mask, depth11, depth21, va
 
     ignore = np.zeros(shape, bool)
     if lines is not None and len(lines) and D["unsnapped"] == "ignore":
-        un = lines[~lines.snapped.astype(bool)]
+        river = lines["width_source"].eq("river").to_numpy() if "width_source" in lines else np.zeros(len(lines), bool)
+        un = lines[~lines.snapped.astype(bool).to_numpy() & ~river]
         if len(un):
             corr = []
             for g, c in zip(un.geometry_council, un.council):
@@ -122,11 +126,17 @@ def tile_labels(run, cfg: dict, council=None, write=True):
     f = run / "ml_channels.gpkg"
     have = {n for n, _ in pyogrio.list_layers(f)} if f.exists() else set()
     lines = gpd.read_file(f, layer="council_channels") if "council_channels" in have else None
-    foot = gpd.read_file(f, layer="council_footprints") if "council_footprints" in have else None
+    foot = None
     if lines is not None:
+        from .channel_labels import footprints
         lines = lines.set_crs(crs, allow_override=True)
-    if foot is not None:
-        foot = foot.set_crs(crs, allow_override=True)
+        rivers = None
+        net = run / "network.gpkg"
+        if net.exists() and "rivers" in {n for n, _ in pyogrio.list_layers(net)}:
+            rivers = gpd.read_file(net, layer="rivers").to_crs(crs)
+        foot = footprints(lines, rivers, cfg) if len(lines) else None
+        if write and foot is not None and len(foot):
+            foot.to_file(f, layer="council_footprints", driver="GPKG")
     if not council:
         council = (lines.assign(L=lines.length).groupby("council").L.sum().idxmax()
                    if lines is not None and len(lines) else None)

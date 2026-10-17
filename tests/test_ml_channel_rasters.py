@@ -51,3 +51,11 @@ def test_flat_only_negatives_and_unsnapped_positive():
     cfg = dict(CFG, labels=dict(unsnapped="positive", flat_depth_m=0.05))
     lab2, w2, _ = CR.label_raster((N, N), T, foot, lines, mask, d11, d11, valid, cfg, "w")
     assert lab2[150, 100] == CR.POS and w2[150, 100] == 0.5
+
+
+def test_unsnapped_river_line_stays_positive():
+    lines, foot, mask, d11, valid = _inputs()
+    lines = lines.assign(width_source=["physics", "river"])
+    foot = foot.assign(width_source=["physics", "river"])
+    lab, w, _ = CR.label_raster((N, N), T, foot, lines, mask, d11, d11, valid, CFG, "w")
+    assert lab[150, 100] == CR.POS and w[150, 100] == 0.5             # the river footprint, not an ignored corridor

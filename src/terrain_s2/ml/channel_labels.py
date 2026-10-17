@@ -268,18 +268,28 @@ def _horizontal(crs):
 
 def footprints(lines, rivers, cfg: dict):
     """Label polygons per council line: buffered by ``half_width_m``; a river line (no half-width) takes the
-    wide-channel polygons within ``width.river_reach_m`` of it. Columns: council, source_id, width_source, snapped,
-    weight."""
+    wide-channel polygons it lies in, within ``width.river_reach_m`` of it or, for a polygon wider than that, within
+    the polygon's mean width (2 area / perimeter) of it: a short line in a gully does not label the gully's side arms
+    (Auckland), and a line along one bank of a wide river still labels the river across (Gisborne's Waipaoa, 17 Oct).
+    Columns: council, source_id, width_source, snapped, weight."""
     import geopandas as gpd
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
     W = dict(DEFAULTS["width"], **(cfg.get("width") or {}))
     reach = float(W.get("river_reach_m", 20.0))
-    riv = None
+    polys = None
     if rivers is not None and len(rivers):
-        riv = (rivers.geometry if hasattr(rivers, "geometry") else rivers).union_all()
+        polys = gpd.GeoSeries(rivers.geometry if hasattr(rivers, "geometry") else rivers).explode(index_parts=False)
+        polys = polys[~polys.is_empty].reset_index(drop=True)
+        widths = (2 * polys.area / polys.length.where(polys.length > 0)).fillna(0).to_numpy()
+        sindex = polys.sindex
     geo = []
     for g, h, src in zip(lines.geometry, lines.half_width_m, lines.width_source):
-        if src == "river" and riv is not None:
-            geo.append(riv.intersection(g.buffer(reach)))
+        if src == "river" and polys is not None:
+            pieces = []
+            for i in sindex.query(g, predicate="intersects"):
+                pieces.append(polys.iloc[i].intersection(g.buffer(max(reach, float(widths[i])))))
+            geo.append(unary_union(pieces) if pieces else Polygon())
         else:
             geo.append(g.buffer(float(h) if np.isfinite(h) else 1.0, cap_style="flat"))
     keep = ["council", "source_id", "width_source", "snapped", "weight"]

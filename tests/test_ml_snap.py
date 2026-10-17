@@ -98,4 +98,6 @@ def test_per_council_snap_overrides_and_river_footprints():
                              geometry=[LineString([(0, 0), (30, 0)])], crs=2193)
     river = gpd.GeoSeries([box(-500, -20, 500, 20)], crs=2193)           # a long river; the line covers 30 m of it
     f = CL.footprints(lines, river, cfg)
-    assert f.geometry.iloc[0].bounds[0] >= -20.5 and f.geometry.iloc[0].bounds[2] <= 50.5   # within 20 m of the line
+    w = 2 * 1000 * 40 / 2080                                              # the river's mean width, 38.5 m
+    b = f.geometry.iloc[0].bounds
+    assert b[0] >= -w - 0.5 and b[2] <= 30 + w + 0.5 and b[1] <= -19.5 and b[3] >= 19.5   # across, not along it
