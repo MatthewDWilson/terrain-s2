@@ -345,3 +345,6 @@ sources:
     scope: national river network from a coarse DEM; context only (upstream area, flows), not stream labels
   osm:
     kind: osm                                     # roads, rail, waterways, culverts (tunnel=culvert), buildings
+    # a local extract when it exists (relative to TERRAIN_DATA_DIR; scripts/osm_extract.py converts Geofabrik's
+    # new-zealand-latest.osm.pbf once), else Overpass (slow, and refusing parallel workers: wave 3, Oct 2026)
+    extract: osm/new-zealand-osm.gpkg

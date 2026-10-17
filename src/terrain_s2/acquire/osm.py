@@ -60,3 +60,92 @@ def query(http, window_2193, endpoint: str = OVERPASS, source: str | None = "osm
     return {k: g[g.kind == k].reset_index(drop=True) for k in ("road", "rail", "waterway", "culvert", "building")
             if (g.kind == k).any()}, \
         dict(count=len(g), query=q, endpoint=endpoint)
+
+
+# ---- a local extract (Geofabrik's .osm.pbf converted once), instead of Overpass (wave 3, 17 Oct 2026: the public
+# servers refused parallel workers and were slow even one tile at a time)
+
+EXTRACT_WHERE = dict(
+    lines="highway IS NOT NULL OR railway IS NOT NULL OR waterway IS NOT NULL OR other_tags LIKE '%\"tunnel\"=>\"culvert\"%'",
+    multipolygons="building IS NOT NULL")
+
+
+def _hstore(s):
+    """GDAL's OSM ``other_tags`` ('"k"=>"v","k2"=>"v2"') as a dict."""
+    import re
+    if not isinstance(s, str) or not s:
+        return {}
+    return {k: v.replace('\\"', '"') for k, v in re.findall(r'"((?:[^"\\]|\\.)*)"=>"((?:[^"\\]|\\.)*)"', s)}
+
+
+def _kind(t):
+    return ("culvert" if t.get("tunnel") == "culvert" else "building" if t.get("building") else
+            "rail" if t.get("railway") else "waterway" if t.get("waterway") else "road" if t.get("highway") else "other")
+
+
+def extract_pbf(pbf, out_gpkg, batch_size=200_000, log=print):
+    """Convert an OSM extract (.osm.pbf, or .osm) once into a GeoPackage in NZTM with what ``query`` returns: layer
+    ``ways`` (roads, rail, waterways, culverts; line geometry) and ``buildings`` (polygons), with ``osm_id``,
+    ``kind`` and the ``KEEP`` tags; R-tree indexed, so a tile's window reads in a moment. Streams in batches (NZ:
+    a few minutes per layer, little memory). Writes ``<out>.json`` with the source file and its date."""
+    import datetime as _dt
+    import json
+    from pathlib import Path
+
+    import geopandas as gpd
+    import pandas as pd
+    import pyogrio
+    import shapely
+    pbf, out = Path(pbf), Path(out_gpkg)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        out.unlink()
+    counts = {}
+    for src_layer, dst_layer in (("lines", "ways"), ("multipolygons", "buildings")):
+        n = 0
+        with pyogrio.raw.open_arrow(str(pbf), layer=src_layer, where=EXTRACT_WHERE[src_layer], batch_size=batch_size,
+                                    use_pyarrow=True) as (meta, reader):
+            fields = set(meta["fields"])
+            for b in reader:
+                d = b.to_pandas()
+                gcol = next(c for c in d.columns if c not in fields)
+                d = d.astype({c: object for c in d.columns if c != gcol}).where(d.notna(), None)   # NaN -> None
+                tags = [dict(_hstore(o), **{k: r.get(k) for k in ("highway", "railway", "waterway", "building", "name")
+                                            if r.get(k) is not None})
+                        for o, r in zip(d.get("other_tags", [None] * len(d)), d.to_dict("records"))]
+                rows = pd.DataFrame([dict(osm_id=str(i), kind=_kind(t), **{k: t.get(k) for k in KEEP})
+                                     for i, t in zip(d["osm_id"], tags)])
+                g = gpd.GeoDataFrame(rows, geometry=shapely.from_wkb(d[gcol].to_numpy()), crs=4326).to_crs(2193)
+                if dst_layer == "ways":
+                    g = g[g.kind != "other"]
+                pyogrio.write_dataframe(g, out, layer=dst_layer, append=n > 0, promote_to_multi=dst_layer == "buildings")
+                n += len(g)
+                log(f"  {dst_layer}: {n:,}")
+        counts[dst_layer] = n
+    st = pbf.stat()
+    info = dict(source=str(pbf), size_bytes=st.st_size,
+                file_date=_dt.datetime.fromtimestamp(st.st_mtime, _dt.timezone.utc).isoformat(timespec="seconds"),
+                converted=_dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), counts=counts)
+    Path(str(out) + ".json").write_text(json.dumps(info, indent=1))
+    return info
+
+
+def from_extract(gpkg, window_2193):
+    """What ``query`` returns, from a local extract (``extract_pbf``): the ways and buildings meeting the window."""
+    import json
+    from pathlib import Path
+
+    import pyogrio
+    parts = {}
+    for layer in ("ways", "buildings"):
+        g = pyogrio.read_dataframe(gpkg, layer=layer, bbox=tuple(window_2193))
+        if not len(g):
+            continue
+        for k in (("building",) if layer == "buildings" else ("road", "rail", "waterway", "culvert")):
+            s = g[g.kind == k].reset_index(drop=True)
+            if len(s):
+                parts[k] = s
+    j = Path(str(gpkg) + ".json")
+    info = json.loads(j.read_text()) if j.exists() else {}
+    return parts, dict(count=int(sum(len(v) for v in parts.values())), extract=str(gpkg),
+                       extract_date=info.get("file_date"), extract_source=info.get("source"))

@@ -171,7 +171,14 @@ def _fetch(http, store, name, spec, window, dry_run):
         lyrs = {spec["layer"]: harmonise(g, spec, name, now)} if len(g) else {}
         return dict(meta=dict(kind=kind, **meta), layers=lyrs)
     if kind == "osm":
-        parts, meta = osm.query(http, window, spec.get("endpoint", osm.OVERPASS), source=name)
+        ext = spec.get("extract")                       # a local extract (scripts/osm_extract.py) when there is one
+        if ext and not Path(ext).is_absolute():
+            from .elevation import default_data_dir
+            ext = default_data_dir() / ext
+        if ext and Path(ext).exists():
+            parts, meta = osm.from_extract(ext, window)
+        else:
+            parts, meta = osm.query(http, window, spec.get("endpoint", osm.OVERPASS), source=name)
         lyrs = {}
         for k, target in (("road", "osm_roads"), ("rail", "osm_rail"), ("waterway", "osm_waterways"), ("culvert", "osm_culverts"),
                           ("building", "osm_buildings")):

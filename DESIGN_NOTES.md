@@ -1813,6 +1813,16 @@ again for a built bundle and merges it (that source's rows replaced, others kept
 `scripts/refresh_source.py` does it one tile at a time with pauses and retries, then removes done.json so the next
 batch reruns the network and features with the bundle as it is (it counts as built, so it is not rebuilt).
 
+**OSM from a local extract** (17 Oct). Overpass stayed slow and kept failing even one tile at a time, and was
+probably part of why the batches were slow. Matt downloaded Geofabrik's `new-zealand-latest.osm.pbf` (386 MB).
+`scripts/osm_extract.py` converts it once (GDAL's OSM driver through pyogrio, streamed in batches) into
+`<data>/osm/new-zealand-osm.gpkg`: layer `ways` (highway, railway, waterway and tunnel=culvert ways, with the
+same tags Overpass returned, `other_tags` parsed) and `buildings` (polygons, multipolygon relations included), in
+NZTM, R-tree indexed, with a .json giving the source file's date. The `osm` entry of `sources.yml` names it
+(`extract`); when the file exists, bundle builds and `refresh_source.py` read the window from it (no network, any
+number of workers), and the source record says which extract and its date; otherwise Overpass as before. Not the
+Geofabrik shapefile or GeoPackage: they drop tags such as tunnel=culvert.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
