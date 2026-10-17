@@ -1861,6 +1861,12 @@ the measures compare model and physics on the same cells rather than measure len
 (120 training chips, 6 epochs, base 16, BW24 tested): AP 0.76, centreline recall 0.72 (physics 0.78), precision 0.63;
 it learns, and nothing more can be read from so little.
 
+**PyTorch in the test run** (17 Oct): on Matt's Windows workstation (PyTorch in the conda environment), the full
+test run aborted ("Fatal Python error: Aborted") in numpy.linalg.solve under rasterio's rowcol in `test_acquire`:
+`test_ml_unet` imported PyTorch at collection, so its OpenMP runtime sat in the pytest process next to numpy's, and on
+Windows that kills the process at the next threaded linear algebra. The U-Net checks now run in their own process
+(`tests/unet_cases.py`, started by `test_ml_unet`), so the pytest process never loads PyTorch.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
