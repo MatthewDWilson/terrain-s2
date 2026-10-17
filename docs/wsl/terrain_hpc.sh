@@ -24,6 +24,7 @@
 #   channels <manifest...> [--workers N]  council channel lines snapped to the bed, then label rasters (ML-3a)
 #   chips <name> <manifest...> [--workers N]  training chips for the channel model (ML-3a step 5)
 #   unet <dataset> <name> [--folds ...]       train and evaluate the channel U-Net (ML-3b; needs 'torch')
+#   guard-setup                             allow the file-cache guard without a password (once)
 #   check-runs <manifest...> [--stage S]    completeness and data issues of bundles and runs
 #   dataset <manifest...> --name N
 #                     build_labels + build_dataset for the manifest(s)
@@ -67,9 +68,17 @@ load_env() {
 }
 
 data_dir_check() {  # the data may live on their own ext4 disk (a VHDX attached with 'wsl --mount'; terrain_hpc.md
-                    # section 5), linked from $TERRAIN_DATA_DIR. A WSL restart detaches it: stop rather than write
-                    # into an empty folder on the system disk.
+                    # section 5), linked from $TERRAIN_DATA_DIR. A WSL restart detaches it: attach it again through
+                    # the logon task (Windows interop; the task runs elevated without a prompt), else stop rather
+                    # than write into an empty folder on the system disk.
     if [ -L "$TERRAIN_DATA_DIR" ] && [ ! -e "$TERRAIN_DATA_DIR" ]; then
+        if command -v schtasks.exe >/dev/null 2>&1; then
+            note "data disk not attached: running the task 'WSL terrain_data disk'"
+            schtasks.exe /run /tn "WSL terrain_data disk" >/dev/null 2>&1 || true
+            local k
+            for k in $(seq 1 30); do [ -e "$TERRAIN_DATA_DIR" ] && break; sleep 1; done
+        fi
+        [ -e "$TERRAIN_DATA_DIR" ] && { note "data disk attached ($(readlink "$TERRAIN_DATA_DIR"))"; return 0; }
         die "$TERRAIN_DATA_DIR links to $(readlink "$TERRAIN_DATA_DIR"), which is not attached (WSL restarted?).
        In PowerShell: schtasks /run /tn \"WSL terrain_data disk\"   (or, as administrator:
        wsl --mount --vhd <the data .vhdx> --name terrain_data), then run this again. terrain_hpc.md section 5."
@@ -114,14 +123,32 @@ host_memory_check() {  # Windows' memory beside WSL's (16 Oct 2026: Windows ran 
     fi
 }
 
-cache_guard() {  # empty Linux's file cache every minute while the batch runs; WSL then returns that memory to Windows
+DROP_RULE=/etc/sudoers.d/terrain-dropcache
+
+cache_guard() {  # empty Linux's file cache every minute while process $1 runs; WSL then returns that memory to Windows
+                 # (16 Oct: the batch's written rasters; 17 Oct: the U-Net's memory-mapped chips). With the sudoers
+                 # rule of 'guard-setup' this works in detached runs too (no password needed).
     local sup="$1"
-    if sudo -n true 2>/dev/null || sudo -v; then
+    if sudo -n -l /usr/bin/tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
+        setsid nohup sh -c "while kill -0 $sup 2>/dev/null; do sync; echo 1 | sudo -n /usr/bin/tee /proc/sys/vm/drop_caches >/dev/null; sleep 60; done" \
+            >/dev/null 2>&1 < /dev/null &
+        note "file cache emptied every minute while this runs"
+    elif [ -t 0 ] && { sudo -n true 2>/dev/null || sudo -v; }; then
         sudo -b sh -c "while kill -0 $sup 2>/dev/null; do sync; echo 1 > /proc/sys/vm/drop_caches; sleep 60; done" \
-            && note "file cache emptied every minute while the batch runs"
+            && note "file cache emptied every minute while this runs"
     else
-        note "WARNING: no sudo, so the file cache is not emptied: Windows may run short of memory (see 'check')"
+        note "WARNING: the file cache is not emptied (no sudo here): Windows may run short of memory and stop WSL."
+        note "         Run 'bash ~/terrain/terrain_hpc.sh guard-setup' once (asks for your password) to allow it."
     fi
+}
+
+guard_setup() {  # one sudoers rule: this user may write /proc/sys/vm/drop_caches without a password
+    local rule
+    rule="$(id -un) ALL=(root) NOPASSWD: /usr/bin/tee /proc/sys/vm/drop_caches"
+    echo "$rule" | sudo tee "$DROP_RULE.tmp" >/dev/null && sudo chmod 440 "$DROP_RULE.tmp" \
+        && sudo visudo -cf "$DROP_RULE.tmp" >/dev/null && sudo mv "$DROP_RULE.tmp" "$DROP_RULE" \
+        || die "could not install $DROP_RULE"
+    note "installed $DROP_RULE: $rule"
 }
 
 setup() {
@@ -397,6 +424,8 @@ dataset() {
 channels() {  # ML-3a steps 3-4: council channel lines snapped to the bed, then the label rasters (tiles with rasters)
     load_env
     [ $# -gt 0 ] || die "usage: channels <manifest...> [--workers N] [--rerun]"
+    host_memory_check
+    cache_guard $$
     local manifests=() opts=()
     while [ $# -gt 0 ]; do case "$1" in --*) opts+=("$@"); break ;; *) manifests+=("$1"); shift ;; esac; done
     (cd "$TS2" && in_env python scripts/snap_channels.py --manifest "${manifests[@]}" "${opts[@]}" \
@@ -414,6 +443,8 @@ check_runs() {  # completeness and data issues of a manifest's bundles and runs 
 unet() {  # ML-3b: train and evaluate the channel U-Net (needs PyTorch: the 'torch' mode)
     load_env
     [ $# -ge 2 ] || die "usage: unet <dataset> <name> [train_unet options: --folds ..., --subsets ..., --epochs N]"
+    host_memory_check
+    cache_guard $$
     local ds="$1" name="$2"; shift 2
     (cd "$TS2" && in_env python scripts/train_unet.py --dataset "$ds" --name "$name" "$@")
 }
@@ -421,6 +452,8 @@ unet() {  # ML-3b: train and evaluate the channel U-Net (needs PyTorch: the 'tor
 chips() {  # ML-3a step 5: training chips from the saved rasters and label rasters
     load_env
     [ $# -ge 2 ] || die "usage: chips <dataset name> <manifest...> [--workers N] [--per-tile N] [--rerun]"
+    host_memory_check
+    cache_guard $$
     local name="$1"; shift
     local manifests=() opts=()
     while [ $# -gt 0 ]; do case "$1" in --*) opts+=("$@"); break ;; *) manifests+=("$1"); shift ;; esac; done
@@ -459,6 +492,7 @@ case "$mode" in
     channels) channels "$@" ;;
     chips) chips "$@" ;;
     unet) unet "$@" ;;
+    guard-setup) guard_setup ;;
     check-runs) check_runs "$@" ;;
     labels) labels "$@" ;;
     partition) partition ;;

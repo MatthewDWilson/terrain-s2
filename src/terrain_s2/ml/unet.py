@@ -378,7 +378,7 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
             loss.backward()
             opt.step()
             sched.step()
-            tl += float(loss) * len(x)
+            tl += float(loss.detach()) * len(x)
             tc += float(cl) * len(x)
             n += len(x)
         model.eval()
@@ -451,6 +451,15 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
                 log(f"  {tag}: model AP {a['model']['ap']}, recall {a['model']['recall_3m']}, precision "
                     f"{a['model']['precision_3m']} | physics recall {a['physics']['recall_3m']}, precision "
                     f"{a['physics']['precision_3m']}")
+    done = {(r["fold"], r["subset"]) for r in results}           # the report covers every run in the folder
+    for f in sorted(out.glob("*/metrics.json")):
+        try:
+            r = json.loads(f.read_text())
+        except ValueError:
+            continue
+        if (r.get("fold"), r.get("subset")) not in done:
+            results.append(r)
+            done.add((r.get("fold"), r.get("subset")))
     (out / "report.md").write_text(report(results))
     return results
 

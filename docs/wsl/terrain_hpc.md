@@ -23,7 +23,9 @@ the EDDIE stack and GeoFabrics (Docker, `stage1_workstation.md`) are not needed 
    Advanced > Performance > Virtual memory). On 16 Oct 2026, with `memory=176GB` and no page file, Linux's file cache
    (the rasters being written) filled WSL's memory, Windows ran out ("low virtual memory", event 2004 of
    Resource-Exhaustion-Detector, naming vmmemWSL at ~162 GB) and stopped the VM every ~20 minutes. `check` reports
-   the margin, and `start` empties the file cache every minute while a batch runs (it asks for sudo once).
+   the margin, and `start`, `channels`, `chips` and `unet` empty the file cache every minute while they run. Run
+   `bash ~/terrain/terrain_hpc.sh guard-setup` once (it asks for your password): a sudoers rule that lets them do it
+   without a password, so detached runs (`setsid nohup ...`) are guarded too.
 3. **The distro, on the big data drive** (PowerShell; `E:` is an example):
 
    ```powershell
@@ -131,7 +133,8 @@ bash ~/terrain/terrain_hpc.sh status                                            
 rm -rf ~/terrain_data.old && sudo fstrim -av
 ```
 
-`terrain_hpc.sh` stops with the `schtasks` command if the link is there but the disk is not attached, rather than
+If the link is there but the disk is not attached (WSL restarted), `terrain_hpc.sh` runs the logon task itself
+(through Windows interop: elevated, no prompt) and waits for the disk; if that fails, it stops with the `schtasks` command rather than
 writing into an empty folder.
 
 **Optional, and at your own risk: shrinking the system disk's file.** On 16 Oct 2026 the compaction below reported

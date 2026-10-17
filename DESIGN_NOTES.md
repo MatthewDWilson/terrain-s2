@@ -1877,6 +1877,15 @@ uses LINZ roads), then `build_chips.py --redo <tiles>` remakes their ways raster
 chips newer than its cache again. Their scorer features (ctx_dist_osm_way_m) wait for the next scorer dataset, which
 reruns those tiles. First U-Net run (blocks:1/5, holdout) started on the RTX 6000 machine.
 
+**ML-3b, first run** (17 Oct; `unet_v1`, RTX 6000 machine). Fold blocks:1/5 (111,900 training chips, 42,000 test
+chips in blocks never seen): stopped at epoch 29, best at 23; validation loss noisier than training but falling with
+it. Test: AP 0.87, centreline recall at 3 m 0.86 (physics map 0.80), precision 0.78. Per council, by upstream area
+and the holdout to follow (`report.md`). During the holdout run WSL stopped and the data disk was detached; the
+U-Net reads its chips through memory-mapped files, so Linux's file cache fills as on 16 Oct, and only `start` emptied
+it. Now `channels`, `chips` and `unet` run the cache guard too, and `guard-setup` installs a sudoers rule (tee to
+/proc/sys/vm/drop_caches only) so it works in detached runs; and `terrain_hpc.sh` attaches the data disk itself
+after a WSL restart, by running the logon task through Windows interop.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
