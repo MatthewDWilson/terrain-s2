@@ -34,7 +34,10 @@ def _dataset(root, tiles=("BW24_10000_0101", "BW24_10000_0102", "BX24_10000_0101
             rows.append(dict(tile_id=t, i=i, cx=0.0, cy=0.0, kind="positive", pos_frac=0.1, ignored_frac=0.01,
                              council="a" if t.startswith("BW") else "b", holdout=t.startswith("BX24_10000_0102")))
         w = np.where(lab == 1, 1.0, np.where(lab == 255, 0.0, 0.05)).astype(np.float16)
-        np.savez_compressed(root / "chips" / f"{t}.npz", x=x, label=lab, weight=w, physics=(lab == 1).astype(np.uint8))
+        phys = (lab == 1).astype(np.uint8)
+        if t.endswith("0102"):
+            phys[:, :, S // 2:] = 0                                     # the physics map misses half these channels
+        np.savez_compressed(root / "chips" / f"{t}.npz", x=x, label=lab, weight=w, physics=phys)
     pd.DataFrame(rows).to_parquet(root / "chips.parquet")
     (root / "card.json").write_text(json.dumps(dict(name="t", bands=list(C.BANDS), mean=[0.0] * len(C.BANDS),
                                                     std=[1.0] * len(C.BANDS))))
@@ -72,11 +75,55 @@ def test_train_and_evaluate(tmp_path):
     assert len(res) == 1 and res[0]["test_chips"] == 12
     m = res[0]["metrics"]
     assert set(m) == {"all", "b"} and {"model", "physics"} <= set(m["all"])
-    assert m["all"]["physics"]["recall_3m"] == 1.0                       # the physics mask is the label here
+    assert m["all"]["physics"]["recall_3m"] < 1.0                        # it misses half of one tile's channels
+    assert m["all"]["model"]["off_physics_cells"] > 0 and m["all"]["model"]["recall_off_physics"] is not None
+    assert set(m["all"]["sweep"]) == {str(t) for t in U.SWEEP}
     assert m["all"]["physics"]["precision_3m"] is None                   # 1 by construction: not reported
     assert 0 <= m["all"]["model"]["ap"] <= 1 and len(res[0]["history"]) >= 1
     assert (tmp_path / "models" / "m" / "holdout" / "model.pt").exists()
     assert "holdout" in (tmp_path / "models" / "m" / "report.md").read_text()
+    again = U.run(ds, tmp_path / "models" / "m", cfg, folds=["holdout"], device="cpu", log=lambda m: None,
+                  evaluate_only=True)
+    assert again[0]["history"] == res[0]["history"] and "recall off physics" in (tmp_path / "models" / "m" / "report.md").read_text()
+    model, meta = U.load_model(tmp_path / "models" / "m" / "holdout", torch.device("cpu"))
+    assert meta["threshold"] == res[0]["threshold"]
+
+
+def test_predict_tile_and_review(tmp_path, model_dir):
+    """Whole-tile prediction (blended windows) and the review reaches, on a synthetic run."""
+    import geopandas as gpd
+    from affine import Affine
+    from shapely.geometry import LineString
+
+    from terrain_s2 import dataio
+    from terrain_s2.ml import channel_predict as P
+    N, X0, Y0 = 96, 1_570_000.0, 5_200_100.0
+    T = Affine(1.0, 0, X0, 0, -1.0, Y0)
+    run = tmp_path / "runs" / "A"
+    run.mkdir(parents=True)
+    rng = np.random.default_rng(1)
+    f = {b: rng.normal(0, 1, (N, N)).astype(np.float32) for b in C.FEATURE_BANDS}
+    f["tophat_black11"][40:43, :] += 4
+    dataio.write_stack(run / "features.tif", f, T, "EPSG:2193")
+    h = {b: np.zeros((N, N), np.float32) for b in C.HYDRO_BANDS}
+    mask = np.zeros((N, N), np.float32)
+    mask[40:43, :48] = 1
+    h["channel_mask"] = mask
+    dataio.write_stack(run / "hydro.tif", h, T, "EPSG:2193")
+    dataio.write_stack(run / "ml_ways.tif", {C.WAY_BAND: np.full((N, N), 500, np.float32)}, T, "EPSG:2193")
+    lab = np.zeros((N, N), np.float32)
+    lab[40:43, :] = 1
+    dataio.write_stack(run / "ml_channel_labels.tif", {"label": lab, "weight": lab}, T, "EPSG:2193")
+    line = LineString([(X0 + 2, Y0 - 41.5), (X0 + 94, Y0 - 41.5)])
+    gpd.GeoDataFrame({"snapped": [True], "source_id": ["d1"], "council": ["a"]}, geometry=[line], crs=2193).to_file(
+        run / "ml_channels.gpkg", layer="council_channels", driver="GPKG")
+    model, meta = U.load_model(model_dir, torch.device("cpu"))
+    M = C.Mosaic({"A": run})
+    prob, T2, crs = P.predict_tile(run, M, model, meta, torch.device("cpu"), window=32, step=16, batch=8)
+    assert prob.shape == (N, N) and np.isfinite(prob).all() and 0 <= prob.min() and prob.max() <= 1
+    P.write_prob(run, prob, T2, crs, model_dir, 0.5)
+    r = P.review_reaches(run, prob, T2, crs, threshold=2.0)             # nothing predicted: the council line is missed
+    assert set(r.kind) == {"council_missed"} and set(r.exists) == {""}
 
 
 if __name__ == "__main__":
@@ -84,4 +131,5 @@ if __name__ == "__main__":
     test_loss_ignores_ignored_cells()
     with tempfile.TemporaryDirectory() as d:
         test_train_and_evaluate(Path(d))
+        test_predict_tile_and_review(Path(d), Path(d) / "models" / "m" / "holdout")
     print("unet checks ok")

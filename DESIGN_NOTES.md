@@ -1886,6 +1886,25 @@ it. Now `channels`, `chips` and `unet` run the cache guard too, and `guard-setup
 /proc/sys/vm/drop_caches only) so it works in detached runs; and `terrain_hpc.sh` attaches the data disk itself
 after a WSL restart, by running the logon task through Windows interop.
 
+**ML-3b: unet_v1 results, and measuring beyond the physics map** (18 Oct). Holdout (BW24 and Gisborne): AP 0.97,
+recall 0.96, precision 0.97, threshold 0.8; but physics recall 0.96 too, and below 1 ha 0.95 against 0.96. Fold
+blocks:1/5: recall 0.86 against physics 0.80 (below 1 ha 0.84 against 0.78), the gains in Waimakariri (0.62 against
+0.45) and Environment Southland (0.94 against 0.87), below the physics map in Auckland (0.80 against 0.85) and
+Hauraki (0.96 against 0.98). The design's test (recall well above the physics map's below 1 ha) is not met on these
+measures, and the measures favour the physics map: river labels are the physics polygons and most other labels
+were snapped onto beds the physics map holds, so on most positive cells it cannot miss; the drains that matter (the
+lost culverts' small catchments) are a small share of the cells; and validation chose a precision-leaning
+threshold (0.8, best F1). Precision below 0.75 (Environment Southland, Hauraki) is partly unrecorded private drains
+off the physics map, which count against the model. So the evaluation now also gives, per council: recall of the
+council centreline cells more than 3 m from the physics map (what the physics chain misses), the model's new
+centreline cells off the physics map and the share of them on council channels, and recall and precision at
+thresholds 0.3-0.8; `train_unet.py --evaluate` measures saved models again without training.
+`scripts/predict_channels.py` (`terrain_hpc.sh predict`) predicts whole tiles (windows of the chip size,
+overlapping by half and blended with a taper: the group norm makes the output depend on the window, and 512-cell or
+abutting windows left seams on BW24_10000_0402; a later version could use batch norm) into
+`ml_channel_prob.tif`, and with `--review` builds the review set (`review.gpkg`: model_only reaches and
+council_missed pieces, `exists` y / n / unsure to fill; `docs/review_channels.md`) for test tiles of a fold.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

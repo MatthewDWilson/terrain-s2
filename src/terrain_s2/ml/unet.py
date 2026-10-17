@@ -221,32 +221,61 @@ def _near(mask, radius_px):
     return ndi.distance_transform_edt(~mask) <= radius_px
 
 
-class Scores:
-    """Accumulates the evaluation measures for one predictor (model probabilities, or the physics mask as 0/1)."""
+SWEEP = (0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 
-    def __init__(self, bins=1000):
+
+def chip_context(label, physics, tol_px):
+    """What every threshold's scores of one chip share: valid and positive cells, the positives' skeleton, the cells
+    within the tolerance of a positive and of the physics map."""
+    from skimage.morphology import skeletonize
+    label = np.asarray(label)
+    valid, pos = label != 255, label == 1
+    return dict(valid=valid, pos=pos, sk_true=skeletonize(pos), near_pos=_near(pos, tol_px),
+                near_phys=_near(np.asarray(physics).astype(bool), tol_px) if physics is not None else None)
+
+
+class Scores:
+    """Accumulates the evaluation measures for one predictor at one threshold (model probabilities, or the physics
+    mask as 0/1). With the physics map in the chip context it also measures the model beyond it:
+
+        recall_off_physics   recall of the council centreline cells more than ``tol`` from the physics map: the
+                             drains the physics chain does not hold, what ML-3 is for
+        new_cells            predicted centreline cells more than ``tol`` from the physics map (valid cells);
+        new_on_council       the share of those within ``tol`` of a council channel (the rest are unrecorded
+                             drains or false detections: the review set tells which)"""
+
+    def __init__(self, bins=1000, hist=True):
+        self.hist = hist
         self.pos = np.zeros(bins + 1)
         self.neg = np.zeros(bins + 1)
         self.bins = bins
-        self.c = dict(rec_hit=0, rec_all=0, prec_hit=0, prec_all=0)
+        self.c = dict(rec_hit=0, rec_all=0, prec_hit=0, prec_all=0, off_hit=0, off_all=0, new_all=0, new_on=0)
         self.area = {n: [0, 0] for n in AREA_NAMES}
 
-    def add(self, prob, label, log_area, threshold, tol_px):
+    def add(self, prob, ctx, log_area, threshold, tol_px, beyond=True):
         from skimage.morphology import skeletonize
-        valid = label != 255
-        pos = label == 1
-        k = np.clip((prob * self.bins).astype(int), 0, self.bins)
-        self.pos += np.bincount(k[valid & pos], minlength=self.bins + 1)
-        self.neg += np.bincount(k[valid & ~pos], minlength=self.bins + 1)
+        valid, pos, sk_true = ctx["valid"], ctx["pos"], ctx["sk_true"]
+        if self.hist:
+            k = np.clip((prob * self.bins).astype(int), 0, self.bins)
+            self.pos += np.bincount(k[valid & pos], minlength=self.bins + 1)
+            self.neg += np.bincount(k[valid & ~pos], minlength=self.bins + 1)
         pred = (prob >= threshold) & valid
-        sk_true = skeletonize(pos)
         near_pred = _near(pred, tol_px)
         hit = sk_true & near_pred
-        self.c["rec_hit"] += int(hit.sum())
-        self.c["rec_all"] += int(sk_true.sum())
+        c = self.c
+        c["rec_hit"] += int(hit.sum())
+        c["rec_all"] += int(sk_true.sum())
         sk_pred = skeletonize(pred) & valid
-        self.c["prec_hit"] += int((sk_pred & _near(pos, tol_px)).sum())
-        self.c["prec_all"] += int(sk_pred.sum())
+        c["prec_hit"] += int((sk_pred & ctx["near_pos"]).sum())
+        c["prec_all"] += int(sk_pred.sum())
+        nphys = ctx.get("near_phys")
+        if beyond and nphys is not None:
+            off = sk_true & ~nphys
+            c["off_hit"] += int((off & near_pred).sum())
+            c["off_all"] += int(off.sum())
+            new = sk_pred & ~nphys
+            c["new_all"] += int(new.sum())
+            c["new_on"] += int((new & ctx["near_pos"]).sum())
         if log_area is not None:
             b = np.digitize(log_area[sk_true], AREA_BINS[1:-1])
             h = hit[sk_true]
@@ -255,18 +284,24 @@ class Scores:
                 self.area[n][1] += int((b == j).sum())
 
     def result(self):
-        tp = np.cumsum(self.pos[::-1])
-        fp = np.cumsum(self.neg[::-1])
-        prec = tp / np.maximum(tp + fp, 1)
-        rec = tp / max(tp[-1], 1)
-        ap = float(np.sum(np.diff(np.concatenate([[0], rec])) * prec)) if tp[-1] > 0 else float("nan")
         c = self.c
         r = c["rec_hit"] / max(c["rec_all"], 1)
         p = c["prec_hit"] / max(c["prec_all"], 1)
-        return dict(ap=round(ap, 4), recall_3m=round(r, 4), precision_3m=round(p, 4),
-                    f1_3m=round(2 * p * r / max(p + r, 1e-9), 4), centreline_cells=c["rec_all"],
-                    recall_by_area={n: (round(h / t, 4) if t else None) for n, (h, t) in self.area.items()},
-                    cells_by_area={n: t for n, (h, t) in self.area.items()})
+        out = dict(recall_3m=round(r, 4), precision_3m=round(p, 4), f1_3m=round(2 * p * r / max(p + r, 1e-9), 4),
+                   centreline_cells=c["rec_all"],
+                   recall_off_physics=round(c["off_hit"] / c["off_all"], 4) if c["off_all"] else None,
+                   off_physics_cells=c["off_all"], new_cells=c["new_all"],
+                   new_on_council=round(c["new_on"] / c["new_all"], 4) if c["new_all"] else None)
+        if self.hist:
+            tp = np.cumsum(self.pos[::-1])
+            fp = np.cumsum(self.neg[::-1])
+            prec = tp / np.maximum(tp + fp, 1)
+            rec = tp / max(tp[-1], 1)
+            out["ap"] = round(float(np.sum(np.diff(np.concatenate([[0], rec])) * prec)), 4) if tp[-1] > 0 else None
+        if any(t for _, t in self.area.values()):
+            out["recall_by_area"] = {n: (round(h / t, 4) if t else None) for n, (h, t) in self.area.items()}
+            out["cells_by_area"] = {n: t for n, (h, t) in self.area.items()}
+        return out
 
 
 def predict(model, store, rows, mean, std, device, batch=64):
@@ -287,34 +322,41 @@ def predict(model, store, rows, mean, std, device, batch=64):
                 yield r, pr
 
 
-def evaluate(model, store, rows, mean, std, device, threshold, tol_px, by="council"):
-    """{group: {model: scores, physics: scores}} plus "all", for the chips in ``rows``."""
+def evaluate(model, store, rows, mean, std, device, threshold, tol_px, by="council", sweep=SWEEP):
+    """{group: {model, physics, sweep: {threshold: scores}}} plus "all", for the chips in ``rows``."""
     area_i = store.bands.index("log10_upstream_area_m2") if "log10_upstream_area_m2" in store.bands else None
     acc = {}
     for r, prob in predict(model, store, rows, mean, std, device):
         x, lab, _, phys = store.get(r.tile_id, int(r.i))
-        lab = np.asarray(lab)
+        ctx = chip_context(lab, phys, tol_px)
         la = np.asarray(x[area_i], np.float32) if area_i is not None else None
+        physf = np.asarray(phys, np.float32)
         for g in ("all", getattr(r, by, None) or "unknown"):
-            a = acc.setdefault(g, dict(model=Scores(), physics=Scores()))
-            a["model"].add(prob, lab, la, threshold, tol_px)
-            a["physics"].add(np.asarray(phys, np.float32), lab, la, 0.5, tol_px)
-    out = {g: {k: v.result() for k, v in a.items()} for g, a in acc.items()}
-    for g in out.values():               # the physics map's own channel cells are ignored in the labels where no
-        g["physics"]["precision_3m"] = None   # council line matches, so it cannot score a false positive: its
-        g["physics"]["f1_3m"] = None          # precision and AP would be 1 by construction. Recall compares fairly.
-        g["physics"]["ap"] = None
+            a = acc.setdefault(g, dict(model=Scores(), physics=Scores(hist=False),
+                                       sweep={t: Scores(hist=False) for t in sweep}))
+            a["model"].add(prob, ctx, la, threshold, tol_px)
+            a["physics"].add(physf, ctx, la, 0.5, tol_px, beyond=False)
+            for t, sc in a["sweep"].items():
+                sc.add(prob, ctx, None, t, tol_px)
+    out = {}
+    for g, a in acc.items():
+        out[g] = dict(model=a["model"].result(), physics=a["physics"].result(),
+                      sweep={str(t): sc.result() for t, sc in a["sweep"].items()})
+        ph = out[g]["physics"]             # the physics map's own channel cells are ignored in the labels where no
+        for k in ("precision_3m", "f1_3m", "ap", "recall_off_physics", "new_cells", "new_on_council"):
+            ph[k] = None                   # council line matches: its precision would be 1 by construction
     return out
 
 
 def best_threshold(model, store, rows, mean, std, device, tol_px, grid=(0.3, 0.4, 0.5, 0.6, 0.7, 0.8)):
     """The threshold with the best centreline F1 on ``rows`` (the validation chips)."""
-    probs = [(r, p) for r, p in predict(model, store, rows, mean, std, device)]
+    probs = [(r, p, chip_context(store.get(r.tile_id, int(r.i))[1], None, tol_px))
+             for r, p in predict(model, store, rows, mean, std, device)]
     best = (0.5, -1.0)
     for t in grid:
-        s = Scores()
-        for r, p in probs:
-            s.add(p, np.asarray(store.get(r.tile_id, int(r.i))[1]), None, t, tol_px)
+        s = Scores(hist=False)
+        for r, p, ctx in probs:
+            s.add(p, ctx, None, t, tol_px, beyond=False)
         f = s.result()["f1_3m"]
         if f > best[1]:
             best = (t, f)
@@ -410,22 +452,44 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
     return model, hist, thr
 
 
-def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=print):
+def fold_masks(index, cfg):
+    """[(name, train mask, test mask)] as ``train.folds`` gives them for the chip index, plus "final"."""
+    from . import train as T
+    idx = index.copy()
+    idx["holdout"] = idx["holdout"].fillna(False).astype(bool) if "holdout" in idx else False
+    fl = T.folds(idx.assign(council=idx.council.fillna("unknown")),
+                 dict(folds=cfg["folds"], block_folds=cfg["block_folds"], seed=cfg["seed"]))
+    hold = np.asarray(idx.holdout, bool)
+    fl.append(("final", ~hold, np.zeros(len(idx), bool)))
+    return fl
+
+
+def fold_tag(name, share=1.0):
+    return name.replace(":", "_").replace("/", "of") + ("" if share >= 1.0 else f"_s{share:g}")
+
+
+def load_model(model_dir, device):
+    """(model, meta) from a run folder (model.pt, model.json)."""
+    import torch
+    model_dir = Path(model_dir)
+    meta = json.loads((model_dir / "model.json").read_text())
+    model = build_model(len(meta["bands"]), meta["base"], meta["depth"]).to(device)
+    model.load_state_dict(torch.load(model_dir / "model.pt", map_location=device, weights_only=True))
+    model.eval()
+    return model, meta
+
+
+def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=print, evaluate_only=False):
     """Train and evaluate on the requested folds (names as ``train.folds`` gives them, e.g. "blocks:1/5", "holdout",
     or "final" for a model on everything outside the holdout) and training-tile shares; writes per run
-    ``<out>/<fold>[_s<share>]/`` (model.pt, model.json, history.json, metrics.json) and ``<out>/report.md``."""
+    ``<out>/<fold>[_s<share>]/`` (model.pt, model.json, metrics.json) and ``<out>/report.md``. With
+    ``evaluate_only``, the saved models of those runs are evaluated again (the measures as they now are)."""
     import torch
-
-    from . import train as T
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     store = ChipStore(dataset_dir)
     idx = store.index.copy()
-    idx["holdout"] = idx.get("holdout", False)
-    idx["holdout"] = idx["holdout"].fillna(False).astype(bool)
-    fl = T.folds(idx.assign(council=idx.council.fillna("unknown")), dict(folds=cfg["folds"], block_folds=cfg["block_folds"],
-                                                                        seed=cfg["seed"]))
-    hold = idx.holdout.to_numpy(bool)
-    fl.append(("final", ~hold, np.zeros(len(idx), bool)))
+    idx["holdout"] = idx["holdout"].fillna(False).astype(bool) if "holdout" in idx else False
+    fl = fold_masks(idx, cfg)
     want = folds or [fl[0][0], "holdout"]
     out = Path(out_dir)
     results = []
@@ -433,24 +497,35 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
         if name not in want:
             continue
         for share in subsets or [cfg.get("subset", 1.0)]:
-            tag = name.replace(":", "_").replace("/", "of") + ("" if share >= 1.0 else f"_s{share:g}")
-            log(f"{tag}: training {int(tr.sum())} chips, testing {int(te.sum())}" + ("" if share >= 1.0 else
-                                                                                      f" (training tiles x {share:g})"))
-            trows, vrows = split_validation(subset_tiles(idx[tr], share, cfg["seed"]), cfg["val_share"], cfg["seed"])
-            model, hist, thr = train_one(store, trows, vrows, cfg, out / tag, device, log)
+            tag = fold_tag(name, share)
+            if evaluate_only:
+                if not (out / tag / "model.pt").exists():
+                    log(f"{tag}: no saved model, skipped")
+                    continue
+                old = json.loads((out / tag / "metrics.json").read_text()) if (out / tag / "metrics.json").exists() else {}
+                model, meta = load_model(out / tag, device)
+                thr, hist = meta["threshold"], old.get("history", [])
+                ntr, nval = old.get("train_chips"), old.get("validation_chips")
+                log(f"{tag}: evaluating the saved model on {int(te.sum())} test chips")
+            else:
+                log(f"{tag}: training {int(tr.sum())} chips, testing {int(te.sum())}" + ("" if share >= 1.0 else
+                                                                                          f" (training tiles x {share:g})"))
+                trows, vrows = split_validation(subset_tiles(idx[tr], share, cfg["seed"]), cfg["val_share"], cfg["seed"])
+                model, hist, thr = train_one(store, trows, vrows, cfg, out / tag, device, log)
+                ntr, nval = len(trows), len(vrows)
             for t in set(idx[te].tile_id):
                 store.unpack(t)
             mean, std = norm_arrays(store.card)
             metrics = evaluate(model, store, idx[te], mean, std, device, thr, cfg["tolerance_m"]) if te.any() else {}
-            rec = dict(fold=name, subset=share, threshold=thr, train_chips=len(trows), validation_chips=len(vrows),
+            rec = dict(fold=name, subset=share, threshold=thr, train_chips=ntr, validation_chips=nval,
                        test_chips=int(te.sum()), history=hist, metrics=metrics, config=cfg)
             (out / tag / "metrics.json").write_text(json.dumps(rec, indent=1, default=float))
             results.append(rec)
             if metrics:
                 a = metrics["all"]
-                log(f"  {tag}: model AP {a['model']['ap']}, recall {a['model']['recall_3m']}, precision "
-                    f"{a['model']['precision_3m']} | physics recall {a['physics']['recall_3m']}, precision "
-                    f"{a['physics']['precision_3m']}")
+                log(f"  {tag}: model AP {a['model']['ap']}, recall {a['model']['recall_3m']} (off physics "
+                    f"{a['model']['recall_off_physics']}), precision {a['model']['precision_3m']} | physics recall "
+                    f"{a['physics']['recall_3m']}")
     done = {(r["fold"], r["subset"]) for r in results}           # the report covers every run in the folder
     for f in sorted(out.glob("*/metrics.json")):
         try:
@@ -465,24 +540,40 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
 
 
 def report(results) -> str:
-    lines = ["# Channel U-Net (ML-3b)", ""]
-    for r in results:
+    """Per run: the council table at the run's threshold, then recall and precision across thresholds (all chips)."""
+    def small(sc):
+        if "recall_by_area" not in sc:
+            return None
+        h = [sc["recall_by_area"][n] for n in ("lt_0.1ha", "0.1-1ha")]
+        c = [sc["cells_by_area"][n] for n in ("lt_0.1ha", "0.1-1ha")]
+        t = sum(c)
+        return round(sum((x or 0) * y for x, y in zip(h, c)) / t, 3) if t else None
+
+    lines = ["# Channel U-Net (ML-3b)", "",
+             "Recall and precision of centreline cells within 3 m. *Off physics*: recall of council centreline cells "
+             "more than 3 m from the physics map (what the physics chain misses). *New*: predicted centreline cells "
+             "more than 3 m from the physics map, and the share of them on council channels (the rest: unrecorded "
+             "drains or false detections, for the review set). The physics map's precision is 1 by construction "
+             "(its unrecorded channels are ignored in the labels), so not shown.", ""]
+    for r in sorted(results, key=lambda r: (r["fold"] != "holdout", r["fold"], r["subset"])):
         if not r["metrics"]:
             lines += [f"## {r['fold']} (training tiles x {r['subset']:g}): final model, no test chips", ""]
             continue
         lines += [f"## {r['fold']} (training tiles x {r['subset']:g}; threshold {r['threshold']}; train "
                   f"{r['train_chips']}, test {r['test_chips']} chips)", "",
-                  "| Council | AP | recall 3 m | precision 3 m | physics recall | physics precision | recall < 1 ha "
-                  "(model / physics) |", "|---|---|---|---|---|---|---|"]
+                  "| Council | AP | recall | precision | physics recall | recall off physics (cells) | new cells "
+                  "(on council) | recall < 1 ha (model / physics) |", "|---|---|---|---|---|---|---|---|"]
         for g, m in sorted(r["metrics"].items(), key=lambda kv: (kv[0] != "all", kv[0])):
             mo, ph = m["model"], m["physics"]
-
-            def small(s):
-                h = [s["recall_by_area"][n] for n in ("lt_0.1ha", "0.1-1ha")]
-                c = [s["cells_by_area"][n] for n in ("lt_0.1ha", "0.1-1ha")]
-                t = sum(c)
-                return round(sum((x or 0) * y for x, y in zip(h, c)) / t, 3) if t else None
-            lines.append(f"| {g} | {mo['ap']} | {mo['recall_3m']} | {mo['precision_3m']} | {ph['recall_3m']} | "
-                         f"{ph['precision_3m']} | {small(mo)} / {small(ph)} |")
+            lines.append(f"| {g} | {mo.get('ap')} | {mo['recall_3m']} | {mo['precision_3m']} | {ph['recall_3m']} | "
+                         f"{mo.get('recall_off_physics')} ({mo.get('off_physics_cells')}) | {mo.get('new_cells')} "
+                         f"({mo.get('new_on_council')}) | {small(mo)} / {small(ph)} |")
+        sw = (r["metrics"].get("all") or {}).get("sweep")
+        if sw:
+            lines += ["", "| threshold | recall | precision | recall off physics | new cells (on council) |",
+                      "|---|---|---|---|---|"]
+            for t, sc in sorted(sw.items(), key=lambda kv: float(kv[0])):
+                lines.append(f"| {t} | {sc['recall_3m']} | {sc['precision_3m']} | {sc.get('recall_off_physics')} | "
+                             f"{sc.get('new_cells')} ({sc.get('new_on_council')}) |")
         lines.append("")
     return "\n".join(lines) + "\n"

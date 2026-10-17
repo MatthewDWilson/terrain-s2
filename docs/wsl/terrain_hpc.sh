@@ -24,6 +24,7 @@
 #   channels <manifest...> [--workers N]  council channel lines snapped to the bed, then label rasters (ML-3a)
 #   chips <name> <manifest...> [--workers N]  training chips for the channel model (ML-3a step 5)
 #   unet <dataset> <name> [--folds ...]       train and evaluate the channel U-Net (ML-3b; needs 'torch')
+#   predict <dataset> <name> <fold> [...]  the U-Net over whole tiles; --review for a review set
 #   guard-setup                             allow the file-cache guard without a password (once)
 #   check-runs <manifest...> [--stage S]    completeness and data issues of bundles and runs
 #   dataset <manifest...> --name N
@@ -449,6 +450,15 @@ unet() {  # ML-3b: train and evaluate the channel U-Net (needs PyTorch: the 'tor
     (cd "$TS2" && in_env python scripts/train_unet.py --dataset "$ds" --name "$name" "$@")
 }
 
+predict() {  # ML-3b: the channel U-Net over whole tiles, and review sets (scripts/predict_channels.py)
+    load_env
+    [ $# -ge 3 ] || die "usage: predict <dataset> <name> <fold> [--pick COUNCIL... | --tiles T...] [--review]"
+    local ds="$1" name="$2" fold="$3"; shift 3
+    host_memory_check
+    cache_guard $$
+    (cd "$TS2" && in_env python scripts/predict_channels.py --dataset "$ds" --name "$name" --fold "$fold" "$@")
+}
+
 chips() {  # ML-3a step 5: training chips from the saved rasters and label rasters
     load_env
     [ $# -ge 2 ] || die "usage: chips <dataset name> <manifest...> [--workers N] [--per-tile N] [--rerun]"
@@ -492,6 +502,7 @@ case "$mode" in
     channels) channels "$@" ;;
     chips) chips "$@" ;;
     unet) unet "$@" ;;
+    predict) predict "$@" ;;
     guard-setup) guard_setup ;;
     check-runs) check_runs "$@" ;;
     labels) labels "$@" ;;

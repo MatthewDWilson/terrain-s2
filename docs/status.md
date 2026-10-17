@@ -36,8 +36,9 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 
 ## Next
 
-1. ML-3a done for waves 1-3 (labels v2 and chips v2 to rerun: `channels`, then `chips ml3_waves123`); ML-3b, the
-   U-Net (`terrain_hpc.sh unet`), built: first runs on the first block fold, the holdout and the learning curve;
+1. ML-3b: unet_v1 trained (blocks:1/5, holdout; DESIGN_NOTES 11); measures beyond the physics map, the threshold
+   sweep and `--evaluate` added; whole-tile prediction and the first review set (`predict --review`) for Matt;
+   the learning curve (`unet_lc`) running;
    chips from the saved rasters; review sets for Matt. Step 1 (widths) done: no council records widths usably, so
    widths come from the fallbacks in `ml/config/channels.yml` (DESIGN_NOTES 11).
 2. ML-3b-d: the U-Net, its integration into the run, the end-to-end check on found labels, the stream/drain head.
