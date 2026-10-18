@@ -408,7 +408,9 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     best, best_ep, hist = np.inf, -1, []
+    import time
     for ep in range(cfg["epochs"]):
+        t0 = time.time()
         model.train()
         tl, tc, n = 0.0, 0.0, 0
         for x, y, w, v in dl:
@@ -435,8 +437,9 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
         vloss = vl_sum / max(vn, 1) if vn else tl / max(n, 1)
         hist.append(dict(epoch=ep + 1, train_loss=round(tl / max(n, 1), 5), train_cldice=round(tc / max(n, 1), 5),
                          val_loss=round(vloss, 5)))
+        hist[-1]["minutes"] = round((time.time() - t0) / 60, 2)
         log(f"  epoch {ep + 1}/{cfg['epochs']}: train {tl / max(n, 1):.4f} (clDice {tc / max(n, 1):.3f}), "
-            f"validation {vloss:.4f}")
+            f"validation {vloss:.4f}; {hist[-1]['minutes']:.1f} min, {n / max(time.time() - t0, 1e-6):.0f} chips/s")
         if vloss < best:
             best, best_ep = vloss, ep
             torch.save(model.state_dict(), out_dir / "model.pt")

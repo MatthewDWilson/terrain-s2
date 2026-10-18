@@ -23,10 +23,12 @@ from pathlib import Path
 import numpy as np
 
 
-def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=128):
+def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=256):
     """(probability float32 on the run's grid, NaN where no input; transform; crs). Windows of the training chips'
     size, overlapping by half, blended with a smooth taper: the model's group norm makes its output depend on the
-    window it sees, so larger windows, or abutting ones, leave seams (seen on BW24_10000_0402, 18 Oct)."""
+    window it sees, so larger windows, or abutting ones, leave seams (seen on BW24_10000_0402, 18 Oct). The tile and
+    a window's margin are read once into memory and the windows sliced from it: reading each window from the files
+    kept the first run on one CPU core with the GPU idle (18 Oct)."""
     import rasterio
     import torch
 
@@ -41,6 +43,10 @@ def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=12
     mean = np.asarray(meta["mean"], np.float32)[:, None, None]
     std = np.asarray(meta["std"], np.float32)
     std = np.where(std > 1e-6, std, 1.0).astype(np.float32)[:, None, None]
+    pad = window                                  # the tile and a window's margin, read once (~4 GB for a tile)
+    region = mosaic.read_inputs(T.c - pad * cs, T.f + pad * cs, w + 2 * pad, h + 2 * pad, cs)
+    okr = np.isfinite(region).all(axis=0)
+    region = np.clip((np.where(np.isfinite(region), region, 0.0) - mean) / std, -10, 10).astype(np.float32)
     taper = np.sin(np.pi * (np.arange(window) + 0.5) / window) ** 2
     wt = np.outer(taper, taper).astype(np.float32)
     off = (window - step) // 2
@@ -52,9 +58,8 @@ def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=12
         part = jobs[k:k + batch]
         xs, oks = [], []
         for r, c in part:
-            x, _, _, _ = mosaic.read(T.c + c * cs, T.f - r * cs, window, cs)
-            oks.append(np.isfinite(x).all(axis=0))
-            xs.append(np.clip((np.where(np.isfinite(x), x, 0.0) - mean) / std, -10, 10).astype(np.float32))
+            xs.append(region[:, r + pad:r + pad + window, c + pad:c + pad + window])
+            oks.append(okr[r + pad:r + pad + window, c + pad:c + pad + window])
         with torch.no_grad():
             xt = torch.from_numpy(np.stack(xs)).to(device)
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):

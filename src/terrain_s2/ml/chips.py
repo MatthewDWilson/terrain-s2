@@ -121,12 +121,26 @@ class Mosaic:
             ds.close()
         self._open.clear()
 
+    def read_inputs(self, x0, y1, width, height, cs=1.0):
+        """The input bands only, (len(BANDS), height, width) float32 with NaN where no run, for a region of any
+        size with top-left corner (x0, y1): whole-tile prediction reads its tile and margin once with this."""
+        return self._read(x0, y1, width, height, cs, self.FILES[:3])
+
     def read(self, x0, y1, size, cs=1.0):
         """(inputs (len(BANDS), size, size) float32 with NaN where no run, label uint8, weight float32, physics
         channel mask uint8) for the window with top-left corner (x0, y1)."""
+        out = self._read(x0, y1, size, size, cs, self.FILES)
+        x, lab, wt = out[:len(BANDS)], out[len(BANDS)], out[len(BANDS) + 1]
+        bad = ~np.isfinite(x).all(axis=0) | ~np.isfinite(lab)
+        label = np.where(bad, 255, np.nan_to_num(lab, nan=255)).astype(np.uint8)
+        weight = np.where(bad | (label == 255), 0.0, np.nan_to_num(wt, nan=0.0)).astype(np.float32)
+        physics = (np.nan_to_num(out[len(BANDS) + 2], nan=0.0) > 0).astype(np.uint8)
+        return x, label, weight, physics
+
+    def _read(self, x0, y1, width, height, cs, files):
         import rasterio.windows as W
-        x1, y0 = x0 + size * cs, y1 - size * cs
-        out = np.full((len(BANDS) + 3, size, size), np.nan, np.float32)
+        x1, y0 = x0 + width * cs, y1 - height * cs
+        out = np.full((sum(len(n) for _, n in files), height, width), np.nan, np.float32)
         for t, (bx0, by0, bx1, by1) in self.bounds.items():
             if bx0 >= x1 or bx1 <= x0 or by0 >= y1 or by1 <= y0:
                 continue
@@ -137,7 +151,7 @@ class Mosaic:
             if c1 <= c0 or r1 <= r0:
                 continue
             k = 0
-            for fname, names in self.FILES:
+            for fname, names in files:
                 f = self.runs[t] / fname
                 if not f.exists():
                     k += len(names)
@@ -155,12 +169,7 @@ class Mosaic:
                             out[k + i, r0:r0 + hh, c0:c0 + ww] = a[j][:hh, :ww]
                             j += 1
                 k += len(names)
-        x, lab, wt = out[:len(BANDS)], out[len(BANDS)], out[len(BANDS) + 1]
-        bad = ~np.isfinite(x).all(axis=0) | ~np.isfinite(lab)
-        label = np.where(bad, 255, np.nan_to_num(lab, nan=255)).astype(np.uint8)
-        weight = np.where(bad | (label == 255), 0.0, np.nan_to_num(wt, nan=0.0)).astype(np.float32)
-        physics = (np.nan_to_num(out[len(BANDS) + 2], nan=0.0) > 0).astype(np.uint8)
-        return x, label, weight, physics
+        return out
 
 
 def _thin(cands, n, sep, taken, rng):

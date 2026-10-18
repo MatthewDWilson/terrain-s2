@@ -1905,6 +1905,16 @@ abutting windows left seams on BW24_10000_0402; a later version could use batch 
 `ml_channel_prob.tif`, and with `--review` builds the review set (`review.gpkg`: model_only reaches and
 council_missed pieces, `exists` y / n / unsure to fill; `docs/review_channels.md`) for test tiles of a fold.
 
+**Learning curve and recall off the physics map** (18 Oct; fold blocks:1/5, 25 / 50 / 100 % of the training tiles,
+threshold 0.8): AP 0.863 / 0.864 / 0.870 (flat: dominated by the large drains), recall 0.837 / 0.848 / 0.878, recall
+below 1 ha 0.807 / 0.823 / 0.854 (physics 0.784), Waimakariri recall 0.538 / 0.582 / 0.659 (physics 0.453): still
+rising where it matters, so more labelled tiles should pay, for the small drains. Re-evaluated with the new
+measures, unet_v1 finds 35 % (fold 1) and 20 % (holdout) of the council centreline cells more than 3 m from the
+physics map: the gap ML-3 is for, well short so far at this threshold. The first whole-tile prediction ran on one
+CPU core with the GPU idle: each 128-cell window was read from the files (~48 ms a window on the clip, ~8,800 windows
+a tile); now the tile and a window's margin are read once (`Mosaic.read_inputs`, ~1.6 s for 1.5 km2 on the clip,
+the same probabilities) and the windows sliced in memory. Epoch times and chips/s are now in the training log.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
