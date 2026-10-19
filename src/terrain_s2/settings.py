@@ -8,8 +8,8 @@ Variable                       Meaning                                      Defa
 =============================  ===========================================  ==================================
 ``TERRAIN_BACKEND``            ``raster`` or ``geofabrics``                 ``raster`` (until W7 decides)
 ``TERRAIN_RESOLUTION``         integer metres: 1, 2, 4 or 8                 ``8``
-``TERRAIN_PRODUCT``            ``auto``, ``dem`` or ``geofabric`` (adds     ``auto``: ``geofabric`` with the
-                               roughness ``zo``; GeoFabrics only)            GeoFabrics backend, else ``dem``
+``TERRAIN_PRODUCT``            ``auto``, ``dem`` or ``geofabric`` (adds     ``auto``: ``dem`` (roughness off
+                               roughness ``zo``; GeoFabrics only)            by default, close-out C3)
 ``TERRAIN_LAND_SOURCE``        ``coverage``, ``topo50``,                    ``coverage``
                                ``topo50_mangrove``, ``file``
 ``TERRAIN_LIDAR_CLASSES``      comma-separated LAS classes                  ``2``
@@ -45,10 +45,11 @@ PRODUCT_CHOICES = ("auto",) + PRODUCTS
 
 
 def product_for(product: str, backend: str) -> str:
-    """The concrete product: ``auto`` is ``geofabric`` (DEM plus roughness) with GeoFabrics, else ``dem``."""
+    """The concrete product: ``auto`` is ``dem`` with either backend (roughness off by default: Stage 1 close-out
+    C3, 19 Oct 2026); ``geofabric`` (DEM plus roughness ``zo``, GeoFabrics only) on request."""
     if product != "auto":
         return product
-    return "geofabric" if backend == "geofabrics" else "dem"
+    return "dem"
 LAND_SOURCES = ("coverage", "topo50", "topo50_mangrove", "file")
 RESOLUTIONS = (1, 2, 4, 8)
 

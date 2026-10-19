@@ -43,6 +43,7 @@ def main():
         old = {f["properties"]["name"]: f for f in json.loads(out.read_text())["features"]}
     http = Http()
     feats = []
+    sources = {n: s for n, s in sources.items() if not s.get("restricted")}   # S2-11: not in the committed index
     for name, spec in sources.items():
         if a.only and name not in a.only:
             if name in old:

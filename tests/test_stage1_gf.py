@@ -214,7 +214,8 @@ def test_geofabrics_runner_coarse_dem(tmp_path, monkeypatch, res):
 def test_product_auto_and_osm_cache(tmp_path, monkeypatch):
     from terrain_s2.settings import Settings, from_env, product_for
     assert from_env({}).product == "auto"
-    assert product_for("auto", "geofabrics") == "geofabric" and product_for("auto", "raster") == "dem"
+    assert product_for("auto", "geofabrics") == "dem" and product_for("auto", "raster") == "dem"   # C3
+    assert product_for("geofabric", "geofabrics") == "geofabric"
     assert product_for("dem", "geofabrics") == "dem"
     with pytest.raises(ValueError):
         from_env({"TERRAIN_PRODUCT": "geofabric"})            # roughness needs the GeoFabrics backend

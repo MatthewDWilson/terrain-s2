@@ -61,8 +61,25 @@ def load_site(path, root=None) -> Site:
 
 
 def load_sources(path) -> dict:
+    """The source registry: ``sources.yml`` plus, when it exists beside it, ``sources.local.yml`` (not committed:
+    .gitignore), whose entries are added or override. Restricted sources (``restricted: true``: data that may train
+    models but must never be published or committed, such as the national stopbank inventory; integration plan
+    S2-11) belong in the local file only: one in the tracked file is an error."""
     import yaml
-    return yaml.safe_load(Path(path).read_text())["sources"]
+    path = Path(path)
+    out = dict(yaml.safe_load(path.read_text())["sources"])
+    bad = [n for n, s in out.items() if isinstance(s, dict) and s.get("restricted")]
+    if bad:
+        raise ValueError(f"restricted sources must be defined in {path.with_name('sources.local.yml')} (not committed), "
+                         f"not in {path.name}: {', '.join(bad)}")
+    local = path.with_name("sources.local.yml")
+    if local.exists():
+        out.update((yaml.safe_load(local.read_text()) or {}).get("sources") or {})
+    return out
+
+
+def is_restricted(spec) -> bool:
+    return isinstance(spec, dict) and bool(spec.get("restricted"))
 
 
 def tile_site(tile_id: str, partition, buffer_m: float = 200.0) -> Site:

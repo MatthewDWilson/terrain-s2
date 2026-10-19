@@ -168,6 +168,7 @@ def _fake_runner(calls, fail=()):
 
 
 def test_make_with_rivers(tmp_path):
+    pytest.importorskip("OSMPythonTools")          # GeoFabrics' OSM client: absent where GeoFabrics is not installed
     from test_stage1_gf import OT_RESPONSE, _tile_index_zip
 
     from terrain_s2.acquire.snapshot import SnapshotStore

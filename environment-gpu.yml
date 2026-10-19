@@ -1,10 +1,11 @@
-# EDDIE terrain Stage 2 prototype — GPU workstation environment (CUDA via conda-forge).
+# terrain-s2: GPU environment (CUDA from conda-forge; only the NVIDIA driver is needed on the host). Kept in step
+# with environment.yml (the same packages) plus CuPy.
 #   conda env create -f environment-gpu.yml && conda activate terrain-s2-gpu
-#   pytest tests/test_gpu_parity.py            # confirms CPU/GPU feature agreement
-# Set cuda-version to what your driver supports (nvidia-smi, top right): 12.x or 13.x.
-# The CUDA runtime comes from conda-forge; only the NVIDIA driver is needed on the host.
-# When PyTorch arrives (Phase 2c), take it from conda-forge too, so CuPy and PyTorch share
-# one CUDA build through the cuda-version metapackage.
+#   pip install --no-deps -e .
+#   pytest tests/test_gpu_parity.py            # CPU/GPU feature agreement
+# PyTorch (the ML-1b CNN, the ML-3 U-Net): from the PyTorch index, for Blackwell GPUs the CUDA 12.8 build:
+#   python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+# (docs/wsl/terrain_hpc.sh 'torch' does this on the GPU machine.)
 name: terrain-s2-gpu
 channels:
   - conda-forge
@@ -12,22 +13,30 @@ channels:
 dependencies:
   - python=3.12
   - numpy>=2.0
-  - affine
+  - affine>=2.4,<4             # 4 may drop `*` composition, still used by rasterio and rioxarray
   - scipy>=1.13
   - numba>=0.60
   - pyflwdir>=0.5.10
   - scikit-image>=0.24
   - scikit-learn>=1.5           # rank_candidates.py
   - pyyaml                      # site definitions (scripts/build_site.py)
+  - psutil                      # peak memory in run_network.py perf
   - requests                    # data acquisition
   - rasterio>=1.4
   - geopandas>=1.0
   - shapely>=2.0
   - pyogrio
   - matplotlib-base
+  - xarray                      # Stage 1 products (netCDF contract) and the store
+  - netcdf4
+  - rioxarray
+  - sqlalchemy                  # Stage 1 product registry (SQLite here, Postgres under EDDIE)
+  - pyarrow                     # ML datasets (Parquet)
+  - libgdal-netcdf              # GDAL's netCDF driver (reads of Stage 1 .nc products)
   - pytest
-  - cuda-version=12.*
-  - cupy>=13
+  - pyflakes
+  - cuda-version=12.*           # set to what the driver supports (nvidia-smi, top right): 12.x or 13.x
+  - cupy>=13                    # GPU features (tests/test_gpu_parity.py)                    # tests/test_static.py (undefined names)
   - pip
   - pip:
-      - whitebox-workflows>=2.0.6
+      - whitebox-workflows>=2.0.6   # optional cross-check (Whitebox NG, MIT/Apache); PyPI wheel

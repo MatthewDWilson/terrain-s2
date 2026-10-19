@@ -1,14 +1,12 @@
-# EDDIE terrain Stage 2 prototype — CPU environment (production servers, laptops).
+# terrain-s2 (EDDIE terrain, Stages 1 and 2): CPU environment (servers, laptops, the workstation).
 #   conda env create -f environment.yml        # or: mamba env create -f environment.yml
 #   conda activate terrain-s2
+#   pip install --no-deps -e .                  # the package and the `terrain` command (no wheels: keeps conda's GDAL)
 #   pytest
-# conda-forge only, with strict channel priority, so GDAL/PROJ/CUDA libraries come
-# from one build ecosystem. Lower bounds are what the code needs; the versions the
-# prototype was tested with (pip, Sep 2026) are in DESIGN_NOTES.md. For an exact,
-# reproducible environment, lock this file (conda-lock, see README).
-# The package itself is NOT pip-installed here: tests and scripts use src/ directly.
-# If you want it installed, use `pip install --no-deps -e .` so pip never pulls
-# binary wheels (with their own GDAL/PROJ DLLs) into the conda environment.
+# conda-forge only, with strict channel priority, so GDAL/PROJ/CUDA libraries come from one build ecosystem. Lower
+# bounds are what the code needs; tested versions are in DESIGN_NOTES.md. For an exact, reproducible environment,
+# lock this file (conda-lock, see README). Scripts and tests also run from src/ without the install.
+# The GPU machine uses this file plus CuPy and PyTorch (docs/wsl/terrain_hpc.sh: setup, torch), or environment-gpu.yml.
 name: terrain-s2
 channels:
   - conda-forge

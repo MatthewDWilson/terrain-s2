@@ -41,6 +41,7 @@ def build_site(site, sources: dict, out_root, cache_root, http=None, dry_run=Fal
     if only in (None, "elevation") and site.elevation:
         _elevation(site, out, cache_root, http, dry_run, prov, log, mirror)
     layers = {}
+    restricted = {}                                   # S2-11: layers of restricted sources, kept apart
     auto = site.sources == "auto"
     names = site.sources
     if only in (None, "sources") and auto:
@@ -61,9 +62,15 @@ def build_site(site, sources: dict, out_root, cache_root, http=None, dry_run=Fal
                 continue
             try:
                 got = _fetch(http, store, name, spec, site.window, dry_run)
-                prov["sources"].append(dict(name=name, **got["meta"]))
+                prov["sources"].append(dict(name=name, restricted=bool(spec.get("restricted")), **got["meta"]))
                 for lyr, g in got.get("layers", {}).items():
-                    layers.setdefault(lyr, []).append(g)
+                    if spec.get("restricted"):
+                        if not (lyr in LABEL_LAYERS or lyr.endswith("_raw")):
+                            raise ValueError(f"restricted source {name} provides '{lyr}': a restricted source may "
+                                             "only provide label layers (it must never reach the chain's inputs)")
+                        restricted.setdefault(lyr, []).append(g)
+                    else:
+                        layers.setdefault(lyr, []).append(g)
                 m = got["meta"]
                 if dry_run:
                     msg = f"planned; server reports {m['count']} feature(s)" if "count" in m else "planned"
@@ -86,6 +93,7 @@ def build_site(site, sources: dict, out_root, cache_root, http=None, dry_run=Fal
                 log(f"[{site.id}] {name}: FAILED {e}")
     if not dry_run:
         _write_layers(out, layers, site.window)
+        _write_restricted(out, restricted)
         import geopandas as gpd                                 # the AOI (no buffer), for run_network --aoi
         from shapely.geometry import box
         gpd.GeoDataFrame({"site": [site.id]}, geometry=[box(*site.bounds)], crs=2193).to_file(out / "aoi.geojson", driver="GeoJSON")
@@ -116,10 +124,13 @@ def refresh_source(bundle, name, sources: dict, cache_root, http=None, log=print
     if getattr(http, "store", None) is None:
         http.store = store
     got = _fetch(http, store, name, sources[name], window, False)
-    label_layers = ("channels", "crossings", "stopbanks", "bridges")
+    label_layers = LABEL_LAYERS
+    restricted = bool(sources[name].get("restricted"))
     for lyr, g in got.get("layers", {}).items():
         is_label = lyr in label_layers or lyr.endswith("_raw")
-        f = bundle / ("labels.gpkg" if is_label else "context.gpkg")
+        if restricted and not is_label:
+            raise ValueError(f"restricted source {name} provides '{lyr}': label layers only (S2-11)")
+        f = bundle / (RESTRICTED_FILE if restricted else "labels.gpkg" if is_label else "context.gpkg")
         g = gpd.GeoDataFrame(g, crs=2193)
         if not is_label and len(g):
             g = g.clip(box(*window))
@@ -240,6 +251,22 @@ def _elevation(site, out, cache_root, http, dry_run, prov, log, mirror=True):
             log(f"[{site.id}] {product}: FAILED {e}")
 
 
+LABEL_LAYERS = ("channels", "crossings", "stopbanks", "bridges")
+RESTRICTED_FILE = "labels_restricted.gpkg"
+
+
+def _write_restricted(out, layers):
+    """Restricted sources' label layers in their own file (S2-11), which nothing in the chain reads and no export
+    copies; training reads it only when asked to (``use_restricted``)."""
+    import geopandas as gpd
+    import pandas as pd
+    f = Path(out) / RESTRICTED_FILE
+    if f.exists():
+        f.unlink()
+    for lyr, parts in layers.items():
+        _to_gpkg(gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=2193), f, lyr)
+
+
 def _write_layers(out, layers, window=None):
     """Labels keep whole features (a culvert or channel crossing the edge keeps its length); context
     layers and roads are clipped to the window, since sources return whole features (a road or
@@ -247,7 +274,7 @@ def _write_layers(out, layers, window=None):
     import geopandas as gpd
     import pandas as pd
     from shapely.geometry import box
-    label_layers = ("channels", "crossings", "stopbanks", "bridges")
+    label_layers = LABEL_LAYERS
 
     def clip(g):
         if window is None or not len(g):

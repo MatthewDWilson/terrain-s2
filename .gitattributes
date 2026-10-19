@@ -1,0 +1,2 @@
+# Shell scripts run in WSL/Linux: LF endings whatever the checkout platform (CRLF broke terrain_hpc.sh, 16 Oct 2026)
+*.sh text eol=lf

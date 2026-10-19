@@ -9,3 +9,5 @@ src/terrain_s2/_version.py
 build/
 dist/
 src/terrain_s2/_commit.txt
+# restricted sources (S2-11): defined locally, never committed
+sites/sources.local.yml

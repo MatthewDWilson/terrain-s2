@@ -1569,7 +1569,7 @@ the network runs first on Matt's workstation.
 
 **First runs of step 9, the probes and the CNN** (16 Oct). Scored quadrant BW24_10000_0402_SE: 13 candidates matched
 to recorded structures, 2 recorded structures added. `diagnose_misses.py` found no runs and the CNN wrote to
-`C:\Users\mwi104\terrain_data`: `TERRAIN_DATA_DIR` was not set in that PowerShell session, so every default path
+`C:\Users\<user>\terrain_data`: `TERRAIN_DATA_DIR` was not set in that PowerShell session, so every default path
 pointed at the home folder. Scripts now say so (once, on stderr), and `diagnose_misses.py` names the folder it looked
 in. The CNN ran on the CPU: a CPU build of PyTorch (2.7.0+cpu) in the Windows user site-packages shadowed the
 environment, and pip saw it as installed. `train_cnn.py` now stops when it has a CPU build and an NVIDIA GPU is present
@@ -1935,6 +1935,21 @@ the threshold chosen for recall off the physics map with centreline precision >=
 controlled experiment after v2 (dates, registration and colour differ between surveys; DSM - DEM already carries
 some vegetation). Stage 1 merge (`stage1/rivers`, 9 commits) and `main` (34 commits since 14 Oct) touch no file in
 common. `docs/stage2_summary.md`: what Stage 2 is, its results and status, and where each part is documented.
+
+**Flags from the documentation review (19 Oct)**, F1-F7: a `LICENSE` file (AGPL-3.0-or-later, the text from SPDX;
+`pyproject.toml` already declared it); the restricted-source guard (S2-11): restricted sources are defined only in
+`sites/sources.local.yml` (gitignored; one in the tracked `sources.yml` is an error), are never chosen by `sources:
+auto` nor written to the committed coverage index, may provide label layers only (a context or road layer is an
+error), and land in their own `labels_restricted.gpkg`, which the chain never reads and `clip_run.py` never copies;
+training will read it only when asked (`use_restricted`, not built until such a source exists); `run.py`'s docstring
+lists the seven layers a run writes and the scored fields; `environment-gpu.yml` is `environment.yml` plus
+`cuda-version` and CuPy (a test keeps them in step), with the PyTorch install for Blackwell, and both headers say how
+to install the package and the `terrain` command; product `auto` is `dem` with either backend (roughness off by
+default, close-out C3; `geofabric` on request); the tag (v0.2.0) is Matt's; the CPU/GPU difference on four wave-1
+tiles waits for a free GPU (`compare_runs.py` on one tile run both ways). Also `.gitattributes` keeps shell scripts
+LF whatever the checkout (the CRLF failure of 16 Oct), and the U-Net's loss is summed on the GPU (a `float()` per
+batch made the GPU wait each step: ~50 % busy), with batch 128 in `unet_v2.yml`. A correction to the 15 Oct notes:
+the scorer is saved as `model.pkl`, not `model.joblib`.
 
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 

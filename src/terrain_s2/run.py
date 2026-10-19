@@ -3,17 +3,23 @@
 ``network(...)`` runs the chain that ``scripts/run_network.py`` ran (the script is now a thin wrapper)
 and returns a ``NetworkRun``; the outputs are unchanged.
 
-Writes ``<out>/network.gpkg`` with layers:
-  channels   reaches (chained through junctions, smoothed, generalised): class (stream/drain),
-             p_stream (after smoothing along the network), p_stream_raw, class_confidence,
-             through_culvert, and the reach features
-  crossings  culvert candidates: x, y, sources (gap / bump / testA / testB / road_x_drain /
-             road_end_pair), dem_h_b, deck_m (DSM deck over the crossing), on_stream
-             (drain-bed rise, m), veg_frac, road_dist_m, tier (with roads if given), tier_dem_only
-  repairs    continuity joins (gaps whose bed rises < 0.15 m): DEM-conditioning repairs
+Writes ``<out>/network.gpkg`` with up to seven layers (a layer with nothing in the AOI is not written):
+  channels        reaches (chained through junctions, smoothed, generalised): class (stream/drain), p_stream
+                  (after smoothing along the network), p_stream_raw, class_confidence, through_culvert, and the
+                  reach features
+  crossings       culvert and bridge candidates: x, y, sources (gap / bump / testA / testB / road_x_drain /
+                  road_end_pair), dem_h_b, deck_m (DSM deck over the crossing), on_stream (within 10 m of a stream
+                  reach), veg_frac, road_dist_m, tier (with roads if given), tier_dem_only; with a crossing model
+                  (ML-1) also p_structure (a ranking score), p_bridge, model_version, recorded and record, and
+                  recorded structures with no candidate added (tier "recorded")
+  repairs         continuity joins (gaps whose bed rises < 0.15 m): DEM-conditioning repairs
+  rivers          wide-channel polygons (channels at least 8 m wide), with area_m2
+  floodplain      the floodplain (REM below its threshold), as polygons
+  residual_ponds  depressions left after the conditioned hydrology pass (not with ``no_conditioned``)
+  pond_outlets    their outlets
 Roads are optional; without them the road-based sources are absent and tier = tier_dem_only.
 Also ``network.json`` (summary, timings, peak memory) and, with ``rasters``, ``features.tif``,
-``hydro.tif``, ``conditioned.tif`` and ``rasters.json``.
+``hydro.tif``, ``conditioned.tif`` and ``rasters.json`` (band names in ``bands.py``).
 
     from terrain_s2.run import network
     res = network("dem.tif", "dsm.tif", "aoi.geojson", roads="roads.gpkg", out="out/site", rasters="none")

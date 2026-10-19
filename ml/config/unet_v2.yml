@@ -4,8 +4,8 @@
 base: 32
 depth: 4
 epochs: 30
-batch: 64
-lr: 0.001
+batch: 128             # GPU ~50 % busy at 64 (19 Oct)
+lr: 0.0015             # scaled a little with the batch
 weight_decay: 0.0001
 cldice: 0.5
 cldice_iter: 5

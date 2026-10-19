@@ -462,7 +462,9 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
     for ep in range(cfg["epochs"]):
         t0 = time.time()
         model.train()
-        tl, tc, n = 0.0, 0.0, 0
+        tl = torch.zeros((), device=device)      # summed on the device: a float() per batch made the GPU wait
+        tc = torch.zeros((), device=device)      # for the CPU every step (GPU ~50 % busy, 19 Oct)
+        n = 0
         for x, y, w, v in dl:
             x, y, w, v = (a.to(device, non_blocking=True) for a in (x, y, w, v))
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=amp):
@@ -472,9 +474,10 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
             loss.backward()
             opt.step()
             sched.step()
-            tl += float(loss.detach()) * len(x)
-            tc += float(cl) * len(x)
+            tl += loss.detach() * len(x)
+            tc += cl * len(x)
             n += len(x)
+        tl, tc = float(tl), float(tc)
         model.eval()
         vl_sum, vn = 0.0, 0
         with torch.no_grad():

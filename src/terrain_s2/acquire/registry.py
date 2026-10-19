@@ -125,6 +125,7 @@ def resolve(sources: dict, index: dict, window_2193, layers=None, exclude=()) ->
     """Names of enabled sources whose coverage meets the window (and provide one of ``layers``)."""
     from shapely.geometry import box
     w = box(*_lonlat(window_2193))
+    sources = {n: s for n, s in sources.items() if not s.get("restricted")}   # S2-11: never chosen automatically
     missing = [n for n, s in sources.items() if s.get("enabled", True) is not False and n not in index]
     if missing:
         raise ValueError(f"not in the coverage index (run scripts/index_sources.py): {', '.join(missing)}")

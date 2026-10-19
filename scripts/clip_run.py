@@ -5,7 +5,8 @@
     python scripts/clip_run.py --tile CD08_10000_0502 --size 1500 --centre 1234567 4876543
 
 Clips the saved rasters (features.tif, hydro.tif, conditioned.tif) and the bundle's dem.tif and dsm.tif to the
-window, copies network.gpkg, labels.gpkg, ml_channels.gpkg and rasters.json whole, and zips the folder. Without
+window, copies network.gpkg, labels.gpkg, ml_channels.gpkg and rasters.json whole (never labels_restricted.gpkg:
+restricted sources, S2-11), and zips the folder. Without
 --centre the window is centred where the council channel lines are densest (ml_channels.gpkg), else on the tile.
 """
 import argparse
