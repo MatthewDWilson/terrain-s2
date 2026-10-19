@@ -35,6 +35,13 @@ def test_model_channels_join_the_network(tmp_path, monkeypatch):
     base = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "base", buffer=50.0, rasters="none",
                    device="cpu")
     assert "channel_source" not in base.layers["channels"] and run.info["channels_km"] > base.info["channels_km"]
+    # the physics network's candidates are kept: every baseline candidate has one within 8 m in the run with the model
+    from scipy.spatial import cKDTree
+    a, b = base.layers["crossings"], run.layers["crossings"]
+    if len(a):
+        dist, _ = cKDTree(np.column_stack([b.geometry.x, b.geometry.y])).query(np.column_stack([a.geometry.x, a.geometry.y]))
+        assert (dist <= 8.0).all() and len(b) >= len(a)
+    assert info["candidates_physics_network"] >= 0
 
 
 def test_recall_at_k_and_summary():

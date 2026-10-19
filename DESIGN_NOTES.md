@@ -1976,6 +1976,28 @@ the model's channels. Outputs: `channel_source` (physics / ml: a reach mostly on
 found (a candidate within 15 m), no_channel, recall@100 by the same scorer, candidates per tile; on wave 3, which
 the scorer never saw.
 
+**F7 explained: CPU against GPU** (20 Oct; BW23_10000_0201 run on each into scratch folders, `compare_runs.py`).
+features.tif: relief and top-hats identical; the Gaussian-derivative bands (laplacian, ridge, valley at s2 and s4)
+and openness differ by at most 3.6e-5 (float32 sums in another order on the GPU). A few channel-mask cells at the
+threshold flip, and the rest follows: channels 2,380 against 2,379 reaches (146.41 against 146.36 km, 0.03 %),
+crossings 2,261 against 2,259 (two low-tier, 0.09 %), the conditioned hydrology different where a flow path reroutes
+(z_conditioned up to 1.15 m on a few cells), pond counts identical. Floating-point non-determinism between devices,
+not a fault; computing those bands on the CPU would roughly double the run for nothing practical. A limitation
+(under 0.1 % of candidates, near the channel threshold); `done.json` records each tile's device; for exact
+reproduction, rerun on the same device. F7 closed.
+
+**ML-3c smoke test** (20 Oct; unet_v1, the first 6 tiles of wave 3, all ECan; each tile with its held-out fold's
+model, 12-13 s of U-Net a tile on the GPU): 34-161 km of model-only reaches a tile, but candidates barely changed
+(10,010 against 10,262 over the 6 tiles), because Tests A and B (68 % of candidates) do not depend on the channel
+map, and because the U-Net draws channels through culverts (as the council lines it learned from do): on the
+merged network gaps fell 24 % (1,104 -> 843) and bumps rose 20 % (2,121 -> 2,551), road crossings +63, road-end
+pairs -22. Labels found and no_channel unchanged (these tiles had almost no label without a channel: 0-2 %);
+recall@100 within noise (bridges 0.75 -> 0.80, implied 0.76 -> 0.73, 20-70 labels). So the gap evidence at
+culverts was being lost to a weaker-looking bump. Now, with a channel model, the candidates are those of the merged
+network plus those of the physics network alone (merged within 8 m, keeping every source): the model only adds
+candidates and evidence. For the full check, wave 1 (Waimakariri, HBRC: where labels lack a channel) joins wave 3;
+found and no_channel do not depend on the scorer, recall@100 is honest on wave 3 only.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

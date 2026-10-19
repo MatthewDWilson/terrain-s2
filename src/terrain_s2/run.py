@@ -19,7 +19,8 @@ Writes ``<out>/network.gpkg`` with up to seven layers (a layer with nothing in t
   pond_outlets    their outlets
 Roads are optional; without them the road-based sources are absent and tier = tier_dem_only.
 With ``channel_model`` (ML-3c: a U-Net run folder, ``ml/unet.py``), its channels join the physics channel map
-before the network is built: ``channels`` gains channel_source (physics / ml), ``crossings`` ml_channel (on a reach
+before the network is built, and the candidates are those of the merged network plus those of the physics
+network alone (so no evidence is lost where the model closes a gap at a culvert): ``channels`` gains channel_source (physics / ml), ``crossings`` ml_channel (on a reach
 only the model mapped), ``hydro.tif`` the band ml_channel_prob, and ``network.json`` a channel_model summary.
 Also ``network.json`` (summary, timings, peak memory) and, with ``rasters``, ``features.tif``,
 ``hydro.tif``, ``conditioned.tif`` and ``rasters.json`` (band names in ``bands.py``).
@@ -260,6 +261,7 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
             ml_mask &= fp_buf
         ml_only = ml_mask & ~strong
         ml_info.update(ml_only_cells=int(ml_only.sum()), physics_cells=int(strong.sum()))
+        strong_physics = strong
         strong = strong | ml_mask
         T.mark("channel_model")
     net = drains.build_drain_network(strong, res.feats, w.z, w.transform, dsm)
@@ -315,6 +317,19 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     ch = ch[ch.length > 0]
     T.mark("classify_reaches")
     C = products.crossings(net, w.z, w.transform, dsm, roads)
+    if ml_only is not None:
+        # the candidates of the physics network as well: the U-Net draws channels through culverts (council lines
+        # run through them), so on the merged network a gap at a culvert becomes a continuous drain and its gap
+        # evidence was lost (6 ECan tiles, 20 Oct: gap -24 %, bump +20 %). With both, the channel model only adds
+        # candidates and evidence (merged within 8 m below, keeping every source).
+        import pandas as pd
+        net_p = drains.build_drain_network(strong_physics, res.feats, w.z, w.transform, dsm)
+        if fp_buf is not None:
+            net_p["skeleton"] &= fp_buf
+        Cp = products.crossings(net_p, w.z, w.transform, dsm, roads)
+        ml_info["candidates_merged_network"], ml_info["candidates_physics_network"] = int(len(C)), int(len(Cp))
+        C = pd.concat([C, Cp], ignore_index=True)
+        del net_p
     T.mark("crossings")
     C = products.merge_test_candidates(C, res.candidates)
     C = products.add_context(C, w.z, dsm, w.transform, ch, roads)
