@@ -23,6 +23,48 @@ from pathlib import Path
 import numpy as np
 
 
+def _taper(window):
+    t = np.sin(np.pi * (np.arange(window) + 0.5) / window) ** 2
+    return np.outer(t, t).astype(np.float32)
+
+
+def predict_windows(get, h, w, model, device, window=128, step=64, batch=256):
+    """Blended probability over an h x w grid from windows of the chips' size, overlapping by half, with a smooth
+    taper: ``get(r, c)`` returns the standardised inputs (bands, window, window) and the valid mask of the window
+    whose top-left cell is (r, c) (which may lie outside the grid). NaN where no window had valid input."""
+    import torch
+    wt = _taper(window)
+    off = (window - step) // 2
+    acc = np.zeros((h + 2 * window, w + 2 * window), np.float32)
+    den = np.zeros_like(acc)
+    good = np.zeros((h, w), bool)
+    jobs = [(r, c) for r in range(-off, h, step) for c in range(-off, w, step)]
+    for k in range(0, len(jobs), batch):
+        part = jobs[k:k + batch]
+        got = [get(r, c) for r, c in part]
+        with torch.no_grad():
+            xt = torch.from_numpy(np.stack([g[0] for g in got])).to(device)
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                pr = torch.sigmoid(model(xt).float()).cpu().numpy()
+        for (r, c), p, (_, ok) in zip(part, pr, got):
+            ww = wt * ok
+            acc[r + window:r + 2 * window, c + window:c + 2 * window] += ww * p
+            den[r + window:r + 2 * window, c + window:c + 2 * window] += ww
+            r0, c0 = max(r, 0), max(c, 0)
+            r1, c1 = min(r + window, h), min(c + window, w)
+            if r1 > r0 and c1 > c0:
+                good[r0:r1, c0:c1] |= ok[r0 - r:r1 - r, c0 - c:c1 - c]
+    d = den[window:window + h, window:window + w]
+    out = acc[window:window + h, window:window + w] / np.maximum(d, 1e-6)
+    return np.where(good & (d > 0), out, np.nan).astype(np.float32)
+
+
+def _norm(meta):
+    mean = np.asarray(meta["mean"], np.float32)[:, None, None]
+    std = np.asarray(meta["std"], np.float32)
+    return mean, np.where(std > 1e-6, std, 1.0).astype(np.float32)[:, None, None]
+
+
 def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=256):
     """(probability float32 on the run's grid, NaN where no input; transform; crs). Windows of the training chips'
     size, overlapping by half, blended with a smooth taper: the model's group norm makes its output depend on the
@@ -30,7 +72,6 @@ def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=25
     a window's margin are read once into memory and the windows sliced from it: reading each window from the files
     kept the first run on one CPU core with the GPU idle (18 Oct)."""
     import rasterio
-    import torch
 
     from .channel_labels import _horizontal
     from .chips import BANDS
@@ -40,40 +81,105 @@ def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=25
     with rasterio.open(run / "features.tif") as s:
         T, crs, (h, w) = s.transform, _horizontal(s.crs), (s.height, s.width)
     cs = abs(T.a)
-    mean = np.asarray(meta["mean"], np.float32)[:, None, None]
-    std = np.asarray(meta["std"], np.float32)
-    std = np.where(std > 1e-6, std, 1.0).astype(np.float32)[:, None, None]
+    mean, std = _norm(meta)
     pad = window                                  # the tile and a window's margin, read once (~4 GB for a tile)
     region = mosaic.read_inputs(T.c - pad * cs, T.f + pad * cs, w + 2 * pad, h + 2 * pad, cs)
     okr = np.isfinite(region).all(axis=0)
     region = np.clip((np.where(np.isfinite(region), region, 0.0) - mean) / std, -10, 10).astype(np.float32)
-    taper = np.sin(np.pi * (np.arange(window) + 0.5) / window) ** 2
-    wt = np.outer(taper, taper).astype(np.float32)
-    off = (window - step) // 2
-    acc = np.zeros((h + 2 * window, w + 2 * window), np.float32)
-    den = np.zeros_like(acc)
-    good = np.zeros((h, w), bool)
-    jobs = [(r, c) for r in range(-off, h, step) for c in range(-off, w, step)]
-    for k in range(0, len(jobs), batch):
-        part = jobs[k:k + batch]
-        xs, oks = [], []
-        for r, c in part:
-            xs.append(region[:, r + pad:r + pad + window, c + pad:c + pad + window])
-            oks.append(okr[r + pad:r + pad + window, c + pad:c + pad + window])
-        with torch.no_grad():
-            xt = torch.from_numpy(np.stack(xs)).to(device)
-            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
-                pr = torch.sigmoid(model(xt).float()).cpu().numpy()
-        for (r, c), p, ok in zip(part, pr, oks):
-            ww = wt * ok
-            acc[r + window:r + 2 * window, c + window:c + 2 * window] += ww * p
-            den[r + window:r + 2 * window, c + window:c + 2 * window] += ww
-            r0, c0 = max(r, 0), max(c, 0)
-            r1, c1 = min(r + window, h), min(c + window, w)
-            if r1 > r0 and c1 > c0:
-                good[r0:r1, c0:c1] |= ok[r0 - r:r1 - r, c0 - c:c1 - c]
-    out = acc[window:window + h, window:window + w] / np.maximum(den[window:window + h, window:window + w], 1e-6)
-    return np.where(good & (den[window:window + h, window:window + w] > 0), out, np.nan).astype(np.float32), T, crs
+
+    def get(r, c):
+        return (region[:, r + pad:r + pad + window, c + pad:c + pad + window],
+                okr[r + pad:r + pad + window, c + pad:c + pad + window])
+    return predict_windows(get, h, w, model, device, window, step, batch), T, crs
+
+
+# ---------------------------------------------------------------- in the run (ML-3c)
+
+WAY_LAYERS = ("roads", "rail", "tracks", "osm_roads")
+
+
+def ways_distance(shape, transform, crs, roads=None, context=None, cap_m=500.0):
+    """Distance (m, capped) to any road, rail line, track or OSM way on a grid, as ``chips.ways_raster`` makes it
+    for the chips (here from the run's roads and the bundle's context.gpkg, on the run's window)."""
+    import geopandas as gpd
+    import pyogrio
+    from rasterio.features import rasterize
+    from scipy import ndimage as ndi
+    geoms = []
+    if roads is not None and len(roads):
+        geoms += [g for g in roads.to_crs(crs).geometry if g is not None and not g.is_empty]
+    if context is not None and Path(context).exists():
+        have = {n for n, _ in pyogrio.list_layers(context)}
+        for name in WAY_LAYERS:
+            if name in have and not (name == "roads" and roads is not None):
+                g = gpd.read_file(context, layer=name)
+                if len(g):
+                    geoms += [x for x in g.to_crs(crs).geometry if x is not None and not x.is_empty]
+    if not geoms:
+        return np.full(shape, cap_m, np.float32)
+    on = rasterize([(g, 1) for g in geoms], out_shape=shape, transform=transform, fill=0, all_touched=True,
+                   dtype="uint8") > 0
+    if not on.any():
+        return np.full(shape, cap_m, np.float32)
+    return np.minimum(ndi.distance_transform_edt(~on) * abs(transform.a), cap_m).astype(np.float32)
+
+
+def run_inputs(feats, z, upa, z_breached, dep_depth, rem, dsm, ways):
+    """The 23 input bands on the run's window, named as the chips' (``chips.BANDS``): the features, the hydrology
+    bands as ``run._write_rasters`` writes them, and the distance to any way."""
+    from .chips import BANDS, FEATURE_BANDS
+    valid = np.isfinite(z)
+    b = {k: feats[k] for k in FEATURE_BANDS}
+    b["rem_m"] = rem if rem is not None else np.full(z.shape, np.nan, np.float32)
+    b["log10_upstream_area_m2"] = np.where(valid, np.log10(np.maximum(upa, 1.0)), np.nan)
+    b["breach_depth_m"] = np.where(valid, z - z_breached, np.nan)
+    b["depression_depth_m"] = np.where(valid, dep_depth, np.nan)
+    b["dsm_minus_dem_m"] = dsm - z if dsm is not None else np.full(z.shape, np.nan, np.float32)
+    b["dist_any_way_m"] = ways
+    return [np.asarray(b[n], np.float32) for n in BANDS]
+
+
+def channel_mask_in_run(model_dir, bands, device="auto", threshold=None, min_cells=30, model=None, meta=None):
+    """(probability, channel mask, info) on the run's window: the U-Net over the in-memory bands (``run_inputs``),
+    thresholded (the model's threshold unless given), with fragments of fewer than ``min_cells`` cells dropped.
+    ``model``/``meta`` may be given directly (tests); otherwise loaded from ``model_dir``."""
+    import time
+
+    import torch
+    from scipy import ndimage as ndi
+
+    from .chips import BANDS
+    from .unet import load_model
+    t0 = time.perf_counter()
+    dev = torch.device("cuda" if device != "cpu" and torch.cuda.is_available() else "cpu")
+    if model is None:
+        model, meta = load_model(model_dir, dev)
+    if list(meta["bands"]) != list(BANDS):
+        raise ValueError("the model's bands differ from the chips' (BANDS)")
+    mean, std = _norm(meta)
+    h, w = bands[0].shape
+    win = 128
+
+    def get(r, c):
+        r0, c0, r1, c1 = max(r, 0), max(c, 0), min(r + win, h), min(c + win, w)
+        x = np.full((len(bands), win, win), np.nan, np.float32)
+        if r1 > r0 and c1 > c0:
+            for k, a in enumerate(bands):
+                x[k, r0 - r:r1 - r, c0 - c:c1 - c] = a[r0:r1, c0:c1]
+        ok = np.isfinite(x).all(axis=0)
+        return np.clip((np.where(np.isfinite(x), x, 0.0) - mean) / std, -10, 10).astype(np.float32), ok
+    prob = predict_windows(get, h, w, model, dev, window=win, step=64)
+    thr = float(threshold if threshold is not None else meta.get("threshold", 0.5))
+    m = np.nan_to_num(prob) >= thr
+    if min_cells > 1 and m.any():
+        lab, n = ndi.label(m, structure=np.ones((3, 3)))
+        sizes = np.bincount(lab.ravel())
+        keep = sizes >= min_cells
+        keep[0] = False
+        m = keep[lab]
+    info = dict(model=str(model_dir), threshold=thr, device=dev.type, cells=int(m.sum()),
+                seconds=round(time.perf_counter() - t0, 1), dataset=meta.get("dataset"))
+    return prob, m, info
 
 
 def write_prob(run, prob, T, crs, model_dir, threshold, fold=None, held_out=None):

@@ -15,6 +15,8 @@ FEATURES = {
 }
 
 HYDRO = {
+    "ml_channel_prob": ("0-1", "the channel U-Net's probability (ML-3c, run.network channel_model); channel_mask then "
+                               "includes the cells at or above its threshold"),
     "rem_m": ("m", "relative elevation model: DEM minus a smooth surface interpolated (IDW, 20 m grid) from drainage "
                    "elevations (wide channels and upstream area >= 0.1 km2); the floodplain is rem <= --max-hand"),
     "hand_m": ("m", "height above nearest drainage (HAND) on the breached DEM (--height-model hand); the floodplain "

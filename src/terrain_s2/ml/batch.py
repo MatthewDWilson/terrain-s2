@@ -112,9 +112,17 @@ def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> 
                 raise RuntimeError(f"elevation failed: {prov['errors']}")
         rec["build_s"] = round(time.perf_counter() - t0, 1)
         dsm = bundle / "dsm.tif"
+        run_params = dict(params, device=device)
+        cm = run_params.get("channel_model")
+        if cm and (Path(cm) / "oof_map.json").exists():  # ML-3c: each tile with the model that never trained on it
+            fold = json.loads((Path(cm) / "oof_map.json").read_text()).get(tile_id)
+            if fold is None:
+                raise RuntimeError(f"{tile_id} is not in {cm}/oof_map.json (no held-out model for it)")
+            run_params["channel_model"] = str(Path(cm) / fold)
+            rec["channel_model_fold"] = fold
         res = network(bundle / "dem.tif", dsm if dsm.exists() else None, bundle / "aoi.geojson",
                       roads=bundle / "roads.gpkg" if (bundle / "roads.gpkg").exists() else None,
-                      out=Path(cfg.runs) / tile_id, params=dict(params, device=device), keep=cfg.features)
+                      out=Path(cfg.runs) / tile_id, params=run_params, keep=cfg.features)
         if cfg.features:
             from .features import extract
             t1 = time.perf_counter()

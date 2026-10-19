@@ -9,7 +9,9 @@
 The model is <models>/<name>/<fold> (use a fold whose test tiles you predict: the model has not seen them).
 --fold oof predicts every tile of the dataset with the model of the fold that held it out (blocks folds; the holdout
 model for the holdout tiles): out-of-fold probabilities, which labels v3 uses to clean council lines; tiles already
-done by the same model are skipped unless --rerun; --workers runs that many processes on the GPU.
+done by the same model are skipped unless --rerun; --workers runs that many processes on the GPU. It also writes
+<models>/<name>/oof_map.json (tile -> fold), with which a batch run given channel_model=<models>/<name> uses each
+tile's held-out model (ML-3c).
 --pick chooses, per council, the fold's test tile with most positive chips. --review writes
 <models>/<name>/<fold>/review.gpkg (layer reaches: model_only and council_missed, each with exists = y / n / unsure
 to fill, and notes); the model's threshold unless --threshold.
@@ -140,6 +142,9 @@ def oof(a, ds, runs, models_dir, cfg, idx):
     missing = sorted({f for f in owner.values() if not (models_dir / U.fold_tag(f) / "model.pt").exists()})
     if missing:
         print(f"no saved model for {', '.join(missing)}: their tiles are skipped")
+    omap = {t: U.fold_tag(f) for t, f in owner.items() if f not in missing}   # for runs with this model set (ML-3c)
+    (models_dir / "oof_map.json").write_text(json.dumps(omap, indent=1, sort_keys=True))
+    print(f"oof_map.json: {len(omap)} tiles -> their held-out fold ({models_dir / 'oof_map.json'})")
     jobs = []
     for t, f in sorted(owner.items(), key=lambda kv: (kv[1], kv[0])):
         if f in missing:

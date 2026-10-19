@@ -18,6 +18,9 @@ Writes ``<out>/network.gpkg`` with up to seven layers (a layer with nothing in t
   residual_ponds  depressions left after the conditioned hydrology pass (not with ``no_conditioned``)
   pond_outlets    their outlets
 Roads are optional; without them the road-based sources are absent and tier = tier_dem_only.
+With ``channel_model`` (ML-3c: a U-Net run folder, ``ml/unet.py``), its channels join the physics channel map
+before the network is built: ``channels`` gains channel_source (physics / ml), ``crossings`` ml_channel (on a reach
+only the model mapped), ``hydro.tif`` the band ml_channel_prob, and ``network.json`` a channel_model summary.
 Also ``network.json`` (summary, timings, peak memory) and, with ``rasters``, ``features.tif``,
 ``hydro.tif``, ``conditioned.tif`` and ``rasters.json`` (band names in ``bands.py``).
 
@@ -65,7 +68,8 @@ NetworkRun = NetworkResult                      # the name in the first S2-1 com
 
 OPTIONS = dict(stream_model=None, buffer=200.0, max_hand=10.0, clean=True, aoi_crs=None, assume_crs=None,
                device="auto", height_model="rem", conditioned=True, burn_m=0.25, context=None, rasters="all",
-               profile=False, keep=False, crossing_model=None, record_sources=None)
+               profile=False, keep=False, crossing_model=None, record_sources=None, channel_model=None,
+               channel_threshold=None, channel_min_cells=30)
 
 
 def _paths(p):
@@ -127,7 +131,8 @@ def _cond_summary(cond, core):
                 rem_basis=cond.rem_basis, rem_samples=cond.rem_samples)
 
 
-def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, cond=None, height_model="rem"):
+def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, cond=None, height_model="rem",
+                   ml_prob=None):
     """features.tif and hydro.tif on the window grid, cropped to the AOI (tiles then mosaic without
     overlap), float32, deflate; rasters.json gives each band's units and meaning."""
     import rasterio.windows
@@ -156,6 +161,8 @@ def _write_rasters(out, which, w, core_bounds, res, net, sk, fp, hand, dsm, rd, 
         h["dsm_minus_dem_m"] = dsm - w.z
     if rd is not None:
         h["road_distance_m"] = rd
+    if ml_prob is not None:
+        h["ml_channel_prob"] = ml_prob
     h = {k: crop(v) for k, v in h.items()}
     dataio.write_stack(out / "hydro.tif", h, tr, w.crs)
     meta["hydro.tif"] = B.describe(list(h), B.HYDRO)
@@ -236,6 +243,25 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         fp_buf = ndi.binary_dilation(fp, iterations=int(round(50 / cs)))
         strong &= fp_buf
     T.mark("floodplain")
+    # ML-3c: the channel U-Net's channels join the physics channel map (union), so the network, its classes and
+    # the crossing tests (A, B, road crossings, road-end pairs) see them too; reaches the model alone found are
+    # flagged channel_source = "ml"
+    ml_only = ml_prob = ml_info = None
+    if opts.get("channel_model"):
+        from .ml import channel_predict as CP
+        ctx = a.context or (str(Path(a.roads).with_name("context.gpkg")) if a.roads else None)
+        ways = CP.ways_distance(w.z.shape, w.transform, hcrs, roads, ctx)
+        bands_in = CP.run_inputs(res.feats, w.z, res.upa, res.breach.z_breached, res.dep.depth,
+                                 hand if fp is not None else None, dsm, ways)
+        ml_prob, ml_mask, ml_info = CP.channel_mask_in_run(opts["channel_model"], bands_in, a.device,
+                                                           opts.get("channel_threshold"), opts.get("channel_min_cells", 30))
+        del bands_in, ways
+        if fp_buf is not None:
+            ml_mask &= fp_buf
+        ml_only = ml_mask & ~strong
+        ml_info.update(ml_only_cells=int(ml_only.sum()), physics_cells=int(strong.sum()))
+        strong = strong | ml_mask
+        T.mark("channel_model")
     net = drains.build_drain_network(strong, res.feats, w.z, w.transform, dsm)
     T.mark("drain_network")
     if fp_buf is not None:
@@ -282,6 +308,10 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     ch["class_confidence"] = np.maximum(p, 1 - p)
     ch["through_culvert"] = _near_any([LineString(R.coords) for R in reaches], [r["geometry"].centroid for r in culvert_edges],
                                       2.0, strict=True)
+    if ml_only is not None:                      # ML-3c: a reach mostly on cells only the U-Net mapped
+        near_ml = ndi.binary_dilation(ml_only, iterations=1)
+        ch["channel_source"] = ["ml" if len(R.cells) and near_ml[R.cells[:, 0], R.cells[:, 1]].mean() > 0.5 else "physics"
+                                for R in reaches]
     ch = ch[ch.length > 0]
     T.mark("classify_reaches")
     C = products.crossings(net, w.z, w.transform, dsm, roads)
@@ -305,6 +335,9 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         # can stand more than max_hand above the drainage while both its channels are on the floodplain
         cc_, rr_ = drains._to_cr(w.transform, cr.x.values, cr.y.values)
         cr = cr[fp_buf[rr_.astype(int), cc_.astype(int)]]
+    if ml_only is not None and len(cr):           # ML-3c: candidates on a reach only the U-Net mapped
+        mlr = list(ch[ch.channel_source == "ml"].geometry) if "channel_source" in ch else []
+        cr["ml_channel"] = _near_any(list(cr.geometry), mlr, 10.0) if mlr else False
     T.mark("crossing_filters")
     rep = gpd.GeoDataFrame([g for g in net["gaps"] if g["kind"] == "continuity"],
                            geometry=[LineString([(g["x0"], g["y0"]), (g["x1"], g["y1"])])
@@ -336,7 +369,7 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         T.mark("conditioned_hydrology")
     if a.rasters != "none":
         _write_rasters(out, a.rasters, w, aoi.total_bounds, res, net, sk, fp, hand if fp is not None else None, dsm, rd,
-                       cond, a.height_model)
+                       cond, a.height_model, ml_prob)
     T.mark("write")
     T.stop()
     info = dict(dem=a.dem, dsm=a.dsm, roads=a.roads, stream_model=a.stream_model, aoi=a.aoi,
@@ -348,6 +381,12 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
                 floodplain_frac=round(float(fp.mean()), 3) if fp is not None else None,
                 cells=int(w.z.size), device=res.device, gpu_pool_gb=res.gpu_pool_gb,
                 conditioned=_cond_summary(cond, core) if cond is not None else None, perf=T.report())
+    if ml_info is not None:
+        chc = ch[ch.intersects(core)]
+        mlc = chc[chc.channel_source == "ml"] if "channel_source" in chc else chc.iloc[0:0]
+        crc = cr[cr.intersects(core)]
+        info["channel_model"] = dict(ml_info, ml_reaches=int(len(mlc)), ml_km=round(float(mlc.length.sum() / 1000), 2),
+                                     crossings_on_ml=int(crc.ml_channel.sum()) if "ml_channel" in crc else 0)
     (out / "network.json").write_text(json.dumps(info, indent=2))
     if prof is not None:
         import io

@@ -1951,6 +1951,31 @@ LF whatever the checkout (the CRLF failure of 16 Oct), and the U-Net's loss is s
 batch made the GPU wait each step: ~50 % busy), with batch 128 in `unet_v2.yml`. A correction to the 15 Oct notes:
 the scorer is saved as `model.pkl`, not `model.joblib`.
 
+**unet_v2 against v1, and ML-3c** (20 Oct). Labels v3 on all 569 tiles: 281,075 positive cells cleaned (0.5 %;
+Waimakariri 2.5 %, Otago, Waikato, ECan ~0.7-0.8 %), the 164 reviewed reaches applied. On the same labels, fold 1:
+v1 at 0.8 recall off the physics map 0.42 (precision 0.77), at 0.7 0.53 (0.67); v2 at its threshold 0.7 0.65
+(0.64), at 0.8 0.57 (0.74): 12-15 points more at the same precision; recall below 1 ha 0.91 against the physics
+map's 0.81 (the design's test, met on fold 1); by council off physics Southland 0.86, ECan 0.69, Waimakariri 0.64,
+HBRC 0.54, Waikato 0.38, Otago 0.24, Auckland 0.14. Holdout: 0.32 against v1's 0.25 at 0.8; below 1 ha level with
+the physics map (Gisborne mostly rivers; BW24's noisy labels). Two copies of the v2 run overlapped by accident (a
+second start while the first was on the holdout); the first copy's holdout result evaluated a model file the second
+had overwritten, the saved models and report are the second copy's own. `unet.run` now takes a lock on the model
+folder (`.run.lock`, the process id; a stale one is ignored).
+ML-3c, the U-Net in the run (`run.network(..., channel_model=<run folder>, channel_threshold, channel_min_cells)`):
+after the floodplain step the 23 input bands are assembled in memory as the chips have them (features; REM, upstream
+area, breach and depression depth, DSM - DEM as `_write_rasters` writes them; distance to any way from the run's
+roads and the bundle's context layers, `channel_predict.ways_distance`), the U-Net runs over the window in
+blended chip-size windows (`predict_windows`, shared with the tile prediction), its mask (threshold, fragments under
+30 cells dropped, restricted to the buffered floodplain like the physics map) joins the physics channel map by
+union, and the chain goes on unchanged: the network, classes, Tests A and B, road crossings and road-end pairs see
+the model's channels. Outputs: `channel_source` (physics / ml: a reach mostly on cells only the model mapped) on
+`channels`, `ml_channel` on `crossings`, band `ml_channel_prob` in `hydro.tif`, a `channel_model` summary in
+`network.json`. In a batch, `--param channel_model=<models>/<name>` with that folder's `oof_map.json` (written by
+`predict_channels.py --fold oof`) gives each tile the model of the fold that held it out. The end-to-end check,
+`scripts/compare_ml3c.py`: runs A (without) and B (with) against the labels' probes, per council and label kind:
+found (a candidate within 15 m), no_channel, recall@100 by the same scorer, candidates per tile; on wave 3, which
+the scorer never saw.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

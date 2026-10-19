@@ -138,9 +138,24 @@ def test_train_v2_settings(tmp_path):
     assert res[0]["threshold"] in (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 
 
+def test_channel_mask_in_run():
+    """ML-3c: the U-Net over in-memory bands (a random model: shapes, threshold, fragment filter)."""
+    from terrain_s2.ml import channel_predict as P
+    model = U.build_model(len(C.BANDS), 8, 2).eval()
+    meta = dict(bands=list(C.BANDS), mean=[0.0] * len(C.BANDS), std=[1.0] * len(C.BANDS), threshold=0.5)
+    rng = np.random.default_rng(0)
+    bands = [rng.normal(0, 1, (150, 170)).astype(np.float32) for _ in C.BANDS]
+    bands[0][:5, :5] = np.nan
+    prob, m, info = P.channel_mask_in_run("x", bands, "cpu", threshold=0.0, min_cells=1, model=model, meta=meta)
+    assert prob.shape == (150, 170) and np.isnan(prob[:5, :5]).all() and m[10:, 10:].all()
+    _, m2, info2 = P.channel_mask_in_run("x", bands, "cpu", threshold=2.0, model=model, meta=meta)
+    assert not m2.any() and info2["cells"] == 0 and info["threshold"] == 0.0
+
+
 if __name__ == "__main__":
     test_soft_skeleton_of_a_bar_is_thin()
     test_loss_ignores_ignored_cells()
+    test_channel_mask_in_run()
     with tempfile.TemporaryDirectory() as d:
         test_train_and_evaluate(Path(d))
         test_predict_tile_and_review(Path(d), Path(d) / "models" / "m" / "holdout")

@@ -549,6 +549,30 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
     fl = fold_masks(idx, cfg)
     want = folds or [fl[0][0], "holdout"]
     out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    lock = _lock(out)
+    try:
+        return _run_folds(store, idx, fl, want, out, cfg, subsets, device, log, evaluate_only)
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def _lock(out):
+    """One run per model folder: two copies of a run writing the same folder overwrote each other's models (20 Oct)."""
+    import os
+    f = out / ".run.lock"
+    if f.exists():
+        try:
+            pid = int(f.read_text().split()[0])
+            os.kill(pid, 0)
+            raise RuntimeError(f"{out} is in use by another run (pid {pid}); wait for it, or remove {f} if it is gone")
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass                                    # a stale lock: its process has ended
+    f.write_text(f"{os.getpid()}\n")
+    return f
+
+
+def _run_folds(store, idx, fl, want, out, cfg, subsets, device, log, evaluate_only):
     results = []
     dsname = store.card.get("name")
     mfile = "metrics.json"                      # evaluating models on another dataset (labels v3, say) keeps their
