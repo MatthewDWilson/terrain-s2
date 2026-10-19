@@ -70,6 +70,11 @@ each document.
   open it directly. Stage 2's 1 m check reads the product's resolution, not the presence of the COG.
 - **6.1 settings.** `TERRAIN_PRODUCT` gains `auto` (the default): `geofabric` with the GeoFabrics backend,
   `dem` with raster.
+- **Section 10 (consumers).** Reading the products with `rioxarray.open_rasterio`, as FReDT and NewZeaLiDAR
+  do, needs GDAL's netCDF driver. conda-forge ships it as `libgdal-netcdf` from GDAL 3.9, and the v5 core's
+  environment (`rasterio==1.5.2` from conda-forge) lacks it: the W5 shim check failed there on 14 Oct 2026.
+  FReDT's and Smart Ideas' environments need `libgdal-netcdf` when they move to the v5 stack. The shim now
+  says so instead of failing in GDAL.
 - **6.6 table.** Add `config_key` (text, indexed) and `grid` (geometry). They support spatial reuse when only the
   inputs differ (DESIGN_NOTES §10, decision 2).
 - **6.3 template.**
@@ -121,6 +126,26 @@ ourselves meanwhile.
 **geoapis 1. `otCatalog` query typo, and survey dates.** `lidar.S3QueryBase.query_for_datasets_inside_catchment`
 sends `inlcude_federated`, so the API ignores it and applies its own default. Fix the spelling. Also allow
 `detail=true`, and return the survey dates (`temporalCoverage`), so callers can rank datasets newest first.
+
+**GeoFabrics 6. Upstream trace compares reach ids with index labels.**
+`bathymetry_estimation.Channel._get_up_stream_reaches` appends dataframe index labels to `reaches_index`, then
+checks the next reach *id* against that list. When a reach id equals an index label it reports "circular network
+connections" for a valid network. REC ids (seven digits) never collide, so it is latent for NZ data. Proposal:
+compare ids with ids. Found while matching our river selection to GeoFabrics' trace (`tests/test_stage1_rivers.py`).
+
+**GeoFabrics 7. RBF interpolation fails with NumPy 2.4.** `dem.calculate_rbf` returns
+`RBFInterpolator(...)([point])`, a 1-element array, and `elevation_from_nearest_points` assigns it to
+`z_out[i]`. NumPy 2.4 made that an error ("setting an array element with a sequence"); before, it was deprecated.
+RBF is GeoFabrics' default interpolation for rivers (and the ocean), so a DEM with river bathymetry fails at the
+hydrologic stage (first live river run, SH12, 14 Oct 2026). Proposal: return `[0]`, as
+`calculate_interpolate_griddata` does. We pin `numpy<2.4` in the terrain worker meanwhile.
+
+**GeoFabrics 8. River and waterway burns evaluate whole chunks.** `dem.elevation_over_chunk_from_nearest` (and
+`elevation_over_chunk` for waterways) builds the meshgrid of the whole chunk and runs the per-cell interpolation
+on every cell. The result is clipped to the river polygon only afterwards, and chunks are skipped only when the
+polygon misses them entirely. On SH12 at 1 m, 721,000 cells were interpolated for 10,706 river cells: 26 of the
+28 minutes. Proposal: pass only the cells inside the polygon (as `region_to_rasterise` already defines) to
+`elevation_from_nearest_points`. We use small hydrologic-stage chunks meanwhile.
 
 Items GeoFabrics 1 and 4 matter only if raster input ever goes back through GeoFabrics; P-3 avoids that.
 

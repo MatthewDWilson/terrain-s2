@@ -151,14 +151,19 @@ for it.
 The first run in a region lists the LINZ collections and builds their item indexes, so it takes minutes. Later
 runs read the cache. To pick up newly published surveys, delete `~/eddie/data/terrain/cache/stac/json`.
 
-**Survey edge (W3 exit).** I still need an AOI that straddles two LINZ surveys. Send me one, or run it through the
-API yourself:
+**Survey edge (W3 exit), now on the shared reader (S2-9).**
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"aoi":"POLYGON((...))","params":{"resolution":1}}' http://localhost:5500/terrain/dem
+bash $S edge 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w3_edge.txt
 ```
 
-The provenance should then list both surveys, with `gap_fraction` 0.
+- **AOI:** two neighbouring 1:10k tiles in the partition (`D:\eddie_data\partition\nz_tiles.gpkg`; give another
+  path as an argument) whose latest surveys differ, and a 1.2 x 0.8 km box across their shared edge. It is saved
+  as `D:\EDDIE\w3_edge_aoi.wkt`.
+- **Run:** `e2e raster 1` on that AOI.
+- **Expected:** the inputs list both surveys, gap fraction 0, and each input with its checksum.
+
+Any AOI can be run the same way: put its WKT (EPSG:4326) in a file, then `bash $S e2e raster 1 dem aoi=<file>`.
 
 ### 4a. Where the outputs are, and how to look at them
 
@@ -204,6 +209,7 @@ The provenance should then list both surveys, with `gap_fraction` 0.
 | `land_source` | `coverage`, `topo50`, `topo50_mangrove`, `file` | `coverage` |
 | `buffer_m` | metres added round the AOI | 10 |
 | `spatial_reuse` | reuse a stored product that contains the AOI | true |
+| `rivers`, `waterways` | GeoFabrics river bed estimation (REC1 flows) and OSM waterway beds; GeoFabrics only (`docs/stage1_rivers.md`) | false |
 | `lidar_classes`, `allow_fallback`, `profile`, `aoi_mode` (`bbox` or `polygon`) | see `terrain_s2/settings.py` | |
 
 ```bash
@@ -213,10 +219,72 @@ curl -s -H 'Content-Type: application/json' \
   http://localhost:5500/terrain/dem
 ```
 
+**From the command line** (any machine with `terrain-s2` installed, standard library only for this part;
+`TERRAIN_API_URL` or `--url` names the instance):
+
+```bash
+terrain api dem --aoi my_aoi.geojson --resolution 1 [--backend geofabrics] [--rivers] [--param buffer_m=200]
+terrain api task <task id>        # status, product id, or the traceback
+terrain api product <product id>  # the registry row
+```
+
+`terrain api dem` sends the AOI as WKT in EPSG:4326 (from a vector file, WKT or GeoJSON) with only the options
+given, so the deployment's settings fill the rest. It waits for the task and prints the product's registry row;
+`--no-wait` prints the task id instead. `terrain dem` takes the same options but runs Stage 1 here, with the
+library alone and no EDDIE.
+
 Inside EDDIE, FReDT and Smart Ideas don't use HTTP: they call `terrain_s2.client.compat.get_dem_by_geometry`,
 which sends the same task and reads the registry. Under v5 the same request is also the OGC process `terrain.dem`.
 
+### 4c. W5 on PostGIS: the compatibility shim
+
+```bash
+bash $S shim 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w5_shim.txt
+```
+
+This makes FReDT's calls from the core worker, where FReDT's tasks run:
+
+- `dem_signature(wkt)` on the terrain queue (as `process_dem.si(wkt)` in its chain);
+- `get_dem_by_geometry` with FReDT's catchment (the bounding rectangle in EPSG:2193);
+- `get_dem_band_and_resolution_by_geometry`.
+
+**Expected:** the product id; the netCDF path for both DEM paths; resolution 8; then a Dataset with `z`, the
+compound CRS, the grid's bounds and the description ending in 8.
+
+The other W5 exits are already met live: an identical request is a cache hit, and a changed resolution or backend
+makes a new product (products 1 to 5). A changed land source is tested in the sandbox.
+
 ## 5. GeoFabrics backend (W4), and the otCatalog date check
+
+**W7 comparison** (the four example AOIs, each as raster, GeoFabrics and GeoFabrics with rivers, all
+`product=dem`, then `terrain compare` for GeoFabrics minus raster and rivers minus GeoFabrics):
+
+```bash
+bash $S w7 1 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w7_1m.txt            # all four AOIs at 1 m
+bash $S w7 8 aoi_whirinaki_sh12 2>&1 | tee /mnt/d/EDDIE/eddie_step8_w7_8m_sh12.txt   # one AOI at 8 m
+```
+
+The results go to `D:\EDDIE\w7_<res>m_<time>\`:
+
+- `summary.csv`: product, time, gaps, data-source counts and river runs, one row per AOI and configuration;
+- `compare.csv`: B − A statistics;
+- the `terrain compare` reports (`.md` and `.json`);
+- each product's provenance and record;
+- the `rivers/` folders, as `.tgz`.
+
+A failed run is recorded and the script carries on. The 1 m results of 15 Oct 2026 are in
+`docs/stage1_rivers.md` section 4d.
+
+**W6 regression harness** (any two registry products on the same grid; B − A, by `data_source` of each, the
+`data_source` changes and the instruction differences):
+
+```bash
+bash $S compare 14 15 2>&1 | tee /mnt/d/EDDIE/eddie_step8_compare_14_15.txt   # SH12: geofabrics vs + rivers
+```
+
+The report is saved as `D:\EDDIE\compare_<a>_<b>.md` and `.json`.
+
+River and waterway bed estimation (`rivers=true`, `waterways=true`) are in `docs/stage1_rivers.md`.
 
 ```bash
 bash $S e2e geofabrics 8           2>&1 | tee /mnt/d/EDDIE/eddie_step8_e2e_gf8.txt     # DEM + roughness (auto)

@@ -1,0 +1,24 @@
+{
+ "_comment": "GeoFabrics 1.1.30 RiverBathymetryGenerator for one main channel, merged over the product's 'default' block (without its DEM outputs, extents and land) and run as its own runner call by terrain_s2.stage1.rivers. Parameters from GeoFabrics' Waikanae tests, scaled down for smaller channels; profile rivers.parameters overrides any of them. Width, bank and corridor settings are channel-specific: W7 tunes them.",
+ "output": {"grid_params": {"resolution": 1}},
+ "general": {"lidar_classifications_to_keep": [2, 9], "interpolation": {"no_data": "null"}},
+ "data_paths": {"subfolder": "{subfolder}"},
+ "rivers": {
+  "veg_lidar_classifications_to_keep": [2, 3, 4, 5, 9],
+  "river_corridor_width": 150,
+  "max_channel_width": 60,
+  "min_channel_width": 5,
+  "max_bank_height": 2,
+  "min_bank_height": 0.5,
+  "cross_section_spacing": 10,
+  "width_centre_smoothing": 10,
+  "network_alignment_tolerance": 40,
+  "area_threshold": "{area_threshold}",
+  "network_id": "{network_id}",
+  "network_file": "{network_file}",
+  "network_columns": {"id": "id", "to_node": "to_node", "from_node": "from_node", "flow": "flow",
+                      "mannings_n": "mannings_n", "area": "area"},
+  "estimate_fan": false,
+  "osm": "{osm}"
+ }
+}

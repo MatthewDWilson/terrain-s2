@@ -29,3 +29,26 @@ geofabrics:
   exclude: []
   # Restrict discovery to OpenTopography-hosted point clouds (those geoapis can fetch from pc-bulk).
   hosted_only: true
+# GeoFabrics river bed estimation (TERRAIN_GF_RIVERS / request "rivers": true; stage1/rivers.py). REC2 has no
+# flows per reach, so the network is NIWA's "NZ Flood Statistics (Henderson Collins) on REC1" (Matt, 14 Oct
+# 2026; layer Flood_Statistics_2018_REC1, probed with the step script's 'rec1' mode). It has no node fields: the
+# topology is built from the reach geometry. Flow: the mean annual flood (bank-full proxy).
+rivers:
+  network:
+    source: {kind: arcgis, url: 548b3bfcff8f4728b0f64caf6f815233}   # ArcGIS Online item; or {kind: file, path: ...}
+    columns: {id: NZREACH, area: Areakm2, flow: H_C18_MAF, from_node: null, to_node: null, mannings_n: null}
+    area_units: km2
+    mannings_n: 0.035        # used while columns.mannings_n is null (GeoFabrics' Waikanae reaches: 0.03-0.04)
+    margin_m: 1000           # network fetched for the grid plus this margin; reaches clipped to it
+    node_tolerance_m: 1      # reach ends this close share a node (topology from geometry)
+  area_threshold_m2: 10000000   # main channels: upstream area at least 10 km2
+  max_rivers: 5
+  z_label: bed_elevation_Rupp_and_Smart   # or bed_elevation_Neal_et_al (both written by GeoFabrics)
+  parameters: {}           # overrides for templates/rivers.json "rivers" keys (widths, bank heights, corridor)
+  burn_chunk_m: 50         # hydrologic-stage chunk when burning rivers/waterways (GeoFabrics evaluates whole chunks)
+  interpolation: null      # river burn interpolation; null: GeoFabrics' default (rbf); idw is far faster
+  osm: {}                  # {<network_id>: {type: way, id: <OSM id>}} to align a river to that OSM waterway
+waterways:
+  parameters: {}           # overrides for templates/waterways.json "waterways" keys
+osm:
+  overpass_url: null       # another Overpass instance when overpass-api.de is down (or TERRAIN_OVERPASS_URL)

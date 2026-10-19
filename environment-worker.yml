@@ -38,7 +38,9 @@ dependencies:
   - ujson
   - python-dateutil
   # Stage 2 [detect]
-  - numpy>=2.0
+  # <2.4: GeoFabrics 1.1.30's RBF river interpolation assigns a 1-element array to an array element
+  # (dem.calculate_rbf), which NumPy 2.4 turned from a deprecation into an error (14 Oct 2026). Its CI pins 2.1.
+  - numpy>=2.0,<2.4
   - affine
   - numba>=0.60
   - pyflwdir>=0.5.10

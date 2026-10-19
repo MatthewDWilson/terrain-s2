@@ -80,6 +80,7 @@ def get_dem_band_and_resolution_by_geometry(conn, geometry, band: int = 1):
     disagrees with its grid."""
     import rioxarray as rxr
     nc, _, _, _ = get_dem_by_geometry(conn, geometry)
+    _require_netcdf_driver()
     with rxr.open_rasterio(Path(nc)) as f:
         dem = f.sel(band=band)
         res = {abs(r) for r in dem.rio.resolution()}
@@ -96,3 +97,17 @@ def dem_signature(wkt: str, **overrides):
     ``overrides`` are settings fields (e.g. ``resolution=4``) sent as the task's parameters."""
     from celery import signature
     return signature(TASK, args=(wkt, {k: v for k, v in overrides.items()}), queue=QUEUE, immutable=True)
+
+
+def _require_netcdf_driver():
+    """``rioxarray.open_rasterio`` reads the netCDF through GDAL. conda-forge has shipped GDAL's netCDF driver as a
+    separate package (``libgdal-netcdf``) since GDAL 3.9, so an environment with only ``rasterio`` can't open
+    the products (FReDT's read path, as with NewZeaLiDAR). Say so, rather than GDAL's "could have been
+    recognized by driver HDF5"."""
+    import rasterio
+    with rasterio.Env() as env:
+        have = "netCDF" in env.drivers()
+    if not have:
+        raise RuntimeError("GDAL in this environment has no netCDF driver, so terrain products (netCDF) can't be "
+                           "opened with rioxarray.open_rasterio. Install conda-forge's libgdal-netcdf (GDAL >= 3.9 "
+                           "ships it separately).")

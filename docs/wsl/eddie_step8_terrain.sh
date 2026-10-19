@@ -8,8 +8,23 @@
 #   build             update the WSL mirror of terrain-s2 from GitHub (fast-forward only), refresh the version in
 #                     .env, then build all images (log to /mnt/d/EDDIE). Git work itself stays in the Windows clone.
 #   check             after 'docker compose up -d': containers, endpoints, terrain routes, worker toolchain, mounts
-#   e2e [raster|geofabrics] [resolution] [auto|dem|geofabric]
-#                     POST /terrain/dem for the SH12 AOI, follow the task, inspect the product, repeat (cache hit)
+#   e2e [raster|geofabrics] [resolution] [auto|dem|geofabric] [aoi=<WKT file>] [<param>=<value> ...]
+#                     POST /terrain/dem (default AOI SH12), follow the task, inspect the product, repeat (cache
+#                     hit). Extra parameters go into the request, e.g. rivers=true waterways=true
+#   edge              W3 survey-edge check: an AOI across a LINZ survey boundary, from the partition
+#                     (D:\eddie_data\partition\nz_tiles.gpkg), then 'e2e raster 1' on it
+#   rec1              probe the REC1 river network (ArcGIS item in the Stage 1 profile): fields and SH12 sample
+#   w7 [res] [site ...]
+#                     W7 comparison: the four example AOIs (or those named) x raster | geofabrics | geofabrics with
+#                     rivers, all product=dem; then 'terrain compare' geofabrics-raster and rivers-geofabrics;
+#                     summary.csv, compare.csv and the reports in D:\EDDIE\w7_<res>m_<time>\
+#   compare <a> <b>   W6 harness: 'terrain compare' of two registry products (B - A; by data_source of A and B,
+#                     data_source changes, instruction differences); report to D:\EDDIE\compare_<a>_<b>.md/.json
+#   timeline <id>     GeoFabrics stage timings for a product, from its log files (where the time went)
+#   read <WKT file>   diagnose the elevation reader for an AOI: surveys planned, and per tile its grid, nodata
+#                     and the valid fraction of the window read (no product written)
+#   shim              W5: FReDT's calls through the compatibility shim, from the core worker
+#   branch [name]     show or set the terrain-s2 branch the WSL mirror follows (default main)
 #   task <task id>    status of a terrain task; on failure the end of its traceback (full text to /mnt/d/EDDIE)
 #   products          the terrain_product registry (PostGIS): rows, backend, extents, and each product folder as
 #                     a Windows path; the cache contents
@@ -40,7 +55,9 @@ SECRETS="$HOME/eddie/secrets.env"
 PROJECT=eddie-terrain
 P_WWW=3501; P_API=5500; P_GS=8580; P_DB=5445   # slot 5, all bound to 127.0.0.1
 TS2_URL="https://github.com/MatthewDWilson/terrain-s2.git"
-TS2_BRANCH="stage1/w1-w9"
+# The branch the WSL mirror follows: main, unless .env sets TERRAIN_S2_BRANCH ('branch <name>' mode)
+TS2_BRANCH="$(grep -s '^TERRAIN_S2_BRANCH=' "$INST/.env" | tail -1 | cut -d= -f2)"
+TS2_BRANCH="${TS2_BRANCH:-main}"
 CORE_URL="https://github.com/GeospatialResearch/Digital-Twins.git"
 CORE_V5=5cb38806535bde7fbdeda4dc019091a87d4cfdfe    # v5-integration (8 Oct 2026), the module's target
 CORE_V4=9c538811b81353601a34311511ddbc0e9bde4e2c    # v4.0.0, FReDT's pin
@@ -132,8 +149,10 @@ setup() {
     grep -q -- '- python=3.13' "$INST/.local/environment.yml" || { note "!! python pin not applied - core environment.yml changed"; exit 1; }
     grep -q -- '- redis-py==5.0.3' "$INST/.local/environment.yml" || { note "!! redis fix not applied - core environment.yml changed"; exit 1; }
     # terrain-s2 base install (light): what eddie_terrain needs in the backend to validate requests
-    sed -i -E 's/^(\s*)- pip\s*$/\1- xarray\n\1- rioxarray\n\1- netcdf4\n\1- pyyaml\n&/' "$INST/.local/environment.yml"
-    grep -q -- '- rioxarray' "$INST/.local/environment.yml" && note "environment: python 3.13, redis-py, + xarray rioxarray netcdf4 pyyaml"
+    # libgdal-netcdf: conda-forge ships GDAL's netCDF driver separately (GDAL >= 3.9); without it rioxarray can't
+    # open the products through GDAL (FReDT's read path; W5 shim, 14 Oct 2026)
+    sed -i -E 's/^(\s*)- pip\s*$/\1- xarray\n\1- rioxarray\n\1- netcdf4\n\1- libgdal-netcdf\n\1- pyyaml\n&/' "$INST/.local/environment.yml"
+    grep -q -- '- libgdal-netcdf' "$INST/.local/environment.yml" && note "environment: python 3.13, redis-py, + xarray rioxarray netcdf4 libgdal-netcdf pyyaml"
     cat > "$INST/.local/core.Dockerfile" <<'EOF'
 # .local/core.Dockerfile - core harness for the terrain slot (local only, not committed).
 # Step 5's vanilla-core harness (see eddie_step5_core.sh for the five documented differences from core's own
@@ -368,8 +387,18 @@ EOF
 
 # ------------------------------------------------------------------------------------------------ build
 sync_mirror() {  # the WSL clone mirrors GitHub; git work (commits, git am, push) happens in the Windows clone
-    git -C "$TS2" fetch --quiet origin || { note "!! git fetch failed in $TS2"; exit 1; }
-    local behind ahead
+    git -C "$TS2" fetch --quiet --prune origin || { note "!! git fetch failed in $TS2"; exit 1; }
+    git -C "$TS2" rev-parse --verify --quiet "origin/$TS2_BRANCH" >/dev/null \
+        || { note "!! no branch $TS2_BRANCH on GitHub (pushed from Windows?)"; exit 1; }
+    local behind ahead cur
+    cur=$(git -C "$TS2" rev-parse --abbrev-ref HEAD)
+    if [ "$cur" != "$TS2_BRANCH" ]; then
+        [ -z "$(git -C "$TS2" status --porcelain)" ] || { note "!! $TS2 has local changes; not switching branch"; exit 1; }
+        git -C "$TS2" switch --quiet "$TS2_BRANCH" 2>/dev/null \
+            || git -C "$TS2" switch --quiet -c "$TS2_BRANCH" --track "origin/$TS2_BRANCH" \
+            || { note "!! could not switch $TS2 to $TS2_BRANCH"; exit 1; }
+        note "mirror switched: $cur -> $TS2_BRANCH"
+    fi
     behind=$(git -C "$TS2" rev-list --count HEAD.."origin/$TS2_BRANCH" 2>/dev/null || echo 0)
     ahead=$(git -C "$TS2" rev-list --count "origin/$TS2_BRANCH"..HEAD 2>/dev/null || echo 0)
     if [ "$ahead" != 0 ] || [ -n "$(git -C "$TS2" status --porcelain)" ]; then
@@ -430,6 +459,12 @@ PY
         echo "  OSM Overpass (roughness roads): $(curl -s -o /dev/null -w "%{http_code}" --max-time 20 http://overpass-api.de/api/status) (expect 200)"
         echo "  registry: $(python -c "from eddie_terrain.tables import get_store; s = get_store(); print(\"terrain_product ready on\", s.engine.url.render_as_string(hide_password=True))" 2>&1 | grep -v "|" | tail -1)"
         echo "  ping: $(celery -A eddie.tasks inspect ping -d terrain@$HOSTNAME 2>&1 | grep -c pong) pong"
+        echo "  PROJ: PROJ_DATA=${PROJ_DATA:-unset} PROJ_LIB=${PROJ_LIB:-unset}; $(ls /venv/share/proj/proj.db 2>&1)"
+        for t in "import pyproj; pyproj.CRS(2193); print(\"pyproj\", pyproj.datadir.get_data_dir())" \
+                 "import rasterio.crs; rasterio.crs.CRS.from_epsg(2193); print(\"rasterio\")" \
+                 "import pyogrio, geopandas as g; g.GeoSeries.from_xy([1.6e6], [5e6], crs=2193).to_crs(4326).to_file(\"/tmp/p.gpkg\"); g.read_file(\"/tmp/p.gpkg\"); print(\"pyogrio\")"; do
+            echo "    $(python -c "$t" 2>&1 | tr "\n" " " | cut -c1-200)"
+        done
         celery -A eddie.tasks inspect registered -d terrain@$HOSTNAME 2>/dev/null | grep -o "eddie_terrain[a-z_.]*" | sed "s/^/  task: /"
         echo "  queues: $(celery -A eddie.tasks inspect active_queues -d terrain@$HOSTNAME 2>/dev/null | grep -oE "name.: .[a-z_]+" | sort -u | tr "\n" " ")"
     ' 2>&1
@@ -467,12 +502,21 @@ PY' 2>&1 | tail -8 | sed 's/^/  /'
 # ------------------------------------------------------------------------------------------------ e2e
 e2e() {
     local backend="${1:-raster}" res="${2:-8}" product="${3:-auto}"
+    shift $(( $# < 3 ? $# : 3 ))
+    local aoi="$SH12_WKT" label="SH12" extra='{}' kv k v
+    for kv in "$@"; do                       # aoi=<WKT file>, otherwise <param>=<JSON value or text>
+        k="${kv%%=*}"; v="${kv#*=}"
+        if [ "$k" = aoi ]; then aoi="$(tr -d '\r' < "$v")"; label="$(basename "$v" .wkt)"; continue; fi
+        if echo "$v" | jq -e . >/dev/null 2>&1; then extra=$(jq -c --arg k "$k" --argjson v "$v" '. + {($k): $v}' <<<"$extra")
+        else extra=$(jq -c --arg k "$k" --arg v "$v" '. + {($k): $v}' <<<"$extra"); fi
+    done
     cd "$INST" || exit 1
-    local stamp out api="http://localhost:${P_API}"
-    stamp="$(date +%Y%m%d_%H%M)"; out="/mnt/d/EDDIE/terrain_e2e_${backend}_${res}m_${stamp}"; mkdir -p "$out"
-    local body; body=$(jq -nc --arg aoi "$SH12_WKT" --arg b "$backend" --argjson r "$res" --arg p "$product" \
-        '{aoi: $aoi, params: {backend: $b, resolution: $r, product: $p}}')
-    say "Request: SH12, backend=$backend, resolution=${res} m, product=$product"
+    local stamp out api="http://localhost:${P_API}" tag
+    tag="$(jq -r 'to_entries | map("_" + .key) | join("")' <<<"$extra")"
+    stamp="$(date +%Y%m%d_%H%M)"; out="/mnt/d/EDDIE/terrain_e2e_${backend}_${res}m${tag}_${stamp}"; mkdir -p "$out"
+    local body; body=$(jq -nc --arg aoi "$aoi" --arg b "$backend" --argjson r "$res" --arg p "$product" \
+        --argjson x "$extra" '{aoi: $aoi, params: ({backend: $b, resolution: $r, product: $p} + $x)}')
+    say "Request: $label, backend=$backend, resolution=${res} m, product=$product $( [ "$extra" != '{}' ] && echo "$extra")"
     note "results: $out"
     docker compose logs --since 1s -f --no-color terrain_worker > "$out/terrain_worker.log" 2>&1 &
     local logpid=$!
@@ -572,6 +616,328 @@ export_product() {
     ls -la "$dst" | sed 's/^/  /'
 }
 
+# ------------------------------------------------------------------------------------------------ branch
+branch() {
+    local b="${1:-}"
+    [ -n "$b" ] || { note "mirror follows: $TS2_BRANCH (usage: branch <name>, e.g. main or stage1/rivers)"; return; }
+    set_env TERRAIN_S2_BRANCH "$b"
+    note "mirror will follow $b from the next 'build'"
+}
+
+# ------------------------------------------------------------------------------------------------ edge (W3)
+edge() {
+    # An AOI across a LINZ survey boundary: two neighbouring 1:10k tiles of the partition whose latest surveys
+    # differ, and a 1.2 x 0.8 km box centred on their shared edge. The raster backend should read both surveys
+    # with no gap and record both (provenance inputs, lidar_source).
+    local gpkg="${1:-/mnt/d/eddie_data/partition/nz_tiles.gpkg}" wkt=/mnt/d/EDDIE/w3_edge_aoi.wkt
+    cd "$INST" || exit 1
+    [ -f "$gpkg" ] || { note "!! no partition at $gpkg (give its path: edge <path to nz_tiles.gpkg>)"; exit 1; }
+    mkdir -p "$DATA/cache/_w3" && cp -f "$gpkg" "$DATA/cache/_w3/nz_tiles.gpkg"
+    say "Survey-edge AOI from $(basename "$gpkg")"
+    docker compose exec -T terrain_worker python - <<'PY' | tee /tmp/w3_edge.txt | sed 's/^/  /'
+import geopandas as gpd
+from shapely.geometry import box
+t = gpd.read_file("/terrain_data/_w3/nz_tiles.gpkg", layer="tiles")
+t = t[t["latest_survey"].notna()].reset_index(drop=True)
+sj = gpd.sjoin(t[["tile_id", "latest_survey", "geometry"]], t[["tile_id", "latest_survey", "geometry"]],
+               predicate="touches")
+sj = sj[(sj["latest_survey_left"] != sj["latest_survey_right"]) & (sj["tile_id_left"] < sj["tile_id_right"])]
+# A real edge: each tile's latest survey does not cover the other tile, so newest-first must switch survey
+# across the boundary (14 Oct: a pair whose newer survey covered both read one survey only).
+cov = {r.tile_id: set(str(r.surveys).split(",")) for r in t.itertuples()}
+strict = sj[[a not in cov[y] and b not in cov[x] for x, y, a, b in
+             zip(sj.tile_id_left, sj.tile_id_right, sj.latest_survey_left, sj.latest_survey_right)]]
+sj = strict if len(strict) else sj
+if sj.empty:
+    raise SystemExit("no neighbouring tiles with different latest surveys")
+a = t.set_index("tile_id")
+# Candidates spread through the list; each is read (window reads, no mirroring) and kept only if the AOI is
+# fully covered and at least two surveys (not the national mosaic) were read: a tile listed for a survey may
+# be partly empty (14 Oct: BN34_10000_0102 | 0202 had no LiDAR at the shared edge, not even in the mosaic).
+import numpy as np
+from terrain_s2.acquire.elevation import ElevationSource
+from terrain_s2.settings import from_env
+from terrain_s2.stage1 import aoi as A
+from terrain_s2.stage1.profile import load
+s = from_env()
+src = ElevationSource(load(s.profile), cache_dir=s.data_dir / "stac", mirror=False)
+sj = sj.sort_values(["tile_id_left", "tile_id_right"]).reset_index(drop=True)
+order = [int(k * len(sj) / 15) for k in range(15)] if len(sj) > 15 else range(len(sj))
+found = None
+for k in order:
+    r = sj.iloc[k]
+    edge = a.loc[r.tile_id_left].geometry.intersection(a.loc[r.tile_id_right].geometry)
+    if edge.length == 0:                                                          # corner contact
+        continue
+    c = edge.interpolate(0.5, normalized=True)
+    x0, y0, x1, y1 = edge.bounds
+    hx, hy = (600, 400) if (y1 - y0) > (x1 - x0) else (400, 600)                 # long side across the edge
+    g = box(c.x - hx, c.y - hy, c.x + hx, c.y + hy)
+    try:
+        rd = src.read(src.plan(A.grid_bounds(g, s.buffer_m, 1), "dem"))
+    except Exception as e:  # noqa: BLE001
+        print(f"  skip {r.tile_id_left}|{r.tile_id_right}: {e}")
+        continue
+    used = [x.slug for x in rd.used if not x.national]
+    ok = np.isfinite(rd.z).mean()
+    print(f"  {r.tile_id_left} ({r.latest_survey_left}) | {r.tile_id_right} ({r.latest_survey_right}): "
+          f"valid {ok:.1%}, surveys read {used}")
+    if ok >= 0.99 and len(used) >= 2:
+        found = (r, g)
+        break
+if found is None:
+    raise SystemExit("no candidate with full coverage from two surveys; widen the search")
+r, g = found
+aoi = gpd.GeoSeries([g], crs=2193).to_crs(4326).iloc[0]
+print(f"tiles {r.tile_id_left} ({r.latest_survey_left}) | {r.tile_id_right} ({r.latest_survey_right}); "
+      f"{len(strict)} pairs where neither latest survey covers the other tile")
+print("WKT " + aoi.wkt)
+PY
+    grep '^WKT ' /tmp/w3_edge.txt | sed 's/^WKT //' > "$wkt"
+    [ -s "$wkt" ] || { note "!! no AOI found"; exit 1; }
+    note "AOI saved: D:\\EDDIE\\w3_edge_aoi.wkt"
+    e2e raster 1 dem "aoi=$wkt"
+    say "W3 exit: both surveys recorded, no gaps"
+    local prov; prov=$(ls -t /mnt/d/EDDIE/terrain_e2e_raster_1m_*/*.provenance.json 2>/dev/null | head -1)
+    [ -n "$prov" ] && jq -r '"  inputs: \([.inputs[] | (.survey // .name)] | unique | join(", "))",
+        "  gap fraction: \(.gap_fraction)", "  checksums: \([.inputs[].items[]? | select(.checksum != null)] | length) of \([.inputs[].items[]?] | length) items"' "$prov"
+}
+
+# ------------------------------------------------------------------------------------------------ w7
+w7_request() {  # w7_request <wkt> <params json> <file prefix>: product id on stdout, progress on stderr
+    local api="http://localhost:${P_API}" t0 resp tid st status last=0
+    t0=$(date +%s)
+    resp=$(curl -s --max-time 60 -H 'Content-Type: application/json' \
+        -d "$(jq -nc --arg a "$1" --argjson p "$2" '{aoi: $a, params: $p}')" "$api/terrain/dem")
+    tid=$(jq -r '.taskId // empty' <<<"$resp" 2>/dev/null)
+    [ -n "$tid" ] || { echo "    !! POST failed: ${resp:-no response}" >&2; echo "$resp" > "$3.error.txt"; return 1; }
+    while :; do
+        st=$(curl -s --max-time 60 "$api/terrain/tasks/$tid"); status=$(jq -r .status <<<"$st" 2>/dev/null)
+        case "$status" in
+            SUCCESS) echo "    product $(jq -r .result <<<"$st") in $(( $(date +%s) - t0 )) s" >&2
+                     jq -r .result <<<"$st"; return 0 ;;
+            FAILURE) task_error "$st" "$3.error.txt" >&2; return 1 ;;
+        esac
+        if [ $(( $(date +%s) - t0 )) -gt $(( 6 * 3600 )) ]; then echo "    !! still $status after 6 h" >&2; return 1; fi
+        if [ $(( $(date +%s) - last )) -ge 60 ]; then last=$(date +%s); echo "    $(( last - t0 ))s $status" >&2; fi
+        sleep 10
+    done
+}
+
+w7() {
+    local res="${1:-1}"; shift || true
+    local sites=("$@")
+    [ ${#sites[@]} -gt 0 ] || sites=(aoi_whirinaki_sh12 aoi2_whirinaki_upperfloodplain aoi_canterbury1 aoi_canterbury2)
+    cd "$INST" || exit 1
+    local stamp out wdir
+    stamp="$(date +%Y%m%d_%H%M)"; out="/mnt/d/EDDIE/w7_${res}m_${stamp}"; wdir="/terrain_products/_w7/${stamp}"
+    mkdir -p "$out" "$DATA/cache/_w7" "$DATA/products/_w7/${stamp}"
+    cp -f "$TS2"/examples/*.geojson "$DATA/cache/_w7/"
+    local cfgs=("raster|{\"backend\":\"raster\",\"product\":\"dem\"}"
+                "gf|{\"backend\":\"geofabrics\",\"product\":\"dem\"}"
+                "gf_rivers|{\"backend\":\"geofabrics\",\"product\":\"dem\",\"rivers\":true}")
+    say "W7: ${#sites[@]} AOI(s) x raster | gf | gf_rivers at ${res} m -> $out"
+    echo "site,config,product_id,seconds,generator_key,gap_fraction,data_source_counts,rivers" > "$out/summary.csv"
+    echo "site,b_minus_a,n,median,p5,p95,mean,max_abs,share_abs_gt_0.2,report" > "$out/compare.csv"
+    local site c name params id t0 prov pj
+    for site in "${sites[@]}"; do
+        [ -f "$DATA/cache/_w7/$site.geojson" ] || { note "!! no examples/$site.geojson"; continue; }
+        local wkt; wkt=$(docker compose exec -T terrain_worker python -c \
+            "from terrain_s2.client.api import aoi_wkt; print(aoi_wkt('/terrain_data/_w7/$site.geojson'))" 2>/dev/null | tail -1)
+        declare -A nc=()
+        for c in "${cfgs[@]}"; do
+            name=${c%%|*}; params=$(jq -c --argjson r "$res" '. + {resolution: $r}' <<<"${c#*|}")
+            say "$site / $name $params"
+            t0=$(date +%s)
+            if id=$(w7_request "$wkt" "$params" "$out/${site}_${name}"); then
+                curl -s "http://localhost:${P_API}/terrain/products/$id" > "$out/${site}_${name}.product.json"
+                nc[$name]=$(jq -r .paths.netcdf "$out/${site}_${name}.product.json")
+                prov="$(jq -r .paths.provenance "$out/${site}_${name}.product.json")"
+                pj="${prov/#\/terrain_products/$DATA/products}"
+                cp -f "$pj" "$out/${site}_${name}.provenance.json" 2>/dev/null
+                if [ -n "${nc[$name]:-}" ] && [ -d "$(dirname "${nc[$name]/#\/terrain_products/$DATA/products}")/rivers" ]; then
+                    tar -C "$(dirname "${nc[$name]/#\/terrain_products/$DATA/products}")" -czf "$out/${site}_${name}_rivers.tgz" rivers 2>/dev/null
+                fi
+                jq -r --arg s "$site" --arg c "$name" --arg id "$id" --arg t "$(( $(date +%s) - t0 ))" \
+                    '[$s, $c, $id, $t, .generator_key, .gap_fraction, (.data_source_counts | tojson | gsub(","; ";")),
+                      ((.rivers.runs // []) | map("\(.network_id):\(if .ok then "ok" else "failed" end)") | join(" "))] | @csv' \
+                    "$out/${site}_${name}.provenance.json" >> "$out/summary.csv" 2>/dev/null
+            else
+                echo "\"$site\",\"$name\",,$(( $(date +%s) - t0 )),failed,,," >> "$out/summary.csv"
+            fi
+        done
+        local a b
+        for pair in "raster gf" "gf gf_rivers"; do
+            a=${pair% *}; b=${pair#* }
+            [ -n "${nc[$a]:-}" ] && [ -n "${nc[$b]:-}" ] || continue
+            local rpt="$wdir/${site}_${b}_minus_${a}.md"
+            docker compose exec -T terrain_worker terrain compare "${nc[$a]}" "${nc[$b]}" --out "$rpt" >/dev/null 2>&1 \
+                || { note "!! compare $site $b - $a failed"; continue; }
+            cp -f "$DATA/products/_w7/${stamp}/${site}_${b}_minus_${a}".{md,json} "$out/" 2>/dev/null
+            jq -r --arg s "$site" --arg p "${b}-${a}" --arg r "${site}_${b}_minus_${a}.md" \
+                '[$s, $p, .z_diff.n, .z_diff.median, .z_diff.p5, .z_diff.p95, .z_diff.mean, .z_diff.max_abs,
+                  .z_diff["share_abs_gt_0.2"], $r] | @csv' "$out/${site}_${b}_minus_${a}.json" >> "$out/compare.csv"
+        done
+        unset nc
+    done
+    say "Summary"; column -s, -t < "$out/summary.csv" | sed 's/^/  /'
+    say "Differences (B - A, m)"; column -s, -t < "$out/compare.csv" | cut -c1-160 | sed 's/^/  /'
+    note "all outputs: D:\\EDDIE\\$(basename "$out")"
+}
+
+# ------------------------------------------------------------------------------------------------ compare (W6)
+compare_products() {
+    local a="${1:-}" b="${2:-}"
+    [ -n "$a" ] && [ -n "$b" ] || { note "usage: compare <product id A> <product id B>   (reports B - A)"; exit 2; }
+    cd "$INST" || exit 1
+    local na nb
+    na=$(docker compose exec -T db_postgres psql -U postgres -d db -At -c \
+        "select paths->>'netcdf' from terrain_product where id = $((a))" 2>/dev/null)
+    nb=$(docker compose exec -T db_postgres psql -U postgres -d db -At -c \
+        "select paths->>'netcdf' from terrain_product where id = $((b))" 2>/dev/null)
+    [ -n "$na" ] || { note "!! no product $a"; exit 1; }
+    [ -n "$nb" ] || { note "!! no product $b"; exit 1; }
+    local tmp="/terrain_data/compare_${a}_${b}"
+    say "terrain compare: B = product $b minus A = product $a"
+    docker compose exec -T terrain_worker terrain compare "$na" "$nb" --out "$tmp.md" >/dev/null \
+        || { note "!! compare failed"; exit 1; }
+    for ext in md json; do
+        cp "$DATA/cache/compare_${a}_${b}.$ext" "/mnt/d/EDDIE/compare_${a}_${b}.$ext" 2>/dev/null
+    done
+    sed 's/^/  /' "/mnt/d/EDDIE/compare_${a}_${b}.md"
+    note "saved: D:\\EDDIE\\compare_${a}_${b}.md (and .json)"
+}
+
+# ------------------------------------------------------------------------------------------------ timeline
+timeline() {
+    local id="${1:-}"; [ -n "$id" ] || { note "usage: timeline <product id>"; exit 2; }
+    cd "$INST" || exit 1
+    local nc; nc=$(docker compose exec -T db_postgres psql -U postgres -d db -At -c \
+        "select paths->>'netcdf' from terrain_product where id = $((id))" 2>/dev/null)
+    [ -n "$nc" ] || { note "!! no product $id"; exit 1; }
+    local dir; dir="$(dirname "${nc/#\/terrain_products/$DATA/products}")"
+    local out="/mnt/d/EDDIE/timeline_${id}.txt"
+    say "GeoFabrics timeline, product $id ($dir)"
+    find "$dir" -name 'geofabrics_*.log' | sort | sed 's/^/  log: /'
+    find "$dir" -name 'geofabrics_*.log' -print0 | xargs -0 grep -h -E \
+        "Run [A-Za-z]+ at|Execution time is|Total execution time|Incorporating|Save temp DEM|Generating (ground|vegetation) DEM|Estimating|haracteris|Align|roughness|Preparing \[|Running over dataset|Dask client" 2>/dev/null \
+        | grep -v "celery.redirected" | sort | sed -E 's/ - (INFO|DEBUG|WARNING) - geofabrics\./ /' | cut -c1-200 | tee "$out" | sed 's/^/  /'
+    note "saved: D:\\EDDIE\\timeline_${id}.txt"
+}
+
+# ------------------------------------------------------------------------------------------------ read
+read_diag() {
+    local f="${1:-/mnt/d/EDDIE/w3_edge_aoi.wkt}"
+    [ -f "$f" ] || { note "usage: read <file with a WKT polygon in EPSG:4326>"; exit 2; }
+    cd "$INST" || exit 1
+    say "Elevation reader for $(basename "$f") (1 m, as the raster backend reads it)"
+    docker compose exec -T -e AOI_WKT="$(tr -d '\r' < "$f")" terrain_worker python - <<'PY' 2>&1 | sed 's/^/  /' | tee /mnt/d/EDDIE/read_diag.txt
+import os, warnings
+import numpy as np, rasterio
+from shapely.geometry import box
+from terrain_s2.settings import from_env
+from terrain_s2.stage1 import aoi as A
+from terrain_s2.stage1.profile import load
+from terrain_s2.stage1.source import get_source
+from terrain_s2.acquire.elevation import _read_item
+warnings.simplefilter("always")
+s = from_env()
+p = load(s.profile)
+g = A.to_working(os.environ["AOI_WKT"], "EPSG:2193", "EPSG:4326")
+b = A.grid_bounds(box(*g.bounds), s.buffer_m, 1)
+src = get_source(p, cache_dir=s.data_dir / "stac")
+print("reader:", type(src).__module__, "| grid bounds:", b)
+plan = src.plan(b, "dem")
+nd = p["elevation"].get("nodata")
+for sv in plan.surveys:
+    print(f"survey {sv.index} {sv.slug} capture {sv.capture} national {sv.national}: {len(sv.items)} tile(s)")
+    for it in sv.items:
+        path = src.local(it, sv)
+        with rasterio.open(path) as r:
+            t = r.transform
+            print(f"   {it.id}: bounds {tuple(round(v, 2) for v in r.bounds)} res {r.res} crs {r.crs.to_epsg()} "
+                  f"nodata {r.nodata} dtype {r.dtypes[0]} origin frac ({t.c % 1:.3f}, {t.f % 1:.3f})")
+        with warnings.catch_warnings(record=True) as w:
+            d, off = _read_item(path, b, nd)
+        if d is None:
+            print("      window: outside the tile")
+        else:
+            print(f"      window {d.shape} at {off}: valid {np.isfinite(d).mean():.1%}, "
+                  f"range {np.nanmin(d) if np.isfinite(d).any() else None} .. {np.nanmax(d) if np.isfinite(d).any() else None}"
+                  + (f" | {w[0].message}" if w else ""))
+rd = src.read(plan)
+print(f"read: {rd.z.shape}, valid {np.isfinite(rd.z).mean():.1%}, surveys used {[x.slug for x in rd.used]}")
+PY
+    note "saved: D:\\EDDIE\\read_diag.txt"
+}
+
+# ------------------------------------------------------------------------------------------------ rec1
+rec1() {
+    # The river network for GeoFabrics' river stage (Stage 1 profile rivers.network): where it resolves to,
+    # its fields with sample values, and the reaches around SH12 (saved as GeoJSON for QGIS).
+    cd "$INST" || exit 1
+    local out="/mnt/d/EDDIE/rec1_probe_$(date +%Y%m%d)"; mkdir -p "$out"
+    say "REC1 river network probe -> $out"
+    docker compose exec -T terrain_worker python - <<'PY' 2>&1 | tee "$out/probe.txt" | sed 's/^/  /'
+import json
+from terrain_s2.acquire import arcgis
+from terrain_s2.acquire.http import Http
+from terrain_s2.stage1.profile import load
+src = load("nz")["rivers"]["network"]["source"]
+http = Http()
+ref = str(src["url"])
+if arcgis.HUB_ITEM.match(ref):
+    item = http.json(f"https://www.arcgis.com/sharing/rest/content/items/{ref.split('_')[0]}", {"f": "json"})
+    print("item:", item.get("title"), "|", item.get("type"), "|", item.get("url") or "(no service URL)")
+    print("owner:", item.get("owner"), "| modified:", item.get("modified"), "| access:", item.get("access"))
+    if not item.get("url"):
+        raise SystemExit("not a service: download it (item data) and use {kind: file, path: ...} in the profile")
+url = arcgis.resolve_layer(http, ref)
+meta = http.json(url, {"f": "json"})
+print("layer:", url, "|", meta.get("name"), "|", meta.get("geometryType"), "| maxRecordCount", meta.get("maxRecordCount"))
+win = (1_638_000, 6_072_000, 1_646_000, 6_080_000)                         # SH12 +- ~4 km
+g, info = arcgis.query(http, url, win)
+print(f"reaches near SH12: {len(g)}")
+for f in meta.get("fields", []):
+    n = f["name"]
+    vals = g[n].dropna().head(3).tolist() if n in g else []
+    print(f"  {n:<22} {f.get('type', ''):<22} {f.get('alias', ''):<28} {vals}")
+num = g.select_dtypes("number")
+if len(num.columns):
+    print(num.describe().T[["min", "50%", "max"]].to_string())
+g.to_file("/terrain_products/_rec1_sh12.geojson", driver="GeoJSON")
+PY
+    cp -f "$DATA/products/_rec1_sh12.geojson" "$out/" 2>/dev/null && note "sample: $out/_rec1_sh12.geojson"
+}
+
+# ------------------------------------------------------------------------------------------------ shim (W5)
+shim() {
+    # FReDT's side of W5, from the core worker (where FReDT's tasks run): the ensure_dem signature on the terrain
+    # queue, then get_dem_by_geometry and get_dem_band_and_resolution_by_geometry with FReDT's catchment
+    # (wkt_to_gdf's rectangle in EPSG:2193).
+    cd "$INST" || exit 1
+    say "Compatibility shim from the core worker (current TERRAIN_* settings)"
+    docker compose exec -T -e AOI_WKT="$SH12_WKT" celery_worker bash -c 'source /venv/bin/activate && python - <<PY 2>&1 | grep -v "| INFO" | sed "s/^/  /"
+import os, time
+import geopandas as gpd
+from shapely import wkt as W
+from eddie.tasks import app  # noqa: F401  (the Celery app, as in FReDT)
+from eddie.digitaltwin.setup_environment import get_database
+from terrain_s2.client import compat
+g = gpd.GeoDataFrame(geometry=[W.loads(os.environ["AOI_WKT"])], crs=4326).to_crs(2193)
+g = gpd.GeoDataFrame(geometry=[g.envelope.iloc[0]], crs=2193)              # wkt_to_gdf: the bounding rectangle
+t0 = time.time()
+pid = compat.dem_signature(os.environ["AOI_WKT"]).apply_async().get(timeout=1800)
+print(f"ensure_dem via dem_signature -> product {pid} in {time.time() - t0:.1f} s")
+conn = get_database()
+hydro, raw, extent, res = compat.get_dem_by_geometry(conn, g)
+print("get_dem_by_geometry:", hydro, "|", raw, "|", extent, "| resolution", res)
+ds, res2 = compat.get_dem_band_and_resolution_by_geometry(conn, g)
+print("get_dem_band_and_resolution_by_geometry:", type(ds).__name__, dict(ds.sizes), "| resolution", res2)
+print("  crs:", ds.rio.crs, "| bounds:", ds.rio.bounds(), "| description:", ds.attrs.get("description"))
+PY'
+}
+
 # ------------------------------------------------------------------------------------------------ test
 test_suite() {
     cd "$INST" || exit 1
@@ -612,10 +978,18 @@ case "${1:-setup}" in
     bootstrap) bootstrap ;;
     e2e) shift; e2e "$@" ;;
     task) shift; task_status "$@" ;;
+    edge) shift; edge "$@" ;;
+    branch) shift; branch "$@" ;;
+    rec1) rec1 ;;
+    read) shift; read_diag "$@" ;;
+    timeline) shift; timeline "$@" ;;
+    compare) shift; compare_products "$@" ;;
+    w7) shift; w7 "$@" ;;
+    shim) shim ;;
     products) products ;;
     export) shift; export_product "$@" ;;
     test) shift; test_suite "$@" ;;
     otcatalog) otcatalog ;;
     core) shift; core "$@" ;;
-    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
+    *) echo "usage: $0 [setup|build|check|bootstrap|e2e [raster|geofabrics] [res] [auto|dem|geofabric] [aoi=<file>] [k=v ...]|edge|read <wkt file>|timeline <id>|w7 [res] [site ...]|rec1|shim|branch [name]|task <id>|products|export <id>|test|otcatalog|core v4|v5]"; exit 2 ;;
 esac

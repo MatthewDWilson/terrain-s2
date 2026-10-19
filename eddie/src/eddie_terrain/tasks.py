@@ -46,7 +46,7 @@ else:  # a list or tuple of routers: put ours first
 
 # Settings fields a request may set (paths, credentials and the database stay with the deployment).
 REQUEST_FIELDS = ("backend", "resolution", "product", "land_source", "lidar_classes", "buffer_m", "spatial_reuse",
-                  "profile", "allow_fallback")
+                  "profile", "allow_fallback", "rivers", "waterways")
 
 
 def request_settings(params: dict | None):
