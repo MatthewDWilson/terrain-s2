@@ -25,6 +25,17 @@ positive into anything else):
    twice that) is negative; the rest is ignored.
 6. *No data* (no features: off the DEM) is ignored.
 
+Then the corrections (LABEL_VERSION 3, ``corrections``), after the first review (18 Oct):
+
+7. *Cleaning*: a piece (``clean_piece_m``) of a snapped, non-river council line whose out-of-fold probability
+   (``ml_channel_prob.tif`` written with ``held_out``: a model that never trained on the tile) averages at most
+   ``clean_prob`` and which lies on the physics map for at most ``clean_physics_share`` of its length is ignored
+   rather than positive: the review found nothing there for 18 of 20 such pieces (piped, filled, misplaced).
+8. *Review answers* (``reviews``: GeoPackages of reviewed reaches under the data folder, ``exists`` y / n /
+   unsure), overriding the rest: a council piece answered n is ignored, one answered y is positive again; a
+   model-only reach answered y becomes positive (``review_half_width_m``, ``review_positive_weight``), one answered
+   n a hard negative (within ``review_buffer_m``, ``review_negative_weight``); unsure is ignored.
+
 The tile's council comes from the manifest (else the council with most line length in the tile).
 """
 from __future__ import annotations
@@ -35,8 +46,10 @@ from pathlib import Path
 import numpy as np
 
 POS, NEG, IGNORE = 1, 0, 255
-LABEL_VERSION = 2              # 2: river lines positive whether snapped or not; river footprints by width
-DEFAULTS = dict(unsnapped="ignore", flat_depth_m=0.05)
+LABEL_VERSION = 3              # 2: river lines positive whatever the snapping; 3: corrections (review, cleaning)
+DEFAULTS = dict(unsnapped="ignore", flat_depth_m=0.05, clean_prob=0.05, clean_physics_share=0.1, clean_piece_m=50.0,
+                reviews="labels/manual/review_*.gpkg", review_positive_weight=1.0, review_negative_weight=1.0,
+                review_half_width_m=1.0, review_buffer_m=3.0)
 
 
 def council_rules(cfg: dict, council: str) -> dict:
@@ -141,9 +154,115 @@ def tile_labels(run, cfg: dict, council=None, write=True):
         council = (lines.assign(L=lines.length).groupby("council").L.sum().idxmax()
                    if lines is not None and len(lines) else None)
     label, weight, counts = label_raster(shape, T, foot, lines, mask, b11, b21, valid, cfg, council or "")
+    counts.update(corrections(run, label, weight, T, crs, lines, foot, mask, valid, cfg))
     counts.update(tile=run.name, council=council, label_version=LABEL_VERSION,
                   unsnapped=dict(DEFAULTS, **(cfg.get("labels") or {}))["unsnapped"])
     if write:
         dataio.write_stack(run / "ml_channel_labels.tif", {"label": label, "weight": weight}, T, crs)
         (run / "ml_channel_labels.json").write_text(json.dumps(counts, indent=1))
     return counts
+
+
+def _review_rows(run, D):
+    """Reviewed reaches of this tile from every review GeoPackage under the data folder."""
+    import glob
+
+    import geopandas as gpd
+    import pandas as pd
+    from ..acquire.elevation import default_data_dir
+    pat = D["reviews"]
+    pat = pat if Path(pat).is_absolute() else str(default_data_dir() / pat)
+    parts = []
+    for f in sorted(glob.glob(pat)):
+        try:
+            g = gpd.read_file(f, layer="reaches")
+        except Exception:  # noqa: BLE001 - a malformed review file is skipped, not fatal
+            continue
+        if "tile" in g and "exists" in g:
+            g = g[g["tile"] == Path(run).name]
+            if len(g):
+                parts.append(g.to_crs(2193) if g.crs else g.set_crs(2193))
+    if not parts:
+        return None
+    r = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs=2193)
+    r["answer"] = r["exists"].fillna("").astype(str).str.strip().str.lower()
+    return r[r.answer.isin(["y", "n", "unsure"])]
+
+
+def corrections(run, label, weight, T, crs, lines, foot, mask, valid, cfg):
+    """Apply the cleaning and the review answers to ``label`` and ``weight`` in place; returns their counts."""
+    from rasterio.features import rasterize
+    from scipy import ndimage as ndi
+    from shapely.ops import substring
+    D = dict(DEFAULTS, **(cfg.get("labels") or {}))
+    run = Path(run)
+    shape = label.shape
+    cs = abs(T.a)
+    ring = float(cfg.get("ignore_ring_m", 3.0))
+    out = dict(cleaned_positive_cells=0, cleaned_pieces=0, review_rows=0, review_ignored_cells=0,
+               review_positive_cells=0, review_negative_cells=0)
+
+    def burn(geoms):
+        geoms = [g for g in geoms if g is not None and not g.is_empty]
+        if not geoms:
+            return np.zeros(shape, bool)
+        return rasterize([(g, 1) for g in geoms], out_shape=shape, transform=T, fill=0, dtype="uint8") > 0
+
+    # 7. cleaning with out-of-fold probabilities
+    pj, pf = run / "ml_channel_prob.json", run / "ml_channel_prob.tif"
+    if lines is not None and len(lines) and pj.exists() and pf.exists():
+        try:
+            held = json.loads(pj.read_text()).get("held_out")
+        except ValueError:
+            held = False
+        if held:
+            import rasterio
+            with rasterio.open(pf) as s:
+                prob = s.read(1)
+            near_phys = ndi.distance_transform_edt(~np.asarray(mask, bool)) * cs <= 3.0
+            hw = dict(zip(foot.source_id, foot.width_source)) if foot is not None and "source_id" in foot else {}
+            use = lines[lines.snapped.astype(bool) & (lines.get("width_source", "") != "river")]
+            pieces = []
+            for g, h in zip(use.geometry, use.get("half_width_m", [1.0] * len(use))):
+                n = max(1, int(round(g.length / D["clean_piece_m"])))
+                for k in range(n):
+                    pc = substring(g, k * g.length / n, (k + 1) * g.length / n)
+                    if pc.length < 5:
+                        continue
+                    pts = [pc.interpolate(d) for d in np.arange(0, pc.length, 2.0)]
+                    cc = np.floor((np.array([q.x for q in pts]) - T.c) / T.a).astype(int)
+                    rr = np.floor((np.array([q.y for q in pts]) - T.f) / T.e).astype(int)
+                    ok = (rr >= 0) & (rr < shape[0]) & (cc >= 0) & (cc < shape[1])
+                    if ok.sum() < 3:
+                        continue
+                    pv = prob[rr[ok], cc[ok]]
+                    if np.isfinite(pv).mean() < 0.5:
+                        continue
+                    if np.nanmean(pv) <= D["clean_prob"] and near_phys[rr[ok], cc[ok]].mean() <= D["clean_physics_share"]:
+                        hh = float(h) if h is not None and np.isfinite(h) else 1.0
+                        pieces.append(pc.buffer(hh + ring))
+            if pieces:
+                m = burn(pieces) & (label == POS)
+                out.update(cleaned_positive_cells=int(m.sum()), cleaned_pieces=len(pieces))
+                label[m], weight[m] = IGNORE, 0.0
+    # 8. review answers
+    r = _review_rows(run, D)
+    if r is not None and len(r):
+        out["review_rows"] = int(len(r))
+        cm, mo = r[r.kind == "council_missed"], r[r.kind == "model_only"]
+        ign = burn(list(cm[cm.answer == "n"].geometry.buffer(D["review_buffer_m"] + ring)) +
+                   list(r[r.answer == "unsure"].geometry.buffer(D["review_buffer_m"])))
+        label[ign], weight[ign] = IGNORE, 0.0
+        out["review_ignored_cells"] = int(ign.sum())
+        pos = burn(list(cm[cm.answer == "y"].geometry.buffer(D["review_half_width_m"])) +
+                   list(mo[mo.answer == "y"].geometry.buffer(D["review_half_width_m"])))
+        ringm = (ndi.distance_transform_edt(~pos) * cs <= ring) & ~pos & (label == NEG)
+        label[ringm], weight[ringm] = IGNORE, 0.0
+        label[pos], weight[pos] = POS, float(D["review_positive_weight"])
+        out["review_positive_cells"] = int(pos.sum())
+        neg = burn(list(mo[mo.answer == "n"].geometry.buffer(D["review_buffer_m"]))) & ~pos
+        label[neg], weight[neg] = NEG, float(D["review_negative_weight"])
+        out["review_negative_cells"] = int(neg.sum())
+    nod = ~np.asarray(valid, bool)
+    label[nod], weight[nod] = IGNORE, 0.0
+    return out

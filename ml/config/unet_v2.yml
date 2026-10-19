@@ -1,0 +1,25 @@
+# ML-3b, unet_v2 (DESIGN_NOTES 11, 18 Oct): unet_v1's settings (ml/config/unet.yml) plus emphasis on the drains
+# the physics map misses, and a threshold chosen for them. Train on labels v3 (cleaned with the review and the
+# out-of-fold predictions).
+base: 32
+depth: 4
+epochs: 30
+batch: 64
+lr: 0.001
+weight_decay: 0.0001
+cldice: 0.5
+cldice_iter: 5
+council_balance: 0.5
+val_share: 0.1
+patience: 6
+tolerance_m: 3.0
+folds: [blocks, council, holdout]
+block_folds: 5
+workers: 12              # GPU use was ~50 % with 8 loaders
+amp: true
+seed: 0
+max_val_chips: 4000
+off_physics_weight: 3.0          # loss weight x3 on positive cells more than 3 m from the physics map
+off_physics_sampling: 1.0        # chips holding such cells drawn twice as often
+threshold_objective: off_physics # best recall off the physics map ...
+precision_floor: 0.7             # ... with centreline precision (a lower bound, per the review) at least 0.7

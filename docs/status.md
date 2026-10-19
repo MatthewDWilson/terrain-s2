@@ -1,4 +1,4 @@
-# terrain-s2: status (17 Oct 2026, ML-3a step 1)
+# terrain-s2: status (18 Oct 2026)
 
 Where the work stands, who is on what, and what comes next. Detail and evidence are in `DESIGN_NOTES.md`
 (section numbers below); the plan is `docs/EDDIE Terrain — Revised Stage 1 and Stage 2 Integration Plan_with_diagrams.md`.
@@ -24,26 +24,29 @@ Where the work stands, who is on what, and what comes next. Detail and evidence 
 | ML-1b | Patch CNN (`train_cnn.py`): below the scorer; ensemble no gain; deferred behind ML-3 | 11 |
 | Waves 1 + 2 | 345 tiles, 686,305 candidates; scorer 2-3.5 x the tiers on every held-out council (`ml/results/`) | 11 |
 
+## Also done (Oct 2026)
+
+| Area | What | Notes |
+|---|---|---|
+| Wave 3 | 220 tiles (Waikato, ECan, Gisborne held out, Hauraki, Otago); sources from `sites/candidates` | 11 |
+| ML-3a | Snapping, widths, label rasters (v2), chips (`ml3_waves123`, 170,700) for waves 1-3 | 11; `docs/ml3_channel_model.md` |
+| ML-3b | U-Net v1 (fold 1, holdout, learning curve), evaluation beyond the physics map, whole-tile prediction, first review | 11; `docs/review_channels.md` |
+| HPC | Data on their own disk, cache guard, OSM extract, completeness scan, per-source refresh | `docs/wsl/terrain_hpc.md`; 11 |
+
+A summary of all of Stage 2, with where everything is documented: `docs/stage2_summary.md`.
+
 ## In progress
 
-- **ML-3 (a learned channel map)**: design agreed (`docs/ml3_channel_model.md`, decisions in its section 7); the work
-  from ML-3a on continues in a new conversation, from `docs/handover_ml3.md`.
-- **Stage 1 rivers** (Cowork, branch `stage1/rivers`): GeoFabrics river bathymetry for the ML-4 benchmark; merge when
-  tested.
-- **ML-3a step 2: the rerun with saved rasters** (`--param rasters=all`, all 349 tiles including the four wave-1 tiles
-  whose features and candidates disagreed), on the RTX 6000 machine after the memory fix of 16 Oct (DESIGN_NOTES 11);
-  then `waves12` rebuilt with all 349 (`terrain_hpc.sh dataset`).
+- **unet_v1 folds 2-5** on the RTX 6000 machine; then out-of-fold probabilities for every tile (`predict ... oof`).
+- **Stage 1 merge** (Matt, separate thread): `stage1/rivers` into `main`; no file in common with Stage 2's work.
 
 ## Next
 
-1. ML-3b: unet_v1 trained (blocks:1/5, holdout; DESIGN_NOTES 11); measures beyond the physics map, the threshold
-   sweep and `--evaluate` added; whole-tile prediction and the first review set (`predict --review`) for Matt;
-   the learning curve (`unet_lc`) running;
-   chips from the saved rasters; review sets for Matt. Step 1 (widths) done: no council records widths usably, so
-   widths come from the fallbacks in `ml/config/channels.yml` (DESIGN_NOTES 11).
-2. ML-3b-d: the U-Net, its integration into the run, the end-to-end check on found labels, the stream/drain head.
-3. ML-1b again (the CNN with the scorer's scalar features), after ML-3.
-4. ML-2 (link decisions) and ML-4 (bed elevation, against GeoFabrics' river bathymetry).
+1. Labels v3 (cleaning with out-of-fold probabilities, review answers), chips again, unet_v2 (`ml/config/unet_v2.yml`),
+   compared with v1 on the same labels; second review.
+2. Aerial imagery as input bands (experiment); ML-3c (the U-Net in the run, end-to-end check); ML-3d.
+3. Scorer retrained with wave 3; ML-1b again; ML-2 and ML-4; tranche 2 sources (wave 4).
+
 
 ## Benchmark for bed elevation (ML-4)
 
@@ -67,11 +70,3 @@ Smart Ideas used for `8m_geofabric.nc` (run offline, not recorded: 4e).
 `TERRAIN_DATA_DIR = D:\eddie_data`: `stac/` (STAC documents, item indexes), `cog/` (mirrored LINZ tiles),
 `snapshots/` (vector snapshots, both stages), `tiles/` (bundles), `runs/` (runs, labels, features),
 `labels/manual/` (Matt's review files), `partition/` (`nz_tiles.gpkg`, `nz_quadrants.gpkg`).
-
-## Wave 3 (first tranche, 17 Oct)
-
-Sources enabled, indexed and selected: 220 tiles (`ml/manifests/wave3.csv`, DESIGN_NOTES 11); the batch is
-running (restarted with the LINZ key); after it, `terrain_hpc.sh check-runs` on the manifest. To run: on the workstation, index the six
-sources (`index_sources.py --only ...`) and select (`select_tiles.py --config ml/config/wave3.yml`), commit
-`sites/sources_coverage.geojson` and `ml/manifests/wave3.csv`; on the RTX 6000 machine, after the disk move,
-`update`, then `start ml/manifests/wave3.csv --param rasters=all`, then `channels` for the manifest.

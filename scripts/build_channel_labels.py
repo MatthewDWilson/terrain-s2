@@ -86,9 +86,12 @@ def main():
             print("\nper council:")
             for c, g in ok.groupby("council"):
                 n = (g.positive + g.negative + g.ignored).sum()
+                cl = g.get("cleaned_positive_cells", pd.Series(0, index=g.index)).fillna(0).sum()
+                rv = g.get("review_rows", pd.Series(0, index=g.index)).fillna(0).sum()
                 print(f"  {c}: {len(g)} tiles; positive {g.positive.sum() / n:.2%}, ignored {g.ignored.sum() / n:.1%}, "
                       f"negative {g.negative.sum() / n:.1%}; weight positive / negative "
-                      f"{g.positive_weight_sum.sum() / max(g.negative_weight_sum.sum(), 1e-9):.2f}")
+                      f"{g.positive_weight_sum.sum() / max(g.negative_weight_sum.sum(), 1e-9):.2f}; cleaned "
+                      f"{cl / max(g.positive.sum() + cl, 1):.1%} of positive cells; reviewed reaches {int(rv)}")
         print(f"summary: {out}")
 
 

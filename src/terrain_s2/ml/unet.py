@@ -42,7 +42,8 @@ import numpy as np
 
 DEFAULTS = dict(base=32, depth=4, epochs=30, batch=64, lr=1e-3, weight_decay=1e-4, cldice=0.5, cldice_iter=5,
                 workers=8, amp=True, seed=0, council_balance=0.5, val_share=0.1, patience=6, tolerance_m=3.0,
-                folds=["blocks", "holdout"], block_folds=5, subset=1.0, max_val_chips=4000)
+                folds=["blocks", "holdout"], block_folds=5, subset=1.0, max_val_chips=4000,
+                off_physics_weight=1.0, off_physics_sampling=0.0, threshold_objective="f1", precision_floor=0.7)
 AREA_BINS = (-np.inf, 3.0, 4.0, 5.0, np.inf)          # log10 m2: 0.1 ha, 1 ha, 10 ha
 AREA_NAMES = ("lt_0.1ha", "0.1-1ha", "1-10ha", "gt_10ha")
 
@@ -98,6 +99,29 @@ class ChipStore:
         return a["x"][i], a["label"][i], a["weight"][i], a["physics"][i]
 
 
+def chip_stats(store, tol_px=3.0):
+    """Per chip: positive cells and those more than ``tol_px`` from the physics map (cached as
+    <dataset>/chip_stats.parquet, redone when the chips are newer)."""
+    import pandas as pd
+    f = store.dir / "chip_stats.parquet"
+    newest = max((p.stat().st_mtime for p in (store.dir / "chips").glob("*.npz")), default=0)
+    if f.exists() and f.stat().st_mtime >= newest:
+        return pd.read_parquet(f)
+    from scipy import ndimage as ndi
+    rows = []
+    for t in sorted(store.index.tile_id.unique()):
+        a = store.arrays(t)
+        lab, phys = np.asarray(a["label"]), np.asarray(a["physics"]).astype(bool)
+        r = int(np.ceil(tol_px))
+        near = ndi.maximum_filter(phys, size=(1, 2 * r + 1, 2 * r + 1))
+        pos = lab == 1
+        for i, (pc, oc) in enumerate(zip(pos.sum(axis=(1, 2)), (pos & ~near).sum(axis=(1, 2)))):
+            rows.append(dict(tile_id=t, i=i, positive_cells=int(pc), off_physics_cells=int(oc)))
+    d = pd.DataFrame(rows)
+    d.to_parquet(f, index=False)
+    return d
+
+
 def norm_arrays(card):
     mean = np.asarray(card["mean"], np.float32)
     std = np.asarray(card["std"], np.float32)
@@ -111,8 +135,9 @@ def _dataset_class():
     class ChipDataset(Dataset):
         """(x normalised float32 (bands, s, s), label float32, weight float32 (0 where ignored), valid float32)."""
 
-        def __init__(self, store, rows, mean, std, augment=False, seed=0):
+        def __init__(self, store, rows, mean, std, augment=False, seed=0, off_physics_weight=1.0, tol_px=3.0):
             self.store, self.rows = store, rows.reset_index(drop=True)
+            self.offw, self.tol = float(off_physics_weight), tol_px
             self.mean, self.std = mean[:, None, None], std[:, None, None]
             self.augment = augment
             self.rng = np.random.default_rng(seed)
@@ -122,11 +147,15 @@ def _dataset_class():
 
         def __getitem__(self, k):
             r = self.rows.iloc[k]
-            x, lab, w, _ = self.store.get(r.tile_id, int(r.i))
+            x, lab, w, phys = self.store.get(r.tile_id, int(r.i))
             x = np.clip((np.asarray(x, np.float32) - self.mean) / self.std, -10, 10)
+            lab = np.asarray(lab)
             valid = (lab != 255).astype(np.float32)
             y = (lab == 1).astype(np.float32)
             w = np.asarray(w, np.float32) * valid
+            if self.offw != 1.0 and y.any():       # positives the physics map misses: the drains ML-3 is for
+                off = (lab == 1) & ~_near(np.asarray(phys).astype(bool), self.tol)
+                w = np.where(off, w * self.offw, w)
             if self.augment:
                 t = int(self.rng.integers(4))
                 x, y, w, valid = (np.rot90(a, t, axes=(-2, -1)) for a in (x, y, w, valid))
@@ -348,16 +377,28 @@ def evaluate(model, store, rows, mean, std, device, threshold, tol_px, by="counc
     return out
 
 
-def best_threshold(model, store, rows, mean, std, device, tol_px, grid=(0.3, 0.4, 0.5, 0.6, 0.7, 0.8)):
-    """The threshold with the best centreline F1 on ``rows`` (the validation chips)."""
-    probs = [(r, p, chip_context(store.get(r.tile_id, int(r.i))[1], None, tol_px))
-             for r, p in predict(model, store, rows, mean, std, device)]
+def best_threshold(model, store, rows, mean, std, device, tol_px, grid=(0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8),
+                   objective="f1", precision_floor=0.7):
+    """The threshold on ``rows`` (the validation chips) with the best centreline F1 (``objective`` "f1"), or the
+    best recall off the physics map among thresholds whose precision is at least ``precision_floor``
+    ("off_physics"; precision is a lower bound: the first review found most of the model's detections off the
+    physics map and council lines to be real drains, 18 Oct). Returns (threshold, score)."""
+    probs = []
+    for r, p in predict(model, store, rows, mean, std, device):
+        _, lab, _, phys = store.get(r.tile_id, int(r.i))
+        probs.append((p, chip_context(lab, phys if objective == "off_physics" else None, tol_px)))
     best = (0.5, -1.0)
     for t in grid:
         s = Scores(hist=False)
-        for r, p, ctx in probs:
-            s.add(p, ctx, None, t, tol_px, beyond=False)
-        f = s.result()["f1_3m"]
+        for p, ctx in probs:
+            s.add(p, ctx, None, t, tol_px, beyond=objective == "off_physics")
+        res = s.result()
+        if objective == "off_physics":
+            if res["precision_3m"] < precision_floor or res["recall_off_physics"] is None:
+                continue
+            f = res["recall_off_physics"]
+        else:
+            f = res["f1_3m"]
         if f > best[1]:
             best = (t, f)
     return best
@@ -386,6 +427,7 @@ def subset_tiles(rows, share, seed):
 
 def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
     """Train a model; keeps the best by validation loss; returns (model, history, threshold)."""
+    import pandas as pd
     import torch
     from torch.utils.data import DataLoader, WeightedRandomSampler
     torch.manual_seed(cfg["seed"])
@@ -395,8 +437,16 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
         store.unpack(t)
     counts = train_rows.council.fillna("unknown").map(train_rows.council.fillna("unknown").value_counts())
     sw = (counts.to_numpy(float) ** -float(cfg["council_balance"]))
+    if float(cfg.get("off_physics_sampling", 0)) > 0:         # more chips holding drains the physics map misses
+        st = chip_stats(store, cfg["tolerance_m"]).set_index(["tile_id", "i"])
+        has = st.reindex(pd.MultiIndex.from_frame(train_rows[["tile_id", "i"]])).off_physics_cells.fillna(0).to_numpy() > 0
+        sw = sw * np.where(has, 1.0 + float(cfg["off_physics_sampling"]), 1.0)
+        log(f"  chips with positives off the physics map: {has.mean():.1%}, sampled x"
+            f"{1 + float(cfg['off_physics_sampling']):g}")
     sampler = WeightedRandomSampler(torch.as_tensor(sw / sw.sum()), num_samples=len(train_rows), replacement=True)
-    dl = DataLoader(DS(store, train_rows, mean, std, augment=True, seed=cfg["seed"]), batch_size=cfg["batch"],
+    dl = DataLoader(DS(store, train_rows, mean, std, augment=True, seed=cfg["seed"],
+                       off_physics_weight=cfg.get("off_physics_weight", 1.0), tol_px=cfg["tolerance_m"]),
+                    batch_size=cfg["batch"],
                     sampler=sampler, num_workers=cfg["workers"], pin_memory=device.type == "cuda",
                     persistent_workers=cfg["workers"] > 0, drop_last=len(train_rows) > cfg["batch"])
     vrows = val_rows.sample(min(len(val_rows), cfg["max_val_chips"]), random_state=cfg["seed"]) if len(val_rows) else val_rows
@@ -448,7 +498,8 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
             break
     model.load_state_dict(torch.load(out_dir / "model.pt", map_location=device, weights_only=True))
     tol_px = cfg["tolerance_m"]            # 1 m cells
-    thr = best_threshold(model, store, vrows, mean, std, device, tol_px)[0] if len(vrows) else 0.5
+    thr = best_threshold(model, store, vrows, mean, std, device, tol_px, objective=cfg.get("threshold_objective", "f1"),
+                         precision_floor=cfg.get("precision_floor", 0.7))[0] if len(vrows) else 0.5
     meta = dict(bands=store.bands, mean=store.card["mean"], std=store.card["std"], base=cfg["base"],
                 depth=cfg["depth"], threshold=thr, best_epoch=best_ep + 1, dataset=store.card.get("name"))
     (out_dir / "model.json").write_text(json.dumps(meta, indent=1))
@@ -496,6 +547,12 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
     want = folds or [fl[0][0], "holdout"]
     out = Path(out_dir)
     results = []
+    dsname = store.card.get("name")
+    mfile = "metrics.json"                      # evaluating models on another dataset (labels v3, say) keeps their
+    if evaluate_only:                           # own metrics and writes metrics_<dataset>.json and report_<dataset>.md
+        metas = [json.loads(f.read_text()) for f in out.glob("*/model.json")]
+        if metas and metas[0].get("dataset") not in (None, dsname):
+            mfile = f"metrics_{dsname}.json"
     for name, tr, te in fl:
         if name not in want:
             continue
@@ -506,6 +563,8 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
                     log(f"{tag}: no saved model, skipped")
                     continue
                 old = json.loads((out / tag / "metrics.json").read_text()) if (out / tag / "metrics.json").exists() else {}
+                if mfile != "metrics.json":
+                    old = dict(old, history=[])
                 model, meta = load_model(out / tag, device)
                 thr, hist = meta["threshold"], old.get("history", [])
                 ntr, nval = old.get("train_chips"), old.get("validation_chips")
@@ -522,7 +581,8 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
             metrics = evaluate(model, store, idx[te], mean, std, device, thr, cfg["tolerance_m"]) if te.any() else {}
             rec = dict(fold=name, subset=share, threshold=thr, train_chips=ntr, validation_chips=nval,
                        test_chips=int(te.sum()), history=hist, metrics=metrics, config=cfg)
-            (out / tag / "metrics.json").write_text(json.dumps(rec, indent=1, default=float))
+            rec["dataset"] = dsname
+            (out / tag / mfile).write_text(json.dumps(rec, indent=1, default=float))
             results.append(rec)
             if metrics:
                 a = metrics["all"]
@@ -530,7 +590,7 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
                     f"{a['model']['recall_off_physics']}), precision {a['model']['precision_3m']} | physics recall "
                     f"{a['physics']['recall_3m']}")
     done = {(r["fold"], r["subset"]) for r in results}           # the report covers every run in the folder
-    for f in sorted(out.glob("*/metrics.json")):
+    for f in sorted(out.glob(f"*/{mfile}")):
         try:
             r = json.loads(f.read_text())
         except ValueError:
@@ -538,7 +598,7 @@ def run(dataset_dir, out_dir, cfg, folds=None, subsets=None, device=None, log=pr
         if (r.get("fold"), r.get("subset")) not in done:
             results.append(r)
             done.add((r.get("fold"), r.get("subset")))
-    (out / "report.md").write_text(report(results))
+    (out / ("report.md" if mfile == "metrics.json" else f"report_{dsname}.md")).write_text(report(results))
     return results
 
 

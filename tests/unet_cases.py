@@ -126,10 +126,24 @@ def test_predict_tile_and_review(tmp_path, model_dir):
     assert set(r.kind) == {"council_missed"} and set(r.exists) == {""}
 
 
+def test_train_v2_settings(tmp_path):
+    """Off-physics weight and sampling, and the threshold chosen for recall off the physics map."""
+    ds = _dataset(tmp_path / "ds")
+    cfg = dict(U.DEFAULTS, base=8, depth=2, epochs=2, batch=8, workers=0, folds=["holdout"], val_share=0.25,
+               lr=3e-3, patience=5, off_physics_weight=3.0, off_physics_sampling=1.0,
+               threshold_objective="off_physics", precision_floor=0.0)
+    res = U.run(ds, tmp_path / "models" / "v2", cfg, folds=["holdout"], device="cpu", log=lambda m: None)
+    st = U.chip_stats(U.ChipStore(ds))
+    assert (st.off_physics_cells > 0).any() and (st.off_physics_cells <= st.positive_cells).all()
+    assert res[0]["threshold"] in (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+
+
 if __name__ == "__main__":
     test_soft_skeleton_of_a_bar_is_thin()
     test_loss_ignores_ignored_cells()
     with tempfile.TemporaryDirectory() as d:
         test_train_and_evaluate(Path(d))
         test_predict_tile_and_review(Path(d), Path(d) / "models" / "m" / "holdout")
+    with tempfile.TemporaryDirectory() as d:
+        test_train_v2_settings(Path(d))
     print("unet checks ok")

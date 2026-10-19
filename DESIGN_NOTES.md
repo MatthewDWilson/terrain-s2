@@ -1915,6 +1915,27 @@ CPU core with the GPU idle: each 128-cell window was read from the files (~48 ms
 a tile); now the tile and a window's margin are read once (`Mosaic.read_inputs`, ~1.6 s for 1.5 km2 on the clip,
 the same probabilities) and the windows sliced in memory. Epoch times and chips/s are now in the training log.
 
+**First review, labels v3 and unet_v2** (18 Oct). Matt reviewed 164 reaches of unet_v1 (fold 1 model, its test
+tiles BB35_10000_0501 Hauraki, BW23_10000_0301 Waimakariri, CE10_10000_0301 Environment Southland), using the aerial
+imagery most, with the features and hillshade. Model-only reaches (off the physics map and council lines): 57 y,
+31 n, 18 unsure, so 65 % of confident answers are real drains (Southland 28 / 34, Hauraki 17 / 25, Waimakariri
+12 / 29); their probabilities barely separate (y 0.89, n 0.84 median). Council-missed pieces: 31 y, 21 n, 6 unsure;
+where the model's mean probability was at most 0.05, 18 n and 2 y (the n from two Waimakariri lines); between 0.05
+and 0.8, 29 y and 3 n, with a median of 0.46 for the y: real drains cut by the 0.8 threshold. So: (1) labels v3
+(LABEL_VERSION 3, `channel_rasters.corrections`): pieces of snapped non-river council lines whose out-of-fold
+probability averages <= 0.05 and which lie on the physics map for <= 10 % of their length are ignored, not positive;
+review answers override (council n -> ignored, model-only y -> positive, model-only n -> hard negative at weight 1,
+unsure -> ignored); reviews are read from `<data>/labels/manual/review_*.gpkg`. (2) Out-of-fold probabilities for
+every tile (`predict_channels.py --fold oof`: each tile by the model of the fold that held it out, recorded as
+`held_out`, which the cleaning requires). (3) unet_v2 settings (`ml/config/unet_v2.yml`): loss weight x3 on positive
+cells more than 3 m from the physics map, chips holding such cells drawn twice as often (`chip_stats.parquet`), and
+the threshold chosen for recall off the physics map with centreline precision >= 0.7 (a lower bound, per the review).
+(4) `train_unet.py --evaluate` on another dataset keeps the models' own metrics (`metrics_<dataset>.json`,
+`report_<dataset>.md`), so v1 and v2 can be compared on the same labels. Aerial imagery as input bands is left for a
+controlled experiment after v2 (dates, registration and colour differ between surveys; DSM - DEM already carries
+some vegetation). Stage 1 merge (`stage1/rivers`, 9 commits) and `main` (34 commits since 14 Oct) touch no file in
+common. `docs/stage2_summary.md`: what Stage 2 is, its results and status, and where each part is documented.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

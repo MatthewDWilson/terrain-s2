@@ -76,11 +76,14 @@ def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=25
     return np.where(good & (den[window:window + h, window:window + w] > 0), out, np.nan).astype(np.float32), T, crs
 
 
-def write_prob(run, prob, T, crs, model_dir, threshold):
+def write_prob(run, prob, T, crs, model_dir, threshold, fold=None, held_out=None):
+    """``ml_channel_prob.tif`` and its record; ``held_out`` says the tile was in the fold's test set (the model never
+    trained on it), which the label cleaning (labels v3) requires."""
     from .. import dataio
     run = Path(run)
     dataio.write_stack(run / "ml_channel_prob.tif", {"channel_prob": prob}, T, crs)
-    (run / "ml_channel_prob.json").write_text(json.dumps(dict(model=str(model_dir), threshold=threshold), indent=1))
+    (run / "ml_channel_prob.json").write_text(json.dumps(dict(model=str(model_dir), threshold=threshold, fold=fold,
+                                                              held_out=held_out), indent=1))
 
 
 def _near(mask, radius_px):
