@@ -2021,6 +2021,17 @@ channel_min_contrast, channel_max_width_m and channel_max_urban before they join
 `scripts/review_features.py` calibrates those rules against both reviews (AUC per measure, best single thresholds,
 best combined rules).
 
+**The first calibration of the filter** (21 Oct; `review_features.py`): only the second review's answers were read
+(128 confident on 3 tiles; the first review's copy under `labels/manual` had no y / n answers, apparently the
+unedited file), so 6 y against 83 n. Component contrast did not separate them (AUC 0.51; medians 0.68 y, 0.76 n),
+nor width (0.44); mean probability (0.73) and building cover (0.63) did somewhat. A component of the model's
+channels can be a long network mixing clear and smudged parts, so its figures blur the reach that was reviewed.
+Now local measures: `channel_predict.sharpness_map` (per cell, the probability minus its mean in a square ring
+5-8 m around: ~0.7-0.8 on a clear drain up to ~10 m wide, ~0.1 on a smudged flow path), taken on the reviewed reach's
+own cells, and the building cover along the reach; `run.network` gains channel_min_sharpness (cell by cell, with
+channel_max_urban and the fragment filter, `keep_sharp`). `review_features.py` warns when a review file has no
+answers and lists the answers per review and kind.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

@@ -4,12 +4,13 @@
     python scripts/review_features.py                      # every <data>/labels/manual/review_*.gpkg
 
 For each reviewed reach (exists y / n; unsure left out), on its tile's current probability raster
-(``ml_channel_prob.tif``, the out-of-fold prediction) at the raster's threshold: the model's channel component it
-lies on and that component's quality (``channel_predict.component_quality``: contrast between the probability on
-the line and 2-5 m outside it, width, mean probability, urban building cover). Then, for the model-only reaches
+(``ml_channel_prob.tif``, the out-of-fold prediction) at the raster's threshold: the reach's own measures (its
+sharpness, ``channel_predict.sharpness_map``: the probability on its cells minus the mean in a ring 5-8 m around;
+the probability along it; the building cover along it) and those of the model's channel component it lies on
+(``component_quality``: contrast, width, mean probability, building cover). Then, for the model-only reaches
 (the model's new detections), how well each measure separates y from n (AUC), the best single threshold, and the
 best combined rules: the share of real drains kept and of false detections dropped. The rules go to
-``run.network`` as channel_min_contrast, channel_max_width_m, channel_max_urban. Writes --out (CSV, one row per
+``run.network`` as channel_min_sharpness and channel_max_urban. Writes --out (CSV, one row per
 reviewed reach).
 """
 import argparse
@@ -22,7 +23,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-MEASURES = (("contrast", "high"), ("mean_prob", "high"), ("width_m", "low"), ("urban", "low"))
+MEASURES = (("sharpness", "high"), ("prob_on_reach", "high"), ("urban_reach", "low"),
+            ("contrast", "high"), ("width_m", "low"), ("urban", "low"))
 
 
 def auc(pos, neg, higher=True):
@@ -64,13 +66,18 @@ def tile_features(tile, rows, runs, bundles, min_cells):
     cover = CP.building_cover(prob.shape, T, crs, Path(bundles) / tile / "context.gpkg")
     lab, qt = CP.component_quality(prob, m, T, cover)
     qt = qt.set_index("component")
+    sharp = CP.sharpness_map(prob, T)
     out = []
     g = gpd.GeoDataFrame(rows, geometry="geometry", crs=rows.crs).to_crs(crs)
     for r, geom in zip(g.drop(columns="geometry").to_dict("records"), g.geometry):
         cells = rasterize([(geom.buffer(2.0), 1)], out_shape=prob.shape, transform=T, fill=0, dtype="uint8") > 0
         ids = lab[cells]
         ids = ids[ids > 0]
-        rec = dict(r, threshold=thr, prob_on_reach=float(np.nanmean(prob[cells])) if cells.any() else np.nan)
+        line = rasterize([(geom, 1)], out_shape=prob.shape, transform=T, fill=0, dtype="uint8", all_touched=True) > 0
+        on = line & m                                    # the reach's own cells on the model's channel
+        rec = dict(r, threshold=thr, prob_on_reach=float(np.nanmean(prob[line])) if line.any() else np.nan,
+                   sharpness=float(np.median(sharp[on])) if on.any() else np.nan,
+                   urban_reach=float(np.mean(cover[line])) if line.any() else np.nan)
         if len(ids):
             c = int(np.bincount(ids).argmax())
             rec.update(component=c, **qt.loc[c].to_dict())
@@ -104,8 +111,12 @@ def main():
         parts.append(g)
     rv = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs=parts[0].crs)
     rv["answer"] = rv.exists.fillna("").astype(str).str.strip().str.lower()
+    empty = [f for f in rv.review.unique() if not rv[rv.review == f].answer.isin(["y", "n"]).any()]
+    if empty:
+        print(f"WARNING: no y / n answers in {', '.join(empty)} (an unedited copy?)")
     rv = rv[rv.answer.isin(["y", "n"])]
     print(f"{len(files)} review files, {len(rv)} confident answers on {rv.tile.nunique()} tiles")
+    print(rv.groupby(["review", "kind"]).answer.value_counts().unstack(fill_value=0).to_string())
     rows = []
     for t, g in rv.groupby("tile"):
         rows += tile_features(t, g, runs, bundles, a.min_cells)
@@ -130,25 +141,22 @@ def main():
         best[m] = top[1]
         print(f"{m:11s} {auc(y[m], n[m], sense == 'high'):.3f}  {sense} {'>=' if sense == 'high' else '<='} "
               f"{top[1] if top[1] is not None else '-':>8}   {top[2]:.0%}     {top[3]:.0%}")
-    print("\nrules (contrast >=, width <=, urban <=): keeps y, drops n, best first")
-    cq = np.quantile(mo.contrast.dropna(), [0.1, 0.2, 0.3, 0.4, 0.5]) if len(mo) else []
-    wq = list(np.quantile(mo.width_m.dropna(), [0.6, 0.8, 0.9])) + [None] if len(mo) else []
-    uq = [0.05, 0.1, 0.2, None]
+    print("\nrules for run.network (channel_min_sharpness >=, channel_max_urban <=), on the reach's own cells: keeps y,"
+          " drops n, best first")
+    sq = list(np.round(np.quantile(mo.sharpness.dropna(), [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]), 3)) if mo.sharpness.notna().any() else []
+    uq = [0.02, 0.05, 0.1, 0.2, None]
     res = []
-    for c, w, u in itertools.product(list(cq) + [None], wq, uq):
+    for c, u in itertools.product(sq + [None], uq):
         def keep(t):
             k = np.ones(len(t), bool)
             if c is not None:
-                k &= t.contrast.to_numpy() >= c
-            if w is not None:
-                k &= t.width_m.to_numpy() <= w
+                k &= t.sharpness.to_numpy() >= c
             if u is not None:
-                k &= t.urban.to_numpy() <= u
+                k &= t.urban_reach.to_numpy() <= u
             return k
         ky, dn = keep(y).mean() if len(y) else np.nan, 1 - keep(n).mean() if len(n) else np.nan
-        res.append(dict(min_contrast=None if c is None else round(float(c), 3),
-                        max_width_m=None if w is None else round(float(w), 1), max_urban=u,
-                        keeps_y=round(float(ky), 3), drops_n=round(float(dn), 3), score=round(float(ky + dn - 1), 3)))
+        res.append(dict(min_sharpness=None if c is None else float(c), max_urban=u, keeps_y=round(float(ky), 3),
+                        drops_n=round(float(dn), 3), score=round(float(ky + dn - 1), 3)))
     r = pd.DataFrame(res).sort_values("score", ascending=False).drop_duplicates(["keeps_y", "drops_n"]).head(10)
     print(r.to_string(index=False))
     cm = d[d.kind == "council_missed"]

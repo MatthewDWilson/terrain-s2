@@ -347,3 +347,36 @@ def keep_components(lab, table, min_contrast=None, max_width_m=None, max_urban=N
     keep = np.zeros(int(table.component.max()) + 1 if len(table) else 1, bool)
     keep[table.component.to_numpy()[ok]] = True
     return keep[lab] & (lab > 0), int((~ok).sum())
+
+
+def sharpness_map(prob, transform, inner_m=5.0, outer_m=8.0):
+    """Per cell: the probability minus its mean in a square ring ``inner_m``-``outer_m`` around the cell. Local, so
+    it judges each part of a line, where a component's figures mix a long network's clear and smudged parts (the
+    first calibration, 21 Oct: component contrast did not separate the second review's answers). A clear drain up to
+    ~10 m wide is high on its line and low in the ring (~0.7-0.8); a smudged flow path is high in both (~0.1)."""
+    from scipy import ndimage as ndi
+    cs = abs(transform.a)
+    p = np.nan_to_num(prob, nan=0.0).astype(np.float32)
+    a = 2 * int(round(inner_m / cs)) + 1
+    b = 2 * int(round(outer_m / cs)) + 1
+    sa = ndi.uniform_filter(p, size=a, mode="nearest") * (a * a)
+    sb = ndi.uniform_filter(p, size=b, mode="nearest") * (b * b)
+    ring = (sb - sa) / float(b * b - a * a)
+    return (p - ring).astype(np.float32)
+
+
+def keep_sharp(mask, sharp, cover=None, min_sharpness=None, max_urban=None, min_cells=30):
+    """The model's channel cells that are sharp enough and not urban, with fragments under ``min_cells`` dropped."""
+    from scipy import ndimage as ndi
+    m = np.asarray(mask, bool).copy()
+    if min_sharpness is not None:
+        m &= sharp >= min_sharpness
+    if max_urban is not None and cover is not None:
+        m &= cover <= max_urban
+    if min_cells > 1 and m.any():
+        lab, n = ndi.label(m, structure=np.ones((3, 3)))
+        sizes = np.bincount(lab.ravel())
+        keep = sizes >= min_cells
+        keep[0] = False
+        m = keep[lab]
+    return m

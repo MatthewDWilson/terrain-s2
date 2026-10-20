@@ -104,3 +104,20 @@ def test_review_auc():
     spec.loader.exec_module(rf)
     assert rf.auc([0.9, 0.8], [0.1, 0.2]) == 1.0 and rf.auc([1, 2], [3, 4], higher=False) == 1.0
     assert rf.auc([0.5], [0.5]) == 0.5
+
+
+def test_sharpness_map_and_cell_filter():
+    from affine import Affine
+    T = Affine(1.0, 0, 0, 0, -1.0, 100)
+    yy, xx = np.mgrid[:100, :200]
+    crisp = np.where(np.abs(yy - 25) <= 1, 0.95, 0.02).astype(np.float32)
+    smudge = (np.exp(-((yy - 75) / 12.0) ** 2) * 0.9).astype(np.float32)
+    prob = np.maximum(crisp, smudge)
+    S = CP.sharpness_map(prob, T)
+    assert S[25, 100] > 0.6 and S[75, 100] < 0.2
+    keep = CP.keep_sharp(prob >= 0.7, S, min_sharpness=0.4)
+    assert keep[25, 100] and not keep[75, 100]
+    cover = np.zeros(prob.shape, np.float32)
+    cover[20:30, :100] = 0.5
+    keep2 = CP.keep_sharp(prob >= 0.7, S, cover, min_sharpness=0.4, max_urban=0.1)
+    assert not keep2[25, 50] and keep2[25, 150]
