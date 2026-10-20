@@ -267,3 +267,83 @@ def review_reaches(run, prob, T, crs, threshold, tol_m=3.0, min_len_m=20.0, piec
     d["exists"] = ""
     d["notes"] = ""
     return d
+
+
+# ---------------------------------------------------------------- quality of the model's channels (ML-3c filter)
+
+BUILDING_LAYERS = ("buildings", "osm_buildings")
+
+
+def building_cover(shape, transform, crs, context=None, radius_m=50.0):
+    """Share of the cells within ``radius_m`` (a square window) covered by buildings (the bundle's LINZ and OSM
+    buildings), on a grid: where it is high the area is urban, its drainage mostly piped, and the council network,
+    not the DEM, is the reference (Matt's second review, 20 Oct)."""
+    import geopandas as gpd
+    import pyogrio
+    from rasterio.features import rasterize
+    from scipy import ndimage as ndi
+    geoms = []
+    if context is not None and Path(context).exists():
+        have = {n for n, _ in pyogrio.list_layers(context)}
+        for name in BUILDING_LAYERS:
+            if name in have:
+                g = gpd.read_file(context, layer=name)
+                if len(g):
+                    geoms += [x for x in g.to_crs(crs).geometry if x is not None and not x.is_empty]
+    if not geoms:
+        return np.zeros(shape, np.float32)
+    on = rasterize([(g, 1) for g in geoms], out_shape=shape, transform=transform, fill=0, dtype="uint8").astype(np.float32)
+    k = max(1, int(round(2 * radius_m / abs(transform.a))) | 1)
+    return ndi.uniform_filter(on, size=k, mode="constant").astype(np.float32)
+
+
+def component_quality(prob, mask, transform, cover=None, ring_m=(2.0, 5.0)):
+    """(component labels, table) for the connected components of ``mask`` (the model's channel cells): per
+    component ``cells``, ``length_m`` (skeleton cells x cell size), ``width_m`` (area / length), ``mean_prob`` (on
+    the skeleton), ``ring_prob`` (mean probability 2-5 m outside it), ``contrast`` (the two's difference), ``urban``
+    (building cover on the skeleton). A clear drain is a tight line, high inside and low just outside (contrast
+    high); flow paths across braid plains and urban surfaces come out spatially smudged, with the probability
+    falling slowly away from the line (contrast low, widths larger) (Matt's second review, 20 Oct)."""
+    import pandas as pd
+    from scipy import ndimage as ndi
+    from skimage.morphology import skeletonize
+    cs = abs(transform.a)
+    lab, n = ndi.label(mask, structure=np.ones((3, 3)))
+    cols = ["component", "cells", "length_m", "width_m", "mean_prob", "ring_prob", "contrast", "urban"]
+    if n == 0:
+        return lab, pd.DataFrame(columns=cols)
+    p = np.nan_to_num(prob, nan=0.0)
+    dist, inds = ndi.distance_transform_edt(~mask, return_indices=True)
+    ring = (dist * cs >= ring_m[0]) & (dist * cs <= ring_m[1])
+    rl = lab[inds[0][ring], inds[1][ring]]
+    rsum = np.bincount(rl, weights=p[ring], minlength=n + 1)
+    rcnt = np.bincount(rl, minlength=n + 1)
+    del dist, inds
+    sk = skeletonize(mask)
+    sl = lab[sk]
+    scnt = np.bincount(sl, minlength=n + 1)
+    ssum = np.bincount(sl, weights=p[sk], minlength=n + 1)
+    cells = np.bincount(lab.ravel(), minlength=n + 1)
+    usum = np.bincount(sl, weights=(cover[sk] if cover is not None else np.zeros(sl.size)), minlength=n + 1)
+    ids = np.arange(1, n + 1)
+    length = np.maximum(scnt[ids], 1) * cs
+    mp = ssum[ids] / np.maximum(scnt[ids], 1)
+    rp = np.where(rcnt[ids] > 0, rsum[ids] / np.maximum(rcnt[ids], 1), 0.0)
+    t = pd.DataFrame(dict(component=ids, cells=cells[ids], length_m=length, width_m=cells[ids] * cs * cs / length,
+                          mean_prob=mp, ring_prob=rp, contrast=mp - rp,
+                          urban=usum[ids] / np.maximum(scnt[ids], 1)))
+    return lab, t
+
+
+def keep_components(lab, table, min_contrast=None, max_width_m=None, max_urban=None):
+    """The mask of the components passing the rules (a rule left None is not applied); returns (mask, dropped)."""
+    ok = np.ones(len(table), bool)
+    if min_contrast is not None:
+        ok &= table.contrast.to_numpy() >= min_contrast
+    if max_width_m is not None:
+        ok &= table.width_m.to_numpy() <= max_width_m
+    if max_urban is not None:
+        ok &= table.urban.to_numpy() <= max_urban
+    keep = np.zeros(int(table.component.max()) + 1 if len(table) else 1, bool)
+    keep[table.component.to_numpy()[ok]] = True
+    return keep[lab] & (lab > 0), int((~ok).sum())

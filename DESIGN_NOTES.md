@@ -1998,6 +1998,29 @@ network plus those of the physics network alone (merged within 8 m, keeping ever
 candidates and evidence. For the full check, wave 1 (Waimakariri, HBRC: where labels lack a channel) joins wave 3;
 found and no_channel do not depend on the scorer, recall@100 is honest on wave 3 only.
 
+**ML-3c end to end, and the second review** (21 Oct). unet_v2 trained on all five block folds (at their chosen
+thresholds 0.6-0.7, recall off the physics map 0.51-0.67, measured precision 0.64-0.82) and predicted every tile out
+of fold. ML-3c on waves 1 and 3 (303 tiles, each tile with its held-out model; `compare_ml3c.py`): labels with a
+candidate within 15 m rise almost everywhere, most in Waimakariri (council culverts 0.526 -> 0.617, implied 0.597 ->
+0.675, bridges 0.692 -> 0.762; no channel within 10 m for council culverts 0.211 -> 0.131), HBRC implied 0.832 ->
+0.905, ECan, Waikato and Hauraki +1-4 points. Recall@100 by the unchanged scorer holds or moves a little either way
+(Waimakariri council 0.375 -> 0.366, HBRC council 0.705 -> 0.665, implied -1 to -3 points in several councils,
+bridges +1-3): 5-17 % more candidates per tile compete for the top 100, and the scorer was trained without channel-
+model runs. The design's test is half met: more labels reachable, ranking not yet better; the scorer has to learn
+on runs with the channel model. Second review (unet_v2 fold-1 model at 0.7; BA31_10000_0205 Auckland urban,
+BH41_10000_0303 HBRC, BT27_10000_0404 ECan braid plain; 186 reaches): model-only reaches 6 y, 83 n, 25 unsure
+(urban 1 / 33, HBRC 4 / 29, braid plain 1 / 27), against 57 y / 31 n on the rural drain tiles of the first review;
+council-missed 21 y, 18 n, 33 unsure (n mostly where the probability is <= 0.05). Matt's reading: urban "drains" are
+stormwater pipes and road drainage, which the DEM cannot show and for which the council network should be the
+reference; the probability raster is good where drainage is clear (tight lines of high probability), and the false
+cases are where it is spatially smudged, as on the Canterbury braid plains, whose flow paths are hydrologically
+active but are geomorphology, not drainage. So: `channel_predict.component_quality` measures each model component's
+contrast (probability on its skeleton minus 2-5 m outside it), width, mean probability and building cover
+(`building_cover`, LINZ and OSM buildings within 50 m), and `run.network` can drop components by
+channel_min_contrast, channel_max_width_m and channel_max_urban before they join the physics map;
+`scripts/review_features.py` calibrates those rules against both reviews (AUC per measure, best single thresholds,
+best combined rules).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

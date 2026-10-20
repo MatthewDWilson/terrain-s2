@@ -20,7 +20,9 @@ Writes ``<out>/network.gpkg`` with up to seven layers (a layer with nothing in t
 Roads are optional; without them the road-based sources are absent and tier = tier_dem_only.
 With ``channel_model`` (ML-3c: a U-Net run folder, ``ml/unet.py``), its channels join the physics channel map
 before the network is built, and the candidates are those of the merged network plus those of the physics
-network alone (so no evidence is lost where the model closes a gap at a culvert): ``channels`` gains channel_source (physics / ml), ``crossings`` ml_channel (on a reach
+network alone (so no evidence is lost where the model closes a gap at a culvert); ``channel_min_contrast``,
+``channel_max_width_m`` and ``channel_max_urban`` drop the model's components that are smudged, wide or urban
+(``channel_predict.component_quality``) before they join: ``channels`` gains channel_source (physics / ml), ``crossings`` ml_channel (on a reach
 only the model mapped), ``hydro.tif`` the band ml_channel_prob, and ``network.json`` a channel_model summary.
 Also ``network.json`` (summary, timings, peak memory) and, with ``rasters``, ``features.tif``,
 ``hydro.tif``, ``conditioned.tif`` and ``rasters.json`` (band names in ``bands.py``).
@@ -70,7 +72,8 @@ NetworkRun = NetworkResult                      # the name in the first S2-1 com
 OPTIONS = dict(stream_model=None, buffer=200.0, max_hand=10.0, clean=True, aoi_crs=None, assume_crs=None,
                device="auto", height_model="rem", conditioned=True, burn_m=0.25, context=None, rasters="all",
                profile=False, keep=False, crossing_model=None, record_sources=None, channel_model=None,
-               channel_threshold=None, channel_min_cells=30)
+               channel_threshold=None, channel_min_cells=30, channel_min_contrast=None, channel_max_width_m=None,
+               channel_max_urban=None)
 
 
 def _paths(p):
@@ -257,6 +260,17 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         ml_prob, ml_mask, ml_info = CP.channel_mask_in_run(opts["channel_model"], bands_in, a.device,
                                                            opts.get("channel_threshold"), opts.get("channel_min_cells", 30))
         del bands_in, ways
+        if any(opts.get(k) is not None for k in ("channel_min_contrast", "channel_max_width_m", "channel_max_urban")):
+            # drop the model's smudged components (braid-plain flow paths) and urban ones (piped drainage): the
+            # second review found 6 of 89 confident model-only reaches real on an urban, an HBRC and a braid-plain tile
+            cover = CP.building_cover(w.z.shape, w.transform, hcrs, ctx) if opts.get("channel_max_urban") is not None else None
+            lab_c, qt = CP.component_quality(ml_prob, ml_mask, w.transform, cover)
+            ml_mask, dropped = CP.keep_components(lab_c, qt, opts.get("channel_min_contrast"),
+                                                  opts.get("channel_max_width_m"), opts.get("channel_max_urban"))
+            ml_info.update(components=int(len(qt)), components_dropped=dropped,
+                           rules=dict(min_contrast=opts.get("channel_min_contrast"),
+                                      max_width_m=opts.get("channel_max_width_m"), max_urban=opts.get("channel_max_urban")))
+            del lab_c, cover
         if fp_buf is not None:
             ml_mask &= fp_buf
         ml_only = ml_mask & ~strong

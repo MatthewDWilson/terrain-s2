@@ -58,3 +58,49 @@ def test_recall_at_k_and_summary():
                       for r, f, nc, h in (("A", 5, 4, 3), ("B", 8, 1, 4))])
     s = cmp.summarise(d, 100).iloc[0]
     assert s.found_A == 0.5 and s.found_B == 0.8 and s.no_channel_B == 0.1 and s["recall@100_B"] == 0.4
+
+
+def test_component_quality_separates_crisp_from_smudged():
+    from affine import Affine
+    T = Affine(1.0, 0, 0, 0, -1.0, 100)
+    yy, xx = np.mgrid[:100, :200]
+    crisp = np.where(np.abs(yy - 25) <= 1, 0.95, 0.02).astype(np.float32)          # a drain: a tight line
+    smudge = np.exp(-((yy - 75) / 12.0) ** 2).astype(np.float32) * 0.9              # a flow path: smudged
+    prob = np.maximum(crisp, smudge)
+    mask = prob >= 0.7
+    cover = np.zeros(prob.shape, np.float32)
+    cover[60:90, :] = 0.4                                                              # buildings around the smudge
+    lab, t = CP.component_quality(prob, mask, T, cover)
+    assert len(t) == 2
+    line, blob = t[t.component == lab[25, 100]].iloc[0], t[t.component == lab[75, 100]].iloc[0]
+    assert line.contrast > 0.8 and blob.contrast < 0.5 and line.width_m < blob.width_m and blob.urban > line.urban
+    keep, dropped = CP.keep_components(lab, t, min_contrast=0.5)
+    assert keep[25, 100] and not keep[75, 100] and dropped == 1
+    keep2, _ = CP.keep_components(lab, t, max_urban=0.1)
+    assert keep2[25, 100] and not keep2[75, 100]
+
+
+def test_filtered_model_channels_in_the_run(tmp_path, monkeypatch):
+    d = _write(tmp_path)
+
+    def fake(model_dir, bands, device="auto", threshold=None, min_cells=30, model=None, meta=None):
+        h, w = bands[0].shape
+        prob = np.zeros((h, w), np.float32)
+        prob[h // 2 - 1:h // 2 + 2, w // 4:3 * w // 4] = 0.9
+        return prob, prob >= 0.5, dict(model="m", threshold=0.5, device="cpu", cells=int((prob >= 0.5).sum()),
+                                       seconds=0.0, dataset="t")
+    monkeypatch.setattr(CP, "channel_mask_in_run", fake)
+    run = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "f", buffer=50.0, rasters="none",
+                  device="cpu", channel_model="m", channel_min_contrast=0.95)          # 0.9 inside, 0 outside: < 0.95
+    info = json.loads((d / "f" / "network.json").read_text())["channel_model"]
+    assert info["components_dropped"] == info["components"] >= 1 and info["ml_only_cells"] == 0
+
+
+def test_review_auc():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("rf", Path(__file__).resolve().parents[1] / "scripts" / "review_features.py")
+    rf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rf)
+    assert rf.auc([0.9, 0.8], [0.1, 0.2]) == 1.0 and rf.auc([1, 2], [3, 4], higher=False) == 1.0
+    assert rf.auc([0.5], [0.5]) == 0.5
