@@ -2032,6 +2032,28 @@ own cells, and the building cover along the reach; `run.network` gains channel_m
 channel_max_urban and the fragment filter, `keep_sharp`). `review_features.py` warns when a review file has no
 answers and lists the answers per review and kind.
 
+**The filter's calibration, ML-3c filtered, labels v4 and unet_v3** (21-22 Oct). Both reviews read (268 confident
+answers on 6 tiles; model-only 58 y, 106 n). The false detections differ by landscape: smudged and wide on the
+braid plain (BT27: sharpness median 0.07, width 13 m), sharp but urban in Auckland (BA31: sharpness 0.71, building
+cover 0.21), sharp and rural on BH41 (HBRC: road edges, fences or tracks?, nothing separates them); so overall AUCs
+mislead (sharpness 0.43, building cover 0.68). Rule chosen: channel_min_sharpness 0.15, channel_max_urban 0.05 (0.02
+scored a little better but would drop a drain beside a farmhouse): keeps 46 of 58 real reaches and drops 61 of 106
+false ones (model-only precision 0.35 -> ~0.51), by length ~63 % of real against ~10 % of false. ML-3c with it
+(waves 1 + 3, runs_ml3c_f): candidates +2-5 % a tile (unfiltered +5-17 %); found keeps about half the unfiltered
+gain (Waimakariri council 0.526 -> 0.556, unfiltered 0.617; implied 0.597 -> 0.643; no channel 0.211 -> 0.160);
+recall@100 back to about the physics run's (Waimakariri council 0.375 -> 0.371, HBRC council 0.705 -> 0.676, ECan
+bridges 0.786 -> 0.811, Hauraki implied 0.745 -> 0.748). So the unchanged scorer gains nothing from the extra
+reachable labels: it was trained on physics runs and has no feature for the channel model's evidence. Labels v4
+(v2's out-of-fold predictions for the cleaning, both reviews: 350 reviewed reaches applied; cleaned 0.1-2.4 % of
+positive cells, Waimakariri most) and unet_v3 on them (v2's settings): fold 1 at 0.8 recall off physics 0.53,
+precision 0.71 (v2 at 0.8 on labels v3: 0.57, 0.74); holdout at 0.7 0.39, 0.92 (v2 0.37, 0.93): about the same.
+The reviews' tiles are fold-1 test tiles, so only the holdout model trained on their answers. v2 stays the model
+for ML-3c. Next, the scorer on channel-model runs: `dataset.channel_features` gives each candidate ml_channel (on
+a reach only the model mapped), ml_prob_max and ml_sharp_max (the U-Net's highest probability and sharpness
+within 5 m, from the out-of-fold raster: the same held-out model the batch used); `build_dataset.py
+--channel-probs` adds them, `train_scorer.py` uses them as features, and `compare_ml3c.py --scorer-b` scores B with
+the new scorer (A keeps the physics scorer), on wave 3, which neither scorer trained on.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

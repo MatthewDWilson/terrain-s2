@@ -26,6 +26,8 @@ def main():
     ap.add_argument("--bundles")
     ap.add_argument("--labels-config", default=str(ROOT / "ml" / "config" / "labels.yml"))
     ap.add_argument("--relabel", choices=["stale", "always", "never"], default="stale")
+    ap.add_argument("--channel-probs", help="runs folder holding each tile's ml_channel_prob.tif (the out-of-fold "
+                                            "U-Net prediction), for the channel-model features (ML-3c)")
     a = ap.parse_args()
     from terrain_s2.acquire.elevation import default_data_dir
     data = default_data_dir()
@@ -34,7 +36,7 @@ def main():
     manual = L.load_manual(cfg) if cfg.get("manual") else None
     out = Path(a.out) if a.out else data / "datasets" / a.name
     DS.build(a.manifest, out, a.runs or data / "runs", a.bundles or data / "tiles", cfg, manual,
-                    relabel=a.relabel, name=a.name)
+                    relabel=a.relabel, name=a.name, channel_probs=a.channel_probs)
     print((out / "card.md").read_text())
     print(f"-> {out}")
 

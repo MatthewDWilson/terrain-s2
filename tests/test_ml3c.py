@@ -121,3 +121,27 @@ def test_sharpness_map_and_cell_filter():
     cover[20:30, :100] = 0.5
     keep2 = CP.keep_sharp(prob >= 0.7, S, cover, min_sharpness=0.4, max_urban=0.1)
     assert not keep2[25, 50] and keep2[25, 150]
+
+
+def test_channel_features_for_the_scorer(tmp_path):
+    import geopandas as gpd
+    from affine import Affine
+    from shapely.geometry import Point
+
+    from terrain_s2 import dataio
+    from terrain_s2.ml.dataset import channel_features
+    T = Affine(1.0, 0, 1_570_000, 0, -1.0, 5_200_100)
+    run = tmp_path / "runs_b" / "BX00"
+    run.mkdir(parents=True)
+    gpd.GeoDataFrame({"ml_channel": [True, False]}, geometry=[Point(1_570_020.5, 5_200_049.5), Point(1_570_080.5, 5_200_020.5)],
+                     crs=2193).to_file(run / "network.gpkg", layer="crossings", driver="GPKG")
+    probs = tmp_path / "runs" / "BX00"
+    probs.mkdir(parents=True)
+    prob = np.zeros((100, 100), np.float32)
+    prob[48:53, :] = 0.9                                           # a channel along row 50
+    dataio.write_stack(probs / "ml_channel_prob.tif", {"channel_prob": prob}, T, "EPSG:2193")
+    D = pd.DataFrame({"x": [1_570_020.5, 1_570_080.5], "y": [5_200_049.5, 5_200_020.5]})
+    out = channel_features(run, D, tmp_path / "runs")
+    assert out.ml_channel.tolist() == [1.0, 0.0]
+    assert out.ml_prob_max.iloc[0] == np.float32(0.9) and out.ml_prob_max.iloc[1] == 0.0
+    assert out.ml_sharp_max.iloc[0] > 0.5 > out.ml_sharp_max.iloc[1]

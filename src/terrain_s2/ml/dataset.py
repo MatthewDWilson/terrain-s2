@@ -39,7 +39,7 @@ def _sha(path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16]
 
 
-def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel="stale", log=print):
+def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel="stale", log=print, channel_probs=None):
     """(candidates DataFrame, misses DataFrame, record) for one tile, or (None, None, record) if not ready."""
     import geopandas as gpd
     import pandas as pd
@@ -71,6 +71,8 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
     for k in TILE_COLUMNS:
         D[k] = getattr(tile, k, None)
     D = context_features(bundle_dir, D)
+    if channel_probs is not None or (run_dir / "ml_channel_prob.tif").exists():
+        D = channel_features(run_dir, D, channel_probs)
     D["cand_id"] = [f"{tile.tile_id}:{i}" for i in range(len(D))]
     D["patch_file"] = str(run_dir / "ml_patches.npy")
     D["patch_row"] = np.arange(len(D))
@@ -84,6 +86,55 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
     rec.update(status="ok", candidates=len(D), positives=int((D.struct == 1).sum()), negatives=int((D.struct == 0).sum()),
                misses=0 if M is None else len(M))
     return D, M, rec
+
+
+CHANNEL_RADIUS_M = 5.0
+
+
+def channel_features(run_dir: Path, D, channel_probs=None):
+    """The channel model's evidence at each candidate (ML-3c), for a scorer trained on runs with it:
+
+        ml_channel      the candidate is on a reach only the U-Net mapped (network.gpkg ``crossings``; NaN for a
+                        run without a channel model)
+        ml_prob_max     the U-Net's highest probability within 5 m
+        ml_sharp_max    the highest sharpness within 5 m (``channel_predict.sharpness_map``: a tight line against
+                        a smudge)
+
+    The probability raster is the run's ``ml_channel_prob.tif``, else ``<channel_probs>/<tile>/`` (the out-of-fold
+    prediction beside the physics runs: the same held-out model a channel-model batch used)."""
+    import geopandas as gpd
+    import pyogrio
+    import rasterio
+    from scipy import ndimage as ndi
+    from scipy.spatial import cKDTree
+
+    from .channel_predict import sharpness_map
+    D = D.copy()
+    xy = np.column_stack([D.x.to_numpy(float), D.y.to_numpy(float)])
+    net = run_dir / "network.gpkg"
+    D["ml_channel"] = np.nan
+    if net.exists() and "crossings" in {n for n, _ in pyogrio.list_layers(net)} and len(D):
+        c = gpd.read_file(net, layer="crossings")
+        if "ml_channel" in c and len(c):
+            d, i = cKDTree(np.column_stack([c.geometry.x, c.geometry.y])).query(xy)
+            D["ml_channel"] = np.where(d <= 0.5, c.ml_channel.to_numpy(float)[i], np.nan)
+    pf = run_dir / "ml_channel_prob.tif"
+    if not pf.exists() and channel_probs is not None:
+        pf = Path(channel_probs) / run_dir.name / "ml_channel_prob.tif"
+    D["ml_prob_max"] = np.nan
+    D["ml_sharp_max"] = np.nan
+    if pf.exists() and len(D):
+        with rasterio.open(pf) as s:
+            prob, T = s.read(1), s.transform
+        k = 2 * int(round(CHANNEL_RADIUS_M / abs(T.a))) + 1
+        pmax = ndi.maximum_filter(np.nan_to_num(prob, nan=0.0), size=k, mode="constant")
+        smax = ndi.maximum_filter(sharpness_map(prob, T), size=k, mode="constant")
+        r = np.floor((xy[:, 1] - T.f) / T.e).astype(int)
+        cc = np.floor((xy[:, 0] - T.c) / T.a).astype(int)
+        ok = (r >= 0) & (r < prob.shape[0]) & (cc >= 0) & (cc < prob.shape[1])
+        D.loc[ok, "ml_prob_max"] = pmax[r[ok], cc[ok]]
+        D.loc[ok, "ml_sharp_max"] = smax[r[ok], cc[ok]]
+    return D
 
 
 CTX_CAP_M = 500.0
@@ -143,7 +194,8 @@ def pd_num(s):
     return None if s is None else pd.to_numeric(s, errors="coerce").to_numpy(float)
 
 
-def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale", name=None, log=print) -> dict:
+def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale", name=None, log=print,
+          channel_probs=None) -> dict:
     """Assemble the dataset (see the module docstring); returns the card."""
     import pandas as pd
 
@@ -155,7 +207,8 @@ def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale"
     man = pd.concat([pd.read_csv(m) for m in manifests], ignore_index=True).drop_duplicates("tile_id")
     parts, misses, recs = [], [], []
     for tile in man.itertuples(index=False):
-        D, M, rec = tile_rows(tile, Path(runs) / tile.tile_id, Path(bundles) / tile.tile_id, manual, label_cfg, relabel, log)
+        D, M, rec = tile_rows(tile, Path(runs) / tile.tile_id, Path(bundles) / tile.tile_id, manual, label_cfg, relabel, log,
+                              channel_probs)
         recs.append(rec)
         if D is None:
             log(f"{tile.tile_id}: skipped ({rec['status']})")

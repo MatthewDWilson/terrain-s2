@@ -14,7 +14,8 @@ candidates, scored here with the same scorer for A and B):
                   pooled over the tiles, and the mean of the per-tile shares (the scorer's reports use the mean)
     candidates    per tile
 
-The design's test: "found" rises (more council culverts reachable) and recall@100 rises or holds. Use tiles the
+The design's test: "found" rises (more council culverts reachable) and recall@100 rises or holds. --scorer-b
+scores B with a scorer trained on channel-model runs (its ml_* features from --channel-probs). Use tiles the
 scorer never trained on (wave 3) for an honest recall@100. Writes --out (CSV, one row per tile, label kind and run).
 """
 import argparse
@@ -39,8 +40,9 @@ def recall_at_k(cand_xy, scores, label_xy, k=100, radius=25.0):
     return int((d <= radius).sum()), n
 
 
-def score_table(features_path, bundle, model):
-    """The scorer's p_structure for a run's candidates (as ml.apply builds the features), with x and y."""
+def score_table(features_path, bundle, model, channel_probs=None):
+    """The scorer's p_structure for a run's candidates (as ml.apply builds the features, with the channel-model
+    features when the scorer uses them), with x and y."""
     import numpy as np
     import pandas as pd
     from terrain_s2.ml import dataset, features, train
@@ -49,12 +51,14 @@ def score_table(features_path, bundle, model):
         return tab.assign(p=[])
     t = features.normalise_source_flags(tab.copy())
     t = dataset.context_features(Path(bundle), t)
+    if any(f.startswith("ml_") for f in model["features"]):
+        t = dataset.channel_features(Path(features_path).parent, t, channel_probs)
     t = train.add_derived(t)
     X = t.reindex(columns=model["features"]).to_numpy(np.float32)
     return pd.DataFrame({"x": tab.x.to_numpy(), "y": tab.y.to_numpy(), "p": model["structure"].predict_proba(X)[:, 1]})
 
 
-def tile_rows(tile, council, runs, bundles, model, top, radius):
+def tile_rows(tile, council, runs, bundles, models, top, radius, channel_probs=None):
     import pandas as pd
     rows = []
     for name, root in runs.items():
@@ -64,7 +68,7 @@ def tile_rows(tile, council, runs, bundles, model, top, radius):
             rows.append(dict(tile_id=tile, council=council, run=name, missing=True))
             continue
         pr = pd.read_parquet(pf)
-        sc = score_table(ff, Path(bundles) / tile, model)
+        sc = score_table(ff, Path(bundles) / tile, models[name], channel_probs)
         for kind, g in (pr.groupby("kind") if len(pr) else []):
             hit, n = recall_at_k(sc[["x", "y"]].to_numpy(), sc.p.to_numpy(), g[["x", "y"]].to_numpy(), top, radius)
             rows.append(dict(tile_id=tile, council=council, run=name, kind=kind, labels=len(g),
@@ -102,7 +106,9 @@ def main():
     ap.add_argument("--runs-a", help="runs without the channel model (default <data>/runs)")
     ap.add_argument("--runs-b", required=True, help="runs with it")
     ap.add_argument("--bundles")
-    ap.add_argument("--scorer", required=True, help="the scorer's folder or model.pkl (ml/train.py)")
+    ap.add_argument("--scorer", required=True, help="the scorer's folder or model.pkl (ml/train.py), for A (and B)")
+    ap.add_argument("--scorer-b", help="another scorer for B (one trained on channel-model runs)")
+    ap.add_argument("--channel-probs", help="runs folder holding each tile's ml_channel_prob.tif (default <data>/runs)")
     ap.add_argument("--top", type=int, default=100)
     ap.add_argument("--radius", type=float, default=25.0)
     ap.add_argument("--out")
@@ -113,11 +119,13 @@ def main():
     data = default_data_dir()
     runs = {"A": a.runs_a or str(data / "runs"), "B": a.runs_b}
     bundles = a.bundles or str(data / "tiles")
-    model = load_model(a.scorer)
+    models = {"A": load_model(a.scorer)}
+    models["B"] = load_model(a.scorer_b) if a.scorer_b else models["A"]
+    probs = a.channel_probs or str(data / "runs")
     m = pd.concat([pd.read_csv(f) for f in a.manifest], ignore_index=True).drop_duplicates("tile_id")
     rows = []
     for i, r in enumerate(m.itertuples(), 1):
-        rows += tile_rows(r.tile_id, getattr(r, "council", None), runs, bundles, model, a.top, a.radius)
+        rows += tile_rows(r.tile_id, getattr(r, "council", None), runs, bundles, models, a.top, a.radius, probs)
         if i % 25 == 0:
             print(f"  {i}/{len(m)} tiles")
     d = pd.DataFrame(rows)
