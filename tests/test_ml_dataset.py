@@ -29,7 +29,11 @@ def test_dataset_from_batch_tiles(tmp_path):
                        region="r", latest_survey="s")]).to_csv(tmp_path / "m.csv", index=False)
     lcfg = L.load_config()
     lcfg["council_sources"] = ["wdc_culverts"]
-    card = DS.build([tmp_path / "m.csv"], tmp_path / "ds", tmp_path / "runs", tmp_path / "bundles", lcfg, log=lambda *a: None)
+    import pytest
+    with pytest.raises(ValueError, match="not ready"):           # 1 of 3 tiles missing: more than 2 %
+        DS.build([tmp_path / "m.csv"], tmp_path / "ds", tmp_path / "runs", tmp_path / "bundles", lcfg, log=lambda *a: None)
+    card = DS.build([tmp_path / "m.csv"], tmp_path / "ds", tmp_path / "runs", tmp_path / "bundles", lcfg, log=lambda *a: None,
+                    max_skipped=None)
     d = pd.read_parquet(tmp_path / "ds" / "candidates.parquet")
     assert card["tiles"]["included"] == 2 and card["tiles"]["skipped"] == ["T3"]
     assert card["positives"] == 1 and card["misses"]["total"] == 0                 # the far culvert is outside the core

@@ -2054,6 +2054,18 @@ within 5 m, from the out-of-fold raster: the same held-out model the batch used)
 --channel-probs` adds them, `train_scorer.py` uses them as features, and `compare_ml3c.py --scorer-b` scores B with
 the new scorer (A keeps the physics scorer), on wave 3, which neither scorer trained on.
 
+**The scorer on channel-model runs, first attempt: built too early** (22 Oct). The commands were run in one go:
+`start` (wave 2's ML-3c batch) is detached and returned at once, so the dataset was built while the batch ran and
+kept 91 of 349 tiles (waves 1 and 8 Auckland tiles; 258 "no run with features"), and the scorer trained on 79 tiles
+(151,666 candidates; the physics scorer had ~345 tiles). Its block folds (recall@100 0.38-0.69) are not comparable
+with the physics scorer's. Even so, on wave 3 (neither scorer trained on it; physics runs with the physics scorer
+against channel-model runs with it), implied crossings rose in every council (ECan 0.772 -> 0.824, Gisborne 0.732 ->
+0.782, Hauraki 0.745 -> 0.813, Otago 0.664 -> 0.736, Waikato 0.636 -> 0.722) and council culverts in Waikato (0.188 ->
+0.219) and Hauraki (0.088 -> 0.112), while assets fell (ECan 0.620 -> 0.547, Otago 0.687 -> 0.590, Waikato 0.527 ->
+0.418) and bridges were mixed; ml_sharp_max and ml_prob_max ranked 4th and 5th in permutation importance (after
+the distance to any way, upstream area and DSM - DEM). To be redone on all 349 tiles. `dataset.build` now stops
+when more than 2 % of the manifest's tiles are not ready (`build_dataset.py --allow-missing` to override).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

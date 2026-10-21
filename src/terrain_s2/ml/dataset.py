@@ -195,8 +195,10 @@ def pd_num(s):
 
 
 def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale", name=None, log=print,
-          channel_probs=None) -> dict:
-    """Assemble the dataset (see the module docstring); returns the card."""
+          channel_probs=None, max_skipped=0.02) -> dict:
+    """Assemble the dataset (see the module docstring); returns the card. Stops if more than ``max_skipped`` of the
+    manifest's tiles are not ready (22 Oct: a dataset built while its batch was still running kept 91 of 349 tiles,
+    and a scorer trained on it looked like a result); None allows any share."""
     import pandas as pd
 
     from . import code_version
@@ -218,6 +220,11 @@ def build(manifests, out, runs, bundles, label_cfg, manual=None, relabel="stale"
             misses.append(M)
     if not parts:
         raise ValueError("no tile is ready (finished runs with features)")
+    skipped = [r for r in recs if r.get("status") != "ok"]
+    if max_skipped is not None and len(skipped) > max_skipped * len(man):
+        reasons = pd.Series([r.get("status") for r in skipped]).value_counts().to_dict()
+        raise ValueError(f"{len(skipped)} of {len(man)} tiles are not ready ({reasons}): is their batch still running? "
+                         "Build again when it has finished, or allow it (build_dataset.py --allow-missing)")
     data = pd.concat(parts, ignore_index=True)
     data.to_parquet(out / "candidates.parquet", index=False)
     mis = pd.concat(misses, ignore_index=True) if misses else pd.DataFrame(columns=["kind", *TILE_COLUMNS])
