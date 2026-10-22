@@ -41,6 +41,24 @@ def auc(pos, neg, higher=True):
     return float(gt + 0.5 * eq)
 
 
+def load_reviews(files):
+    """The review files' reaches with a confident answer (``answer`` y / n; unsure and blank left out), each
+    with its ``review`` (the file's stem). Warns about files with no answers at all."""
+    import geopandas as gpd
+    import pandas as pd
+    parts = []
+    for f in files:
+        g = gpd.read_file(f, layer="reaches")
+        g["review"] = Path(f).stem
+        parts.append(g.to_crs(parts[0].crs) if parts and g.crs != parts[0].crs else g)
+    rv = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs=parts[0].crs)
+    rv["answer"] = rv.exists.fillna("").astype(str).str.strip().str.lower()
+    empty = [f for f in rv.review.unique() if not rv[rv.review == f].answer.isin(["y", "n"]).any()]
+    if empty:
+        print(f"WARNING: no y / n answers in {', '.join(empty)} (an unedited copy?)")
+    return rv[rv.answer.isin(["y", "n"])]
+
+
 def tile_features(tile, rows, runs, bundles, min_cells):
     import geopandas as gpd
     import numpy as np
@@ -104,17 +122,7 @@ def main():
     files = sorted(glob.glob(a.reviews or str(data / "labels" / "manual" / "review_*.gpkg")))
     if not files:
         ap.error("no review files")
-    parts = []
-    for f in files:
-        g = gpd.read_file(f, layer="reaches")
-        g["review"] = Path(f).stem
-        parts.append(g)
-    rv = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs=parts[0].crs)
-    rv["answer"] = rv.exists.fillna("").astype(str).str.strip().str.lower()
-    empty = [f for f in rv.review.unique() if not rv[rv.review == f].answer.isin(["y", "n"]).any()]
-    if empty:
-        print(f"WARNING: no y / n answers in {', '.join(empty)} (an unedited copy?)")
-    rv = rv[rv.answer.isin(["y", "n"])]
+    rv = load_reviews(files)
     print(f"{len(files)} review files, {len(rv)} confident answers on {rv.tile.nunique()} tiles")
     print(rv.groupby(["review", "kind"]).answer.value_counts().unstack(fill_value=0).to_string())
     rows = []

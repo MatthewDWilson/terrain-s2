@@ -2125,6 +2125,26 @@ Datasets and models so far (the chip datasets' suffixes are label versions, the 
 rasters read the rasters); the batch stage prints the saved-rasters counts instead, so a channel-model batch checks
 clean.
 
+**Aerial imagery, the cheap check first** (22 Oct). Before imagery is tried as U-Net input (a cycle like
+ML-3c's: chips, folds, out-of-fold prediction, batch, scorer), Matt and the Stage 2 agent agreed a staged test,
+stopping at the first stage that says no: (1) does imagery separate the model's real drains from its false
+detections on the reviewed reaches, where sharpness and building cover cannot (BH41's sharp rural lines above
+all)? (2) the U-Net with RGB bands on fold 1 + holdout (the reviews' tiles are fold 1 test tiles); (3) the full
+cycle. Integration work that does not depend on the model's inputs can go on meanwhile, with the model set
+declaring the bands it needs. Stage 1's code: `acquire/imagery.py` (`ImagerySource`: LINZ nz-imagery, a static
+STAC of RGB / RGBNIR COGs like nz-elevation's; collections narrowed to the regions of the tile's elevation
+surveys; satellite and scanned imagery and surveys coarser than 0.5 m left out; items chosen by map-sheet id
+without fetching every item document; surveys ordered newest first or by capture closest to a date; `read`
+mosaics on a regular grid, survey by survey, honouring the alpha mask, and reads only the COG blocks a window
+needs) and `scripts/review_imagery.py`. Per reviewed reach: cross-profiles every 2 m (core +-1 m against both
+banks 5-8 m out, one lateral shift per reach within +-2 m for misregistration), indices brightness, excess
+green and NDVI (where a survey has NIR), standardised per tile and survey; measures core / side levels, line
+(core against both banks the same way), edge (bank against bank: a road edge or field boundary is a step, not a
+line), twoside and consistent (shares of points). Evaluated as `review_features.py`: AUC with bootstrap
+intervals overall, per review, on the reaches the current filter keeps and per tile; filter + one imagery
+threshold with the threshold chosen leaving each tile out. Default survey: closest to the LiDAR (what a U-Net
+would be given); `--prefer newest` is nearer the basemap the reviews were answered on, so partly circular.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
