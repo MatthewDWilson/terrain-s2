@@ -2066,6 +2066,65 @@ against channel-model runs with it), implied crossings rose in every council (EC
 the distance to any way, upstream area and DSM - DEM). To be redone on all 349 tiles. `dataset.build` now stops
 when more than 2 % of the manifest's tiles are not ready (`build_dataset.py --allow-missing` to override).
 
+**The scorer on channel-model runs, full test** (22 Oct). Wave 2's ML-3c batch finished (569 runs in runs_ml3c_f;
+`check-runs` on waves 1 + 2 there: only dem_mostly_empty, 12 mostly-sea tiles, and no_saved_rasters on all 349,
+since the ML-3c batches ran with `rasters=none`, which the scorer dataset does not need). Dataset `waves12_ml3c`
+rebuilt on all 349 tiles: 722,058 candidates (+3.9 % on `waves12`; Environment Southland +5.5 %, Waimakariri +5.0 %,
+Auckland and HBRC +2.2 %), 135 feature columns (+ ml_channel, ml_prob_max, ml_sharp_max). Its label config hash
+differs from `waves12`'s (floodgates added to `labels.yml` for wave 3), but positives plus misses per label kind agree
+within 4, so the gains are labels recovered from the misses: council 739 -> 763 positives, implied 973 -> 1,010,
+bridge 1,539 -> 1,556, asset 830 -> 834 (asset misses 173 both); misses 1,125 -> 1,044.
+
+The baseline had to be retrained: `scorer_waves12` (15 Oct 07:36) was trained on an earlier build of `waves12` (345
+tiles; final model on 333) half an hour before the current one (349), and before the spatial-block folds (its report,
+`ml/results/scorer_waves12.md`, uses sheet folds; the block result 0.59 was a sandbox run on the 345-tile build). So
+`scorer_waves12_r`: `waves12`, today's code, the same block folds as `scorer_waves12_ml3c` (folds depend only on the
+tiles, councils and seed). One confound remains: the OSM refresh (17 Oct) gave 60 wave 1 + 2 bundles (Environment
+Southland 53) OSM ways after the physics runs, so `waves12_ml3c`'s ctx_dist_any_way_m (the scorer's strongest
+feature) is better there than `waves12`'s; Environment Southland is the least clean comparison.
+
+Cross-validation (`scorer_waves12_r` 118 features -> `scorer_waves12_ml3c` 121; recall@100, the label sets of each
+fold within 9): blocks mean 0.601 -> 0.610 (4 of 5 folds up; misses 833 -> 770, and ~49 more labels in the top 100
+of the 63 newly reachable); leave-one-council-out Auckland 0.506 -> 0.507, Environment Southland 0.730 -> 0.747 (AP
+0.483 -> 0.450), HBRC 0.530 -> 0.526, Waimakariri 0.308 -> 0.315; holdout 0.302 -> 0.325 (holdout AP 0.323 -> 0.372).
+By label kind, pooled over the block folds: council 0.387 -> 0.417, implied 0.514 -> 0.543, bridge 0.742 -> 0.744,
+asset 0.490 -> 0.486 (2 fewer of 940; down 2-5 labels in the Environment Southland, HBRC and Waimakariri council
+folds, up 2 in the holdout). Permutation importance: ml_prob_max 3rd (0.037 of holdout AP) and ml_sharp_max 5th
+(0.033), after ctx_dist_any_way_m and log10_upa_max5; ml_channel not in the top 15. The ablation (the ML-3c dataset
+without the ml_* features) was not run: the extra candidates exist only with the U-Net, so its evidence comes at no
+extra cost, and the importances show the scorer uses it.
+
+Wave 3 (220 tiles, which neither scorer nor the U-Net folds that ran them trained on; `compare_ml3c.py`, A the
+physics runs with `scorer_waves12_r`, B runs_ml3c_f with `scorer_waves12_ml3c`; `runs_ml3c_f/compare_scorer_r.csv`):
+found 0.794 -> 0.809, recall@100 pooled 0.651 -> 0.686 (per tile 0.723 -> 0.754), candidates +4.3 % a tile; every
+council up (ECan 0.749 -> 0.777, Gisborne 0.762 -> 0.783, Hauraki 0.594 -> 0.629, Otago 0.672 -> 0.697, Waikato
+0.571 -> 0.619). By kind: implied 0.703 -> 0.753 (+129 hits but +47 found, so mostly ranking; 75 tiles up, 14 down),
+council 0.105 -> 0.160 (+21; Waikato 0.121 -> 0.203), bridge 0.754 -> 0.760, asset 0.616 -> 0.610 (-3 of 541; 11
+tiles up, 11 down, the largest loss BY20_10000_0405 -3 of 13; found +3). So the first attempt's asset fall came from
+its 79 training tiles; what is left is noise. Two cautions: implied crossings are defined from the same labelled
+channels the U-Net learned to draw (out of fold, so not leakage, but not independent evidence of structures); the
+independent kinds (council, bridge, asset) together gain 24 hits of 1,856 (+1.3 points). Floodgates stay poorly
+ranked either way (Hauraki council labels 46 % found, recall@100 0.072 in both): they sit at stopbanks and the scorer
+learned road crossings, a scorer question rather than ML-3c's. The design's test (found rises, recall@100 rises or
+holds) holds: unet_v2 + the filter + `scorer_waves12_ml3c` is the candidate ML-3c set. Before freezing it: whether
+to test aerial imagery as U-Net input first (Matt), whether the final scorer should include the 12 holdout tiles,
+and how the run provides the probability raster (the scorer's ml_* features read `ml_channel_prob.tif`, here the
+out-of-fold one in runs/; a channel-model run keeps the probability only in `hydro.tif`, when rasters are saved).
+
+Datasets and models so far (the chip datasets' suffixes are label versions, the U-Nets' are model versions):
+
+| dataset | kind | from | models |
+|---|---|---|---|
+| `waves12` | scorer | physics runs, waves 1 + 2 | `scorer_waves12` (earlier 345-tile build), `scorer_waves12_r` |
+| `waves12_ml3c` | scorer | runs_ml3c_f + unet_v2's out-of-fold probabilities | `scorer_waves12_ml3c` |
+| `ml3_waves123` | chips, labels v2 | physics runs, waves 1-3 | `unet_v1` |
+| `ml3_waves123_v3` | chips, labels v3 | the same | `unet_v2` (in use) |
+| `ml3_waves123_v4` | chips, labels v4 | the same | `unet_v3` (fold 1 + holdout) |
+
+`check_runs.py`: no_saved_rasters is now an issue only at the channels and chips stages (the snapping and the label
+rasters read the rasters); the batch stage prints the saved-rasters counts instead, so a channel-model batch checks
+clean.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

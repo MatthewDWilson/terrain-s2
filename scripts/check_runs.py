@@ -11,8 +11,10 @@ Per tile, from the files only (fast; nothing is recomputed):
                 DSM - DEM, and the chips' DSM - DEM band is 0)
     run         done.json (and its parameters: saved rasters), failed.json (stale_failed when done.json is newer:
                 an earlier attempt), the outputs a finished run has
-                (network.gpkg, ml_features.parquet, ml_patches.npy, ml_probes.parquet, the three rasters),
-                probes_error, candidates and channel km
+                (network.gpkg, ml_features.parquet, ml_patches.npy, ml_probes.parquet, the three rasters when the
+                run saved them), probes_error, candidates and channel km. A run without saved rasters (``rasters``
+                other than ``all``, as in the channel-model batches) is an issue (no_saved_rasters) only for the
+                channel steps, which read them; the batch stage prints the counts instead
     channels    ml_channels.json (snap version), ml_channel_labels (label version), ml_ways.tif, and whether the
                 tile has any positives            (--stage channels or chips)
     chips       the tile's chips in <datasets>/<--dataset>/chips   (--stage chips)
@@ -76,8 +78,8 @@ def check_tile(t, runs, bundles, stage, chips_dir, dsm_gap):
     else:
         row.update(crossings=done.get("crossings"), channels_km=done.get("channels_km"),
                    peak_rss_gb=done.get("peak_rss_gb"), rasters=(done.get("params") or {}).get("rasters"))
-        if row["rasters"] != "all":
-            issues.append("no_saved_rasters")
+        if row["rasters"] != "all" and stage in ("channels", "chips"):
+            issues.append("no_saved_rasters")              # the snapping and the label rasters read them
         if done.get("probes_error"):
             issues.append("probes_error")
         missing = [f for f in RUN_FILES if not (r / f).exists()
@@ -140,6 +142,9 @@ def main():
     ex = d.assign(issue=d.issues.str.split(";")).explode("issue")
     ex = ex[ex.issue.astype(bool)]
     print(f"{len(d)} tiles; {int((d.issues == '').sum())} without issues")
+    if "rasters" in d and (d.rasters.fillna("") != "all").any():
+        sr = d.rasters.fillna("(not done)").value_counts()
+        print("saved rasters: " + ", ".join(f"{k} {v}" for k, v in sr.items()))
     if len(ex):
         by = ex.groupby(["issue", "council"]).size().unstack(fill_value=0) if "council" in ex else ex.issue.value_counts()
         print(by.to_string())

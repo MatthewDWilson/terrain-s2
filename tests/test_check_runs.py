@@ -46,3 +46,11 @@ def test_stale_failed(tmp_path):
     os.utime(r / "failed.json", (old, old))
     row = CR.check_tile("A", tmp_path / "runs", tmp_path / "tiles", "batch", None, 0.02)
     assert row["issues"] == "stale_failed"
+
+
+def test_saved_rasters_matter_only_for_the_channel_steps(tmp_path):
+    _tile(tmp_path, "A", rasters="none", files=CR.RUN_FILES[:4])     # a channel-model run: no rasters saved
+    runs, bundles = tmp_path / "runs", tmp_path / "tiles"
+    row = CR.check_tile("A", runs, bundles, "batch", None, 0.02)
+    assert row["issues"] == "" and row["rasters"] == "none"
+    assert "no_saved_rasters" in CR.check_tile("A", runs, bundles, "channels", None, 0.02)["issues"].split(";")
