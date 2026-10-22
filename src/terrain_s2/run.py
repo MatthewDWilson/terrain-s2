@@ -25,6 +25,8 @@ network alone (so no evidence is lost where the model closes a gap at a culvert)
 ``building_cover``), or, without ``channel_min_sharpness``, ``channel_min_contrast``, ``channel_max_width_m`` and
 ``channel_max_urban`` drop whole components (``component_quality``), before they join: ``channels`` gains channel_source (physics / ml), ``crossings`` ml_channel (on a reach
 only the model mapped), ``hydro.tif`` the band ml_channel_prob, and ``network.json`` a channel_model summary.
+With ``model_set`` (a name in ``ml/model_sets/`` or a path, ``ml.model_set``), the channel model, its filter and
+the scorer come from the set (options given explicitly win), and ``network.json`` records the set and its models.
 Also ``network.json`` (summary, timings, peak memory) and, with ``rasters``, ``features.tif``,
 ``hydro.tif``, ``conditioned.tif`` and ``rasters.json`` (band names in ``bands.py``).
 
@@ -74,7 +76,7 @@ OPTIONS = dict(stream_model=None, buffer=200.0, max_hand=10.0, clean=True, aoi_c
                device="auto", height_model="rem", conditioned=True, burn_m=0.25, context=None, rasters="all",
                profile=False, keep=False, crossing_model=None, record_sources=None, channel_model=None,
                channel_threshold=None, channel_min_cells=30, channel_min_contrast=None, channel_max_width_m=None,
-               channel_max_urban=None, channel_min_sharpness=None)
+               channel_max_urban=None, channel_min_sharpness=None, model_set=None)
 
 
 def _paths(p):
@@ -196,6 +198,11 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         if bad:
             raise ValueError(f"unknown network option(s) {bad}; known: {sorted(OPTIONS)}")
         opts.update(src)
+    explicit = {k for src in ((params or {}), options) for k, v in src.items() if v is not None}
+    model_set = None
+    if opts.get("model_set"):                       # the frozen ML parts by name (ml/model_sets/); explicit options win
+        from .ml import model_set as MS
+        model_set = MS.apply(opts, explicit)
     if aoi is None:
         raise ValueError("network() needs an aoi (path, geometry or GeoDataFrame)")
     if out is None:
@@ -423,6 +430,8 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
                 floodplain_frac=round(float(fp.mean()), 3) if fp is not None else None,
                 cells=int(w.z.size), device=res.device, gpu_pool_gb=res.gpu_pool_gb,
                 conditioned=_cond_summary(cond, core) if cond is not None else None, perf=T.report())
+    if model_set is not None:
+        info["model_set"] = model_set
     if ml_info is not None:
         chc = ch[ch.intersects(core)]
         mlc = chc[chc.channel_source == "ml"] if "channel_source" in chc else chc.iloc[0:0]
@@ -447,7 +456,7 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         from .ml.apply import score_run
         tmp = NetworkResult(info=info, out=out, layers=written,
                             state=dict(w=w, dsm=dsm, res=res, net=net, sk=sk, fp=fp, rem=hand if fp is not None else None,
-                                       rd=rd, cond=cond, ch=ch, cr=cr, aoi=aoi, crs=hcrs))
+                                       rd=rd, cond=cond, ch=ch, cr=cr, aoi=aoi, crs=hcrs, ml_prob=ml_prob))
         rs = opts.get("record_sources")
         if rs is None:
             from .ml.labels import load_config as _lc
@@ -466,7 +475,7 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     state = None
     if keep:
         state = dict(w=w, dsm=dsm, res=res, net=net, sk=sk, fp=fp, rem=hand if fp is not None else None, rd=rd,
-                     cond=cond, ch=ch, cr=cr, rep=rep, culvert_edges=culvert_edges, aoi=aoi, crs=hcrs)
+                     cond=cond, ch=ch, cr=cr, rep=rep, culvert_edges=culvert_edges, aoi=aoi, crs=hcrs, ml_prob=ml_prob)
     return NetworkResult(info=info, out=out, layers=written, paths=paths, state=state)
 
 
@@ -519,10 +528,13 @@ def main(argv=None):
                          "to the AOI, with rasters.json describing the bands (all: both; hydro: hydro.tif only)")
     ap.add_argument("--crossing-model", help="score the crossings with a trained scorer (model.pkl or its folder): "
                                              "p_structure, p_bridge, recorded structures (ML-1 step 9)")
+    ap.add_argument("--model-set", help="the frozen ML parts by name (ml/model_sets/<name>.yml) or path: channel "
+                                        "model, its filter and the scorer; explicit options win")
     a = ap.parse_args(argv if argv is not None else sys.argv[1:])
     res = network(a.dem, a.dsm, a.aoi, roads=a.roads, out=a.out, stream_model=a.stream_model, buffer=a.buffer,
                   max_hand=a.max_hand, clean=not a.no_clean, aoi_crs=a.aoi_crs, assume_crs=a.assume_crs,
                   device=a.device, height_model=a.height_model, conditioned=not a.no_conditioned, burn_m=a.burn_m,
-                  context=a.context, rasters=a.rasters, profile=a.profile, crossing_model=a.crossing_model)
+                  context=a.context, rasters=a.rasters, profile=a.profile, crossing_model=a.crossing_model,
+                  model_set=a.model_set)
     print(json.dumps(res.info))
     return 0

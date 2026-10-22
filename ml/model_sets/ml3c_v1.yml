@@ -1,0 +1,12 @@
+name: ml3c_v1
+description: >
+  ML-3c as tested on wave 3 (DESIGN_NOTES section 11, 22 Oct 2026): the channel U-Net unet_v2 (labels v3), its
+  model trained on every tile outside the Waimakariri holdout; the ML-3c filter calibrated on the two channel
+  reviews; the scorer trained on the channel-model runs of waves 1 + 2 (121 features, with the U-Net's evidence).
+  Model paths are relative to TERRAIN_DATA_DIR. The run needs the tile's DSM and context (roads, OSM ways,
+  buildings): the U-Net's bands include dsm_minus_dem and the distance to any way.
+channel_model: models/unet_v2/holdout
+channel_min_cells: 30
+channel_min_sharpness: 0.15
+channel_max_urban: 0.05
+crossing_model: models/scorer_waves12_ml3c

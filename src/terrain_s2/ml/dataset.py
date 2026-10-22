@@ -91,7 +91,7 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
 CHANNEL_RADIUS_M = 5.0
 
 
-def channel_features(run_dir: Path, D, channel_probs=None):
+def channel_features(run_dir, D, channel_probs=None, prob=None, transform=None, crossings=None):
     """The channel model's evidence at each candidate (ML-3c), for a scorer trained on runs with it:
 
         ml_channel      the candidate is on a reach only the U-Net mapped (network.gpkg ``crossings``; NaN for a
@@ -101,7 +101,9 @@ def channel_features(run_dir: Path, D, channel_probs=None):
                         a smudge)
 
     The probability raster is the run's ``ml_channel_prob.tif``, else ``<channel_probs>/<tile>/`` (the out-of-fold
-    prediction beside the physics runs: the same held-out model a channel-model batch used)."""
+    prediction beside the physics runs: the same held-out model a channel-model batch used), or, in the run
+    itself (``ml.apply``), ``prob`` on ``transform`` in memory, with ``crossings`` (the run's candidates, with
+    ml_channel) in place of ``network.gpkg``."""
     import geopandas as gpd
     import pyogrio
     import rasterio
@@ -111,21 +113,28 @@ def channel_features(run_dir: Path, D, channel_probs=None):
     from .channel_predict import sharpness_map
     D = D.copy()
     xy = np.column_stack([D.x.to_numpy(float), D.y.to_numpy(float)])
-    net = run_dir / "network.gpkg"
+    run_dir = Path(run_dir) if run_dir is not None else None
     D["ml_channel"] = np.nan
-    if net.exists() and "crossings" in {n for n, _ in pyogrio.list_layers(net)} and len(D):
-        c = gpd.read_file(net, layer="crossings")
+    c = crossings
+    if c is None and run_dir is not None:
+        net = run_dir / "network.gpkg"
+        if net.exists() and "crossings" in {n for n, _ in pyogrio.list_layers(net)} and len(D):
+            c = gpd.read_file(net, layer="crossings")
+    if c is not None and len(D):
         if "ml_channel" in c and len(c):
             d, i = cKDTree(np.column_stack([c.geometry.x, c.geometry.y])).query(xy)
             D["ml_channel"] = np.where(d <= 0.5, c.ml_channel.to_numpy(float)[i], np.nan)
-    pf = run_dir / "ml_channel_prob.tif"
-    if not pf.exists() and channel_probs is not None:
-        pf = Path(channel_probs) / run_dir.name / "ml_channel_prob.tif"
     D["ml_prob_max"] = np.nan
     D["ml_sharp_max"] = np.nan
-    if pf.exists() and len(D):
-        with rasterio.open(pf) as s:
-            prob, T = s.read(1), s.transform
+    T = transform
+    if prob is None and run_dir is not None:
+        pf = run_dir / "ml_channel_prob.tif"
+        if not pf.exists() and channel_probs is not None:
+            pf = Path(channel_probs) / run_dir.name / "ml_channel_prob.tif"
+        if pf.exists():
+            with rasterio.open(pf) as s:
+                prob, T = s.read(1), s.transform
+    if prob is not None and len(D):
         k = 2 * int(round(CHANNEL_RADIUS_M / abs(T.a))) + 1
         pmax = ndi.maximum_filter(np.nan_to_num(prob, nan=0.0), size=k, mode="constant")
         smax = ndi.maximum_filter(sharpness_map(prob, T), size=k, mode="constant")

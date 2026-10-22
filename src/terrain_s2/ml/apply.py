@@ -1,7 +1,8 @@
 """ML-1 step 9: score a run's crossing candidates with a trained scorer, and add the recorded structures.
 
 ``score_run(res, model, bundle_dir)`` (a ``run.network(..., keep=True)`` result) computes the candidates'
-features as in training (``features.tabular``, the bundle's context features, the derived distance to any way),
+features as in training (``features.tabular``, the bundle's context features, for a scorer trained on
+channel-model runs the U-Net's evidence from the run's probability in memory, the derived distance to any way),
 and adds to the ``crossings`` layer:
 
 - ``p_structure``: the scorer's score (a ranking: unlabelled candidates were weak negatives in training);
@@ -21,12 +22,26 @@ from pathlib import Path
 import numpy as np
 
 
-def model_features(res, bundle_dir):
-    """The feature table for the run's written candidates, as the dataset builds it."""
+CHANNEL_FEATURES = ("ml_channel", "ml_prob_max", "ml_sharp_max")
+
+
+def needs_channel_model(model) -> bool:
+    """The scorer was trained on channel-model runs (its features include the U-Net's evidence, ML-3c)."""
+    return any(f in CHANNEL_FEATURES for f in model.get("features", []))
+
+
+def model_features(res, bundle_dir, channel=None):
+    """The feature table for the run's written candidates, as the dataset builds it. ``channel``: the run's
+    channel-model probability and its transform, ``(prob, transform)`` (``ml_prob`` in the run's state), for a
+    scorer with the channel features; their order follows ``dataset.tile_rows``: context, then channel, then
+    the derived features."""
     from . import dataset, features, train
     tab, _, _ = features.extract(res, None, write=False, with_patches=False)
     tab = features.normalise_source_flags(tab)
     tab = dataset.context_features(Path(bundle_dir), tab)
+    if channel is not None:
+        prob, T = channel
+        tab = dataset.channel_features(None, tab, prob=prob, transform=T, crossings=res.layers.get("crossings"))
     return train.add_derived(tab)
 
 
@@ -54,8 +69,15 @@ def score_run(res, model, bundle_dir, record_sources=(), match_m=15.0):
     M = train.load_model(model) if isinstance(model, (str, Path)) else model
     cands = res.layers["crossings"]
     out = cands.copy()
+    channel = None
+    if needs_channel_model(M):
+        st = res.state or {}
+        if st.get("ml_prob") is None:
+            raise ValueError(f"the scorer {M.get('meta', {}).get('name', model)} was trained with the channel model's "
+                             "evidence (ml_* features): run it with its channel model (a model set, ml/model_sets/)")
+        channel = (st["ml_prob"], st["w"].transform)
     if len(cands):
-        tab = model_features(res, bundle_dir)
+        tab = model_features(res, bundle_dir, channel)
         X = tab.reindex(columns=M["features"]).to_numpy(np.float32)
         out["p_structure"] = M["structure"].predict_proba(X)[:, 1]
         out["p_bridge"] = M["bridge"].predict_proba(X)[:, 1] if M.get("bridge") is not None else np.nan

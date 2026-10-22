@@ -2145,6 +2145,42 @@ intervals overall, per review, on the reaches the current filter keeps and per t
 threshold with the threshold chosen leaving each tile out. Default survey: closest to the LiDAR (what a U-Net
 would be given); `--prefer newest` is nearer the basemap the reviews were answered on, so partly circular.
 
+**Imagery check results; integration begins** (22-23 Oct). The cheap imagery check ran on the 268 reviewed reaches
+(the reader worked against the live catalogue: per tile the survey closest to the LiDAR, 0-1.1 years apart, or the
+newest, 1.6-4 years). On the reaches the filter keeps (46 real, 45 false) the best measures, the brightness line
+measures (`bright_absline`, `_twoside`, `_consistent`), reach AUC 0.66-0.68 (0.64-0.66 counting only pairs within a
+tile, so not a tile effect; excess green 0.47-0.55 within tiles); the newest imagery gives about the same (0.64-0.68
+within tiles), so the reviews do not simply echo the basemap. At a practical threshold (keeping 90 % of the
+filter's real drains) `bright_twoside` loses ~5 real drains to drop ~12 false detections (precision ~0.51 ->
+0.54), short of the gate (+15 points of false for a few real); at least 10 % of real drains show no line in the
+imagery at all. BH41 cannot be judged (3 real reaches kept); the one balanced tile, BW23, is at ~0.5 on every
+measure. NIR was not read from the two RGBNIR surveys (13 reaches; the band labels, to fix); a third of reaches
+took the full +-2 m shift, real and false alike (noise rather than misregistration). Decision (Matt): stage 1
+gives a weak no; integration first, on the LiDAR-only ML-3c set; imagery stays the first follow-up experiment
+(stage 2, aimed at the drainage layer's precision; Matt to look at the saved BH41 windows).
+
+**Integration plan, Stage 2 side** (agreed order): (1) model sets and the scorer's channel features in the run
+(below); (2) a production tile runner (bundle + run) for EDDIE's `ensure_network(tile_id=...)`: the model set needs
+the tile's DSM and context (roads, OSM ways, buildings), which the Stage 1 DEM route does not supply; (3) S2-7
+structures layer; (4) S2-6 honest and burned DEMs (model-only reaches not burned by default: a false drain would
+cut the terrain); (5) S2-8 tile ownership, ids, `merge_tiles`; (6) S2-13 provenance and the generator key with the
+model set; (7) the EDDIE module wiring and the WSL + Docker test.
+
+**Model sets** (step 1). `ml/model_sets/<name>.yml` names the frozen ML parts a production run uses together;
+`run.network(model_set=...)` (CLI `--model-set`) fills the options from it (paths relative to `TERRAIN_DATA_DIR`;
+an option given explicitly wins) and `network.json` gains `model_set` (the file's hash; each model's folder,
+weights sha256, dataset or name and code). `ml.model_set.load` checks before a run: the files exist, the U-Net's
+bands are `chips.BANDS`, and a scorer with ml_* features comes with a channel model. First set `ml3c_v1`:
+unet_v2's `holdout` model (trained on every tile outside the Waimakariri holdout, the same training set as
+"final"), min_cells 30, the filter (sharpness 0.15, building cover 0.05), `scorer_waves12_ml3c`. A gap closed: the
+in-run scorer (`ml.apply.score_run`) did not compute the channel features (ml_channel, ml_prob_max, ml_sharp_max),
+so `scorer_waves12_ml3c` in a run would have scored with them missing; `dataset.channel_features` now takes the
+probability in memory and the run's candidates, `apply.model_features` adds them when the scorer needs them
+(the same values as the training path, tested), and a scorer that needs them without a channel model is refused.
+`scripts/check_model_set.py` checks a set on real tiles against the tested reference (runs_ml3c_f, scored offline
+as `compare_ml3c.py` did); `--parity` uses each tile's held-out fold, as the batch did, so the candidates should
+match one for one and the scores to rounding.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
