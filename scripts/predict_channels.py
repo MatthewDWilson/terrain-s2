@@ -41,6 +41,9 @@ def main():
     ap.add_argument("--runs")
     ap.add_argument("--workers", type=int, default=1, help="--fold oof: processes on the GPU")
     ap.add_argument("--rerun", action="store_true")
+    ap.add_argument("--prob-file", default="ml_channel_prob.tif",
+                    help="file written beside each run; give another (e.g. ml_channel_prob_unet_v4.tif) for a new model, "
+                         "so the probabilities the scorer and the label cleaning were made from are kept")
     a = ap.parse_args()
     import geopandas as gpd
     import pandas as pd
@@ -76,7 +79,7 @@ def main():
         ap.error("no tiles (--tiles or --pick)")
     model, meta = U.load_model(model_dir, device)
     thr = a.threshold if a.threshold is not None else meta["threshold"]
-    mosaic = Mosaic({t: runs / t for t in sorted(set(idx.tile_id) | set(tiles))})
+    mosaic = Mosaic({t: runs / t for t in sorted(set(idx.tile_id) | set(tiles))}, bands=meta["bands"])
     parts = []
     for t in tiles:
         prob, T, crs = P.predict_tile(runs / t, mosaic, model, meta, device)
@@ -84,7 +87,7 @@ def main():
         if t in set(idx.tile_id):
             masks = {n: te for n, _, te in U.fold_masks(idx, cfg)}
             held = bool(t in set(idx[masks[a.fold]].tile_id)) if a.fold in masks else None
-        P.write_prob(runs / t, prob, T, crs, model_dir, thr, fold=a.fold, held_out=held)
+        P.write_prob(runs / t, prob, T, crs, model_dir, thr, fold=a.fold, held_out=held, filename=a.prob_file)
         print(f"{t}: ml_channel_prob.tif written; {float((prob >= thr).mean()):.2%} of cells >= {thr}")
         if a.review:
             r = P.review_reaches(runs / t, prob, T, crs, thr, max_per_kind=a.max_per_kind)
@@ -106,9 +109,9 @@ def _oof_worker(job):
     from terrain_s2.ml import channel_predict as P
     from terrain_s2.ml import unet as U
     from terrain_s2.ml.chips import Mosaic
-    tiles, all_tiles, runs, models_dir, device = job
+    tiles, all_tiles, runs, models_dir, device, prob_file = job
     device = torch.device(device)
-    mosaic = Mosaic({t: Path(runs) / t for t in all_tiles})
+    mosaic = None
     loaded, done = {}, []
     for t, fold in tiles:
         md = Path(models_dir) / U.fold_tag(fold)
@@ -116,9 +119,12 @@ def _oof_worker(job):
             loaded.clear()
             loaded[fold] = U.load_model(md, device)
         model, meta = loaded[fold]
+        if mosaic is None or mosaic.bands != tuple(meta["bands"]):
+            mosaic = Mosaic({t_: Path(runs) / t_ for t_ in all_tiles}, bands=meta["bands"])
         try:
             prob, T, crs = P.predict_tile(Path(runs) / t, mosaic, model, meta, device)
-            P.write_prob(Path(runs) / t, prob, T, crs, md, meta["threshold"], fold=fold, held_out=True)
+            P.write_prob(Path(runs) / t, prob, T, crs, md, meta["threshold"], fold=fold, held_out=True,
+                         filename=prob_file)
             done.append((t, fold, None))
         except Exception as e:  # noqa: BLE001 - reported
             done.append((t, fold, f"{type(e).__name__}: {e}"))
@@ -149,7 +155,7 @@ def oof(a, ds, runs, models_dir, cfg, idx):
     for t, f in sorted(owner.items(), key=lambda kv: (kv[1], kv[0])):
         if f in missing:
             continue
-        j = runs / t / "ml_channel_prob.json"
+        j = runs / t / a.prob_file.replace(".tif", ".json")
         if not a.rerun and j.exists():
             try:
                 rec = json.loads(j.read_text())
@@ -166,7 +172,8 @@ def oof(a, ds, runs, models_dir, cfg, idx):
     shares = [jobs[k::n] for k in range(n)]
     all_tiles = sorted(idx.tile_id.unique())
     with ProcessPoolExecutor(max_workers=n, mp_context=mp.get_context("spawn")) as ex:
-        results = list(ex.map(_oof_worker, [(sh, all_tiles, str(runs), str(models_dir), device) for sh in shares if sh]))
+        results = list(ex.map(_oof_worker, [(sh, all_tiles, str(runs), str(models_dir), device, a.prob_file)
+                                            for sh in shares if sh]))
     failed = [r for part in results for r in part if r[2]]
     print(f"predicted {len(jobs) - len(failed)}, failed {len(failed)}")
 

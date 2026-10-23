@@ -18,6 +18,13 @@ Chip centres lie in the tile core, so each chip belongs to one tile (and so to o
     random      ~25 %  anywhere with data (the rest when a tile has too few positives or hard places)
 
 Centres are jittered by up to ``jitter_m`` (a channel is not always in the middle) and kept ``min_sep_m`` apart.
+
+Chips version 3 (unet_v4, channel network v2): optional ``osm_band`` (a 24th input, ``dist_osm_waterway_m``: the
+distance to any OSM waterway line or river area, capped at 500 m, rasterised once per tile into ``ml_osm.tif``
+by ``osm_raster``; ``BANDS_V4``); ``label_file`` (``ml_channel_labels_v5.tif``: labels v5, with the class band, kept
+per chip as ``cls``: 1 river, 2 stream, 3 drain, 255 unknown or not positive); and ``positive_class_shares``, the
+positive chips split by the class of their centre cell (e.g. river 0.2, stream 0.4, drain 0.4; any shortfall filled
+from the other positives), so wide rivers do not take the positive chips from the drains.
 Written per tile as ``<dataset>/chips/<tile>.npz`` (``x`` float16 (n, bands, size, size), ``label`` uint8, ``weight``
 float16, ``physics`` uint8 (the physics channel mask, for the baseline), ``cx``, ``cy``, ``kind``) with an index of all chips (``chips.parquet``: tile, council, wave, holdout and the
 chip's centre, kind, positive and ignored shares) and a card (``card.json``, ``card.md``: counts per council and
@@ -37,11 +44,65 @@ FEATURE_BANDS = ("relief_med5", "relief_med11", "relief_med21", "tophat_white11"
 HYDRO_BANDS = ("rem_m", "log10_upstream_area_m2", "breach_depth_m", "depression_depth_m", "dsm_minus_dem_m")
 WAY_BAND = "dist_any_way_m"
 BANDS = FEATURE_BANDS + HYDRO_BANDS + (WAY_BAND,)
+OSM_BAND = "dist_osm_waterway_m"
+BANDS_V4 = BANDS + (OSM_BAND,)
 WAY_CAP_M = 500.0
+OSM_CAP_M = 500.0
+CLASS_CODES = dict(river=1, stream=2, drain=3)
 WAY_LAYERS = ("roads", "rail", "tracks", "osm_roads")
-CHIPS_VERSION = 2              # 2: the physics channel mask kept per chip (not an input: the baseline in ML-3b)
+CHIPS_VERSION = 3              # 2: the physics channel mask kept per chip (not an input: the baseline in ML-3b);
+                               # 3: optional OSM band, the class array (labels v5), positives by class
 DEFAULTS = dict(size=128, per_tile=300, shares=dict(positive=0.5, hard=0.25), jitter_m=32.0, min_sep_m=40.0,
-                hard_reasons=["no_channel", "not_in_network"], seed=0)
+                hard_reasons=["no_channel", "not_in_network"], seed=0, label_file="ml_channel_labels.tif",
+                osm_band=False, positive_class_shares=None)
+
+
+def bands_for(cfg) -> tuple:
+    """The input bands of a chip configuration: ``BANDS_V4`` with ``osm_band``, else ``BANDS``."""
+    return BANDS_V4 if (cfg or {}).get("osm_band") else BANDS
+
+
+def osm_distance(shape, transform, lines=None, areas=None, cap_m=OSM_CAP_M):
+    """Distance (m, capped) to any OSM waterway line or river area on a grid (0 on and inside them)."""
+    from rasterio.features import rasterize
+    from scipy import ndimage as ndi
+    shapes = []
+    for g in (lines.geometry if lines is not None and len(lines) else []):
+        if g is not None and not g.is_empty:
+            shapes.append((g, 1))
+    if areas is not None and len(areas):
+        a = areas[areas.water_kind == "river_area"] if "water_kind" in areas else areas
+        shapes += [(g, 1) for g in a.geometry if g is not None and not g.is_empty]
+    if not shapes:
+        return np.full(shape, cap_m, np.float32)
+    on = rasterize(shapes, out_shape=shape, transform=transform, fill=0, all_touched=True, dtype="uint8") > 0
+    if not on.any():
+        return np.full(shape, cap_m, np.float32)
+    return np.minimum(ndi.distance_transform_edt(~on) * abs(transform.a), cap_m).astype(np.float32)
+
+
+def osm_raster(run, bundle, write=True):
+    """``ml_osm.tif``: the distance to any OSM waterway or river area (``osm_distance``) on the run's grid, with the
+    OSM within ``OSM_CAP_M`` of the core counted so the distance is right at the tile's edge."""
+    import rasterio
+    from rasterio.transform import from_origin
+
+    from .. import dataio
+    from .. import guidance as G
+    from .channel_labels import _horizontal
+    run, bundle = Path(run), Path(bundle)
+    with rasterio.open(run / "features.tif") as s:
+        T, crs, (h, w) = s.transform, _horizontal(s.crs), (s.height, s.width)
+    cs = abs(T.a)
+    m = int(np.ceil(OSM_CAP_M / cs))
+    Tb = from_origin(T.c - m * cs, T.f + m * cs, cs, cs)
+    shape = (h + 2 * m, w + 2 * m)
+    bounds = (Tb.c, Tb.f - shape[0] * cs, Tb.c + shape[1] * cs, Tb.f)
+    g = G.load(bundle / "context.gpkg", bounds)
+    d = osm_distance(shape, Tb, g["lines"], g["areas"])[m:m + h, m:m + w]
+    if write:
+        dataio.write_stack(run / "ml_osm.tif", {OSM_BAND: d}, T, crs)
+    return d
 
 
 def ways_raster(run, bundle, write=True):
@@ -87,13 +148,20 @@ def ways_raster(run, bundle, write=True):
 
 class Mosaic:
     """Windows of the saved rasters across tile edges. ``tiles``: {tile_id: run folder}; each run's extent is its
-    features.tif's (the tile core). Datasets are opened lazily and a few kept open."""
+    features.tif's (the tile core). Datasets are opened lazily and a few kept open. ``bands``: the input bands
+    (``BANDS`` or ``BANDS_V4``); ``label_file``: the label raster (its ``class`` band read when it has one)."""
 
-    FILES = (("features.tif", FEATURE_BANDS), ("hydro.tif", HYDRO_BANDS), ("ml_ways.tif", (WAY_BAND,)),
-             ("ml_channel_labels.tif", ("label", "weight")), ("hydro.tif", ("channel_mask",)))
+    INPUTS = (("features.tif", FEATURE_BANDS), ("hydro.tif", HYDRO_BANDS), ("ml_ways.tif", (WAY_BAND,)),
+              ("ml_osm.tif", (OSM_BAND,)))
 
-    def __init__(self, tiles: dict, keep_open=24):
+    def __init__(self, tiles: dict, keep_open=24, bands=BANDS, label_file="ml_channel_labels.tif"):
         import rasterio
+        self.bands = tuple(bands)
+        inputs = [(f, names) for f, names in self.INPUTS if any(n in self.bands for n in names)]
+        if tuple(n for _, names in inputs for n in names) != self.bands:
+            raise ValueError(f"bands {self.bands} are not features, hydrology, ways[, osm] in that order")
+        self.inputs = tuple(inputs)
+        self.FILES = self.inputs + ((label_file, ("label", "weight", "class")), ("hydro.tif", ("channel_mask",)))
         self.runs, self.bounds = {}, {}
         for t, r in tiles.items():
             f = Path(r) / "features.tif"
@@ -122,20 +190,23 @@ class Mosaic:
         self._open.clear()
 
     def read_inputs(self, x0, y1, width, height, cs=1.0):
-        """The input bands only, (len(BANDS), height, width) float32 with NaN where no run, for a region of any
+        """The input bands only, (len(bands), height, width) float32 with NaN where no run, for a region of any
         size with top-left corner (x0, y1): whole-tile prediction reads its tile and margin once with this."""
-        return self._read(x0, y1, width, height, cs, self.FILES[:3])
+        return self._read(x0, y1, width, height, cs, self.inputs)
 
     def read(self, x0, y1, size, cs=1.0):
-        """(inputs (len(BANDS), size, size) float32 with NaN where no run, label uint8, weight float32, physics
-        channel mask uint8) for the window with top-left corner (x0, y1)."""
+        """(inputs (len(bands), size, size) float32 with NaN where no run, label uint8, weight float32, physics
+        channel mask uint8, class uint8 (255 unknown, not positive or no class band)) for the window with top-left
+        corner (x0, y1)."""
         out = self._read(x0, y1, size, size, cs, self.FILES)
-        x, lab, wt = out[:len(BANDS)], out[len(BANDS)], out[len(BANDS) + 1]
+        nb = len(self.bands)
+        x, lab, wt, cl = out[:nb], out[nb], out[nb + 1], out[nb + 2]
         bad = ~np.isfinite(x).all(axis=0) | ~np.isfinite(lab)
         label = np.where(bad, 255, np.nan_to_num(lab, nan=255)).astype(np.uint8)
         weight = np.where(bad | (label == 255), 0.0, np.nan_to_num(wt, nan=0.0)).astype(np.float32)
-        physics = (np.nan_to_num(out[len(BANDS) + 2], nan=0.0) > 0).astype(np.uint8)
-        return x, label, weight, physics
+        physics = (np.nan_to_num(out[nb + 3], nan=0.0) > 0).astype(np.uint8)
+        cls = np.where(label == 1, np.nan_to_num(cl, nan=255), 255).astype(np.uint8)
+        return x, label, weight, physics, cls
 
     def _read(self, x0, y1, width, height, cs, files):
         import rasterio.windows as W
@@ -196,8 +267,9 @@ def sample_centres(run, cfg=None, seed=0):
     P = dict(DEFAULTS, **(cfg or {}))
     rng = np.random.default_rng(seed)
     run = Path(run)
-    with rasterio.open(run / "ml_channel_labels.tif") as s:
+    with rasterio.open(run / P["label_file"]) as s:
         lab, T = s.read(1), s.transform
+        cls = s.read(list(s.descriptions).index("class") + 1) if "class" in s.descriptions else None
     with rasterio.open(run / "hydro.tif") as s:
         mask = s.read(list(s.descriptions).index("channel_mask") + 1) > 0
     cs = abs(T.a)
@@ -218,7 +290,18 @@ def sample_centres(run, cfg=None, seed=0):
     n_hard = int(round(n * P["shares"]["hard"]))
     taken = []
     out = []
-    pos = _thin(sub(lab == 1), n_pos, P["min_sep_m"], taken, rng)
+    shares = P.get("positive_class_shares")
+    if shares and cls is not None:                   # positives by class, so wide rivers leave chips for the drains
+        pos = np.zeros((0, 2))
+        for name, sh in shares.items():
+            code = CLASS_CODES.get(name)
+            got = _thin(sub((lab == 1) & (cls == code)), int(round(n_pos * float(sh))), P["min_sep_m"],
+                        taken + list(pos), rng) if code else np.zeros((0, 2))
+            pos = np.vstack([pos, got])
+        if len(pos) < n_pos:
+            pos = np.vstack([pos, _thin(sub(lab == 1), n_pos - len(pos), P["min_sep_m"], taken + list(pos), rng)])
+    else:
+        pos = _thin(sub(lab == 1), n_pos, P["min_sep_m"], taken, rng)
     taken += list(pos)
     out += [(p[0], p[1], "positive") for p in pos]
     hard_c = sub(mask & (lab == 255), 10000)
@@ -248,17 +331,22 @@ def tile_chips(tile_id, run, mosaic, out_dir, cfg=None, seed=0):
     P = dict(DEFAULTS, **(cfg or {}))
     size = int(P["size"])
     centres = sample_centres(run, P, seed)
-    X = np.zeros((len(centres), len(BANDS), size, size), np.float16)
+    nb = len(mosaic.bands)
+    X = np.zeros((len(centres), nb, size, size), np.float16)
     Y = np.full((len(centres), size, size), 255, np.uint8)
     Wt = np.zeros((len(centres), size, size), np.float16)
     Ph = np.zeros((len(centres), size, size), np.uint8)
-    s1 = np.zeros(len(BANDS))
-    s2 = np.zeros(len(BANDS))
-    cnt = np.zeros(len(BANDS))
+    Cl = np.full((len(centres), size, size), 255, np.uint8)
+    s1 = np.zeros(nb)
+    s2 = np.zeros(nb)
+    cnt = np.zeros(nb)
+    ccount = np.zeros(4)
     rows = []
     for i, (cx, cy, kind) in enumerate(centres):
         x0, y1 = np.floor(cx - size / 2), np.ceil(cy + size / 2)
-        x, lab, wt, ph = mosaic.read(x0, y1, size)
+        x, lab, wt, ph, cl = mosaic.read(x0, y1, size)
+        Cl[i] = cl
+        ccount += np.bincount(np.where(cl == 255, 0, cl).ravel(), minlength=4)[:4] * [0, 1, 1, 1]
         ok = np.isfinite(x)
         xv = np.where(ok, x, 0.0)
         s1 += xv.sum(axis=(1, 2))
@@ -270,14 +358,15 @@ def tile_chips(tile_id, run, mosaic, out_dir, cfg=None, seed=0):
                          ignored_frac=float((lab == 255).mean())))
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(out_dir / f"{tile_id}.npz", x=X, label=Y, weight=Wt, physics=Ph,
+    np.savez_compressed(out_dir / f"{tile_id}.npz", x=X, label=Y, weight=Wt, physics=Ph, cls=Cl,
                         cx=np.array([c[0] for c in centres]), cy=np.array([c[1] for c in centres]),
-                        kind=np.array([c[2] for c in centres]), bands=np.array(BANDS))
-    return rows, dict(s1=s1.tolist(), s2=s2.tolist(), n=cnt.tolist())
+                        kind=np.array([c[2] for c in centres]), bands=np.array(mosaic.bands))
+    return rows, dict(s1=s1.tolist(), s2=s2.tolist(), n=cnt.tolist(), cls=ccount[1:].tolist())
 
 
-def card(index, sums, name, cfg) -> dict:
-    """The dataset card: counts per council and kind, bands and their normalisation statistics."""
+def card(index, sums, name, cfg, bands=BANDS) -> dict:
+    """The dataset card: counts per council and kind, bands and their normalisation statistics, and (chips 3)
+    the positive cells by class."""
     s1 = np.sum([s["s1"] for s in sums], axis=0)
     s2 = np.sum([s["s2"] for s in sums], axis=0)
     n = np.maximum(np.sum([s["n"] for s in sums], axis=0), 1)
@@ -288,7 +377,10 @@ def card(index, sums, name, cfg) -> dict:
                 per_council_kind={c: {k: int(v) for k, v in r.items()} for c, r in by.iterrows()},
                 positive_share_mean=round(float(index.pos_frac.mean()), 4),
                 ignored_share_mean=round(float(index.ignored_frac.mean()), 4),
-                bands=list(BANDS), mean=[round(float(v), 5) for v in mean], std=[round(float(v), 5) for v in std])
+                bands=list(bands), mean=[round(float(v), 5) for v in mean], std=[round(float(v), 5) for v in std],
+                label_file=(cfg or {}).get("label_file", "ml_channel_labels.tif"),
+                class_cells=dict(zip(CLASS_CODES, np.sum([s.get("cls", [0, 0, 0]) for s in sums], axis=0).astype(int)
+                                     .tolist())))
 
 
 def card_markdown(c) -> str:
@@ -297,6 +389,9 @@ def card_markdown(c) -> str:
              f"{c['ignored_share_mean']:.1%}.", "", "| Council | positive | hard | random |", "|---|---|---|---|"]
     for k, v in c["per_council_kind"].items():
         lines.append(f"| {k} | {v.get('positive', 0)} | {v.get('hard', 0)} | {v.get('random', 0)} |")
+    if any(c.get("class_cells", {}).values()):
+        lines += ["", "Positive cells by class: " + ", ".join(f"{k} {v:,}" for k, v in c["class_cells"].items())
+                  + f" (labels {c.get('label_file')})."]
     lines += ["", "| Band | mean | std |", "|---|---|---|"]
     lines += [f"| {b} | {m:.4g} | {s:.4g} |" for b, m, s in zip(c["bands"], c["mean"], c["std"])]
     return "\n".join(lines) + "\n"

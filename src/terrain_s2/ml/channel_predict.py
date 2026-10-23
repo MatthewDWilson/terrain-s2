@@ -74,9 +74,9 @@ def predict_tile(run, mosaic, model, meta, device, window=128, step=64, batch=25
     import rasterio
 
     from .channel_labels import _horizontal
-    from .chips import BANDS
-    if list(meta["bands"]) != list(BANDS):
-        raise ValueError("the model's bands differ from the chips' (BANDS)")
+    if tuple(meta["bands"]) != tuple(getattr(mosaic, "bands", ())):
+        raise ValueError(f"the model's bands ({len(meta['bands'])}) differ from the mosaic's: make the Mosaic with "
+                         "bands=meta['bands']")
     run = Path(run)
     with rasterio.open(run / "features.tif") as s:
         T, crs, (h, w) = s.transform, _horizontal(s.crs), (s.height, s.width)
@@ -124,10 +124,29 @@ def ways_distance(shape, transform, crs, roads=None, context=None, cap_m=500.0):
     return np.minimum(ndi.distance_transform_edt(~on) * abs(transform.a), cap_m).astype(np.float32)
 
 
-def run_inputs(feats, z, upa, z_breached, dep_depth, rem, dsm, ways):
-    """The 23 input bands on the run's window, named as the chips' (``chips.BANDS``): the features, the hydrology
-    bands as ``run._write_rasters`` writes them, and the distance to any way."""
-    from .chips import BANDS, FEATURE_BANDS
+def model_bands(model_dir):
+    """The input bands a U-Net was trained on (its model.json), or ``chips.BANDS`` when it does not say."""
+    from .chips import BANDS
+    f = Path(model_dir) / "model.json"
+    return tuple(json.loads(f.read_text()).get("bands", BANDS)) if f.exists() else BANDS
+
+
+def osm_distance_in_run(shape, transform, context):
+    """The OSM band (``chips.OSM_BAND``) on the run's window from the bundle's OSM (``guidance.load``)."""
+    from .. import guidance as G
+    from .chips import osm_distance
+    h, w = shape
+    bounds = (transform.c, transform.f + h * transform.e, transform.c + w * transform.a, transform.f)
+    g = G.load(context, bounds)
+    return osm_distance(shape, transform, g["lines"], g["areas"])
+
+
+def run_inputs(feats, z, upa, z_breached, dep_depth, rem, dsm, ways, osm=None, bands=None):
+    """The input bands on the run's window, named as the chips' (``bands``, default ``chips.BANDS``): the
+    features, the hydrology bands as ``run._write_rasters`` writes them, the distance to any way and (unet_v4)
+    the distance to any OSM waterway (``osm``; "none within the cap" when not given)."""
+    from .chips import BANDS, FEATURE_BANDS, OSM_BAND, OSM_CAP_M
+    bands = tuple(bands or BANDS)
     valid = np.isfinite(z)
     b = {k: feats[k] for k in FEATURE_BANDS}
     b["rem_m"] = rem if rem is not None else np.full(z.shape, np.nan, np.float32)
@@ -136,7 +155,9 @@ def run_inputs(feats, z, upa, z_breached, dep_depth, rem, dsm, ways):
     b["depression_depth_m"] = np.where(valid, dep_depth, np.nan)
     b["dsm_minus_dem_m"] = dsm - z if dsm is not None else np.full(z.shape, np.nan, np.float32)
     b["dist_any_way_m"] = ways
-    return [np.asarray(b[n], np.float32) for n in BANDS]
+    if OSM_BAND in bands:
+        b[OSM_BAND] = osm if osm is not None else np.where(valid, OSM_CAP_M, np.nan).astype(np.float32)
+    return [np.asarray(b[n], np.float32) for n in bands]
 
 
 def channel_mask_in_run(model_dir, bands, device="auto", threshold=None, min_cells=30, model=None, meta=None):
@@ -148,14 +169,13 @@ def channel_mask_in_run(model_dir, bands, device="auto", threshold=None, min_cel
     import torch
     from scipy import ndimage as ndi
 
-    from .chips import BANDS
     from .unet import load_model
     t0 = time.perf_counter()
     dev = torch.device("cuda" if device != "cpu" and torch.cuda.is_available() else "cpu")
     if model is None:
         model, meta = load_model(model_dir, dev)
-    if list(meta["bands"]) != list(BANDS):
-        raise ValueError("the model's bands differ from the chips' (BANDS)")
+    if len(bands) != len(meta["bands"]):
+        raise ValueError(f"{len(bands)} input bands for a model trained on {len(meta['bands'])} (run_inputs(bands=...))")
     mean, std = _norm(meta)
     h, w = bands[0].shape
     win = 128
@@ -182,14 +202,15 @@ def channel_mask_in_run(model_dir, bands, device="auto", threshold=None, min_cel
     return prob, m, info
 
 
-def write_prob(run, prob, T, crs, model_dir, threshold, fold=None, held_out=None):
-    """``ml_channel_prob.tif`` and its record; ``held_out`` says the tile was in the fold's test set (the model never
-    trained on it), which the label cleaning (labels v3) requires."""
+def write_prob(run, prob, T, crs, model_dir, threshold, fold=None, held_out=None, filename="ml_channel_prob.tif"):
+    """``ml_channel_prob.tif`` (or ``filename``: a new model's out-of-fold probabilities must not replace the ones
+    the scorer's features and the label cleaning were made from) and its record; ``held_out`` says the tile was in
+    the fold's test set (the model never trained on it), which the label cleaning (labels v3) requires."""
     from .. import dataio
     run = Path(run)
-    dataio.write_stack(run / "ml_channel_prob.tif", {"channel_prob": prob}, T, crs)
-    (run / "ml_channel_prob.json").write_text(json.dumps(dict(model=str(model_dir), threshold=threshold, fold=fold,
-                                                              held_out=held_out), indent=1))
+    dataio.write_stack(run / filename, {"channel_prob": prob}, T, crs)
+    (run / filename.replace(".tif", ".json")).write_text(json.dumps(dict(model=str(model_dir), threshold=threshold,
+                                                                         fold=fold, held_out=held_out), indent=1))
 
 
 def _near(mask, radius_px):

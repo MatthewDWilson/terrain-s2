@@ -12,6 +12,13 @@ Loss on the cells that are not ignored, per batch:
                     channel's skeleton should be covered by the prediction; it rewards unbroken centrelines, which
                     the per-cell loss does not
 
+unet_v4 (channel network v2): with ``n_classes`` (3: river, stream, drain) the head has 1 + n_classes outputs; the
+class logits are trained by cross-entropy on the positive cells whose class is known (chips 3, labels v5), at
+``class_weight`` beside the channel loss. With ``osm_dropout`` the OSM band (``dist_osm_waterway_m``, chips 3) is set
+to "no OSM within 500 m" for that share of training chips, so the model still works where OSM is missing; it is
+judged on council labels, since OSM is also a label source. Evaluation then adds the class accuracy and the recall of
+each class on the positive cells with a known class.
+
 Data: chips by tile; a tile's chips are unpacked once from the npz into memory-mapped .npy files (``cache``) so
 batches read quickly. Sampling balances councils (chip weight ~ council size ** -``council_balance``); flips and
 90-degree turns augment (every band is direction-free).
@@ -43,7 +50,11 @@ import numpy as np
 DEFAULTS = dict(base=32, depth=4, epochs=30, batch=64, lr=1e-3, weight_decay=1e-4, cldice=0.5, cldice_iter=5,
                 workers=8, amp=True, seed=0, council_balance=0.5, val_share=0.1, patience=6, tolerance_m=3.0,
                 folds=["blocks", "holdout"], block_folds=5, subset=1.0, max_val_chips=4000,
-                off_physics_weight=1.0, off_physics_sampling=0.0, threshold_objective="f1", precision_floor=0.7)
+                off_physics_weight=1.0, off_physics_sampling=0.0, threshold_objective="f1", precision_floor=0.7,
+                n_classes=0, class_weight=0.5, osm_dropout=0.0)
+CLASSES = ("river", "stream", "drain")                 # class codes 1, 2, 3 in labels v5 (channel_rasters.CLASS)
+OSM_BAND = "dist_osm_waterway_m"
+OSM_CAP_M = 500.0
 AREA_BINS = (-np.inf, 3.0, 4.0, 5.0, np.inf)          # log10 m2: 0.1 ha, 1 ha, 10 ha
 AREA_NAMES = ("lt_0.1ha", "0.1-1ha", "1-10ha", "gt_10ha")
 
@@ -72,7 +83,7 @@ class ChipStore:
 
     def unpack(self, tile):
         """Write the tile's .npy files from its .npz (once); returns their paths."""
-        names = ("x", "label", "weight", "physics")
+        names = ("x", "label", "weight", "physics", "cls")
         paths = {n: self.cache / f"{tile}_{n}.npy" for n in names}
         src = self.dir / "chips" / f"{tile}.npz"
         if all(p.exists() for p in paths.values()) and \
@@ -82,7 +93,7 @@ class ChipStore:
         self._mm.pop(tile, None)
         z = np.load(src)
         for n in names:
-            a = z[n] if n in z.files else np.zeros(z["label"].shape, np.uint8)
+            a = z[n] if n in z.files else np.full(z["label"].shape, 255 if n == "cls" else 0, np.uint8)
             tmp = paths[n].with_suffix(".tmp.npy")
             np.save(tmp, a)
             tmp.replace(paths[n])
@@ -97,6 +108,10 @@ class ChipStore:
     def get(self, tile, i):
         a = self.arrays(tile)
         return a["x"][i], a["label"][i], a["weight"][i], a["physics"][i]
+
+    def get_cls(self, tile, i):
+        """The chip's class array (255: unknown, not positive, or a dataset without classes)."""
+        return self.arrays(tile)["cls"][i]
 
 
 def chip_stats(store, tol_px=3.0):
@@ -135,12 +150,18 @@ def _dataset_class():
     class ChipDataset(Dataset):
         """(x normalised float32 (bands, s, s), label float32, weight float32 (0 where ignored), valid float32)."""
 
-        def __init__(self, store, rows, mean, std, augment=False, seed=0, off_physics_weight=1.0, tol_px=3.0):
+        def __init__(self, store, rows, mean, std, augment=False, seed=0, off_physics_weight=1.0, tol_px=3.0,
+                     n_classes=0, osm_dropout=0.0):
             self.store, self.rows = store, rows.reset_index(drop=True)
             self.offw, self.tol = float(off_physics_weight), tol_px
             self.mean, self.std = mean[:, None, None], std[:, None, None]
             self.augment = augment
             self.rng = np.random.default_rng(seed)
+            self.n_classes = int(n_classes)
+            self.osm_i = store.bands.index(OSM_BAND) if OSM_BAND in store.bands else None
+            self.osm_p = float(osm_dropout) if augment else 0.0
+            if self.osm_i is not None:                          # "no OSM within the cap", normalised
+                self.osm_absent = float(np.clip((OSM_CAP_M - mean[self.osm_i]) / std[self.osm_i], -10, 10))
 
         def __len__(self):
             return len(self.rows)
@@ -156,19 +177,27 @@ def _dataset_class():
             if self.offw != 1.0 and y.any():       # positives the physics map misses: the drains ML-3 is for
                 off = (lab == 1) & ~_near(np.asarray(phys).astype(bool), self.tol)
                 w = np.where(off, w * self.offw, w)
+            if self.osm_i is not None and self.osm_p > 0 and self.rng.random() < self.osm_p:
+                x = x.copy()
+                x[self.osm_i] = self.osm_absent
+            arrs = [x, y, w, valid]
+            if self.n_classes:
+                c = np.asarray(self.store.get_cls(r.tile_id, int(r.i))).astype(np.int64)
+                ok = (lab == 1) & (c >= 1) & (c <= self.n_classes)
+                arrs.append(np.where(ok, c - 1, -100))         # 0..n-1, -100 ignored by the cross-entropy
             if self.augment:
                 t = int(self.rng.integers(4))
-                x, y, w, valid = (np.rot90(a, t, axes=(-2, -1)) for a in (x, y, w, valid))
+                arrs = [np.rot90(a, t, axes=(-2, -1)) for a in arrs]
                 if self.rng.random() < 0.5:
-                    x, y, w, valid = (a[..., ::-1] for a in (x, y, w, valid))
-            return tuple(torch.from_numpy(np.ascontiguousarray(a)) for a in (x, y, w, valid))
+                    arrs = [a[..., ::-1] for a in arrs]
+            return tuple(torch.from_numpy(np.ascontiguousarray(a)) for a in arrs)
 
     return ChipDataset
 
 
 # ---------------------------------------------------------------- model and loss
 
-def build_model(in_ch, base=32, depth=4):
+def build_model(in_ch, base=32, depth=4, n_classes=0):
     import torch
     from torch import nn
 
@@ -184,9 +213,11 @@ def build_model(in_ch, base=32, depth=4):
             self.down = nn.ModuleList([block(in_ch, ch[0])] + [block(ch[k], ch[k + 1]) for k in range(depth)])
             self.up = nn.ModuleList([nn.ConvTranspose2d(ch[k + 1], ch[k], 2, stride=2) for k in reversed(range(depth))])
             self.dec = nn.ModuleList([block(2 * ch[k], ch[k]) for k in reversed(range(depth))])
-            self.head = nn.Conv2d(ch[0], 1, 1)
+            self.n_classes = int(n_classes)
+            self.head = nn.Conv2d(ch[0], 1 + self.n_classes, 1)
 
-        def forward(self, x):
+        def forward_all(self, x):
+            """(channel logits (B, H, W), class logits (B, n_classes, H, W) or None)."""
             skips = []
             for k, d in enumerate(self.down):
                 x = d(x if k == 0 else nn.functional.max_pool2d(x, 2))
@@ -194,7 +225,11 @@ def build_model(in_ch, base=32, depth=4):
             x = skips.pop()
             for up, dec in zip(self.up, self.dec):
                 x = dec(torch.cat([up(x), skips.pop()], 1))
-            return self.head(x)[:, 0]
+            h = self.head(x)
+            return h[:, 0], (h[:, 1:] if self.n_classes else None)
+
+        def forward(self, x):
+            return self.forward_all(x)[0]
 
     return UNet()
 
@@ -239,6 +274,15 @@ def loss_fn(logits, y, w, valid, cldice=0.5, iters=5):
         cl = 1.0 - 2.0 * tprec * tsens / (tprec + tsens)
         loss = loss + cldice * cl
     return loss, cl.detach()
+
+
+def class_loss(cls_logits, target):
+    """Mean cross-entropy over the cells with a known class (``target`` >= 0; -100 ignored); 0 when there are none."""
+    import torch
+    import torch.nn.functional as F
+    if cls_logits is None or not (target >= 0).any():
+        return torch.zeros((), device=target.device)
+    return F.cross_entropy(cls_logits.float(), target, ignore_index=-100)
 
 
 # ---------------------------------------------------------------- evaluation
@@ -333,8 +377,9 @@ class Scores:
         return out
 
 
-def predict(model, store, rows, mean, std, device, batch=64):
-    """Probabilities for the chips in ``rows`` (generator of (row, prob))."""
+def predict(model, store, rows, mean, std, device, batch=64, with_classes=False):
+    """Probabilities for the chips in ``rows`` (generator of (row, prob), or (row, prob, class index map) with
+    ``with_classes`` and a class head)."""
     import torch
     model.eval()
     m, s = mean[:, None, None], std[:, None, None]
@@ -346,17 +391,31 @@ def predict(model, store, rows, mean, std, device, batch=64):
                   for r in part.itertuples()]
             x = torch.from_numpy(np.stack(xs)).to(device)
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
-                p = torch.sigmoid(model(x).float()).cpu().numpy()
-            for r, pr in zip(part.itertuples(), p):
-                yield r, pr
+                lg, cl = model.forward_all(x) if hasattr(model, "forward_all") else (model(x), None)
+            p = torch.sigmoid(lg.float()).cpu().numpy()
+            if with_classes:
+                c = cl.float().argmax(1).cpu().numpy() if cl is not None else [None] * len(p)
+                for r, pr, cc in zip(part.itertuples(), p, c):
+                    yield r, pr, cc
+            else:
+                for r, pr in zip(part.itertuples(), p):
+                    yield r, pr
 
 
 def evaluate(model, store, rows, mean, std, device, threshold, tol_px, by="council", sweep=SWEEP):
     """{group: {model, physics, sweep: {threshold: scores}}} plus "all", for the chips in ``rows``."""
     area_i = store.bands.index("log10_upstream_area_m2") if "log10_upstream_area_m2" in store.bands else None
     acc = {}
-    for r, prob in predict(model, store, rows, mean, std, device):
+    nc = int(getattr(model, "n_classes", 0) or 0)
+    conf = {}
+    for r, prob, cpred in predict(model, store, rows, mean, std, device, with_classes=True):
         x, lab, _, phys = store.get(r.tile_id, int(r.i))
+        if nc and cpred is not None:                 # the class head on positive cells with a known class
+            ct = np.asarray(store.get_cls(r.tile_id, int(r.i))).astype(int)
+            ok = (np.asarray(lab) == 1) & (ct >= 1) & (ct <= nc)
+            for g in ("all", getattr(r, by, None) or "unknown"):
+                m = conf.setdefault(g, np.zeros((nc, nc), np.int64))
+                np.add.at(m, (ct[ok] - 1, np.asarray(cpred)[ok]), 1)
         ctx = chip_context(lab, phys, tol_px)
         la = np.asarray(x[area_i], np.float32) if area_i is not None else None
         physf = np.asarray(phys, np.float32)
@@ -374,6 +433,14 @@ def evaluate(model, store, rows, mean, std, device, threshold, tol_px, by="counc
         ph = out[g]["physics"]             # the physics map's own channel cells are ignored in the labels where no
         for k in ("precision_3m", "f1_3m", "ap", "recall_off_physics", "new_cells", "new_on_council"):
             ph[k] = None                   # council line matches: its precision would be 1 by construction
+        if g in conf and conf[g].sum():
+            m = conf[g]
+            out[g]["model"]["classes"] = dict(
+                accuracy=round(float(np.trace(m) / m.sum()), 4),
+                recall={CLASSES[k] if k < len(CLASSES) else str(k): (round(float(m[k, k] / m[k].sum()), 4) if m[k].sum()
+                                                                     else None) for k in range(len(m))},
+                cells={CLASSES[k] if k < len(CLASSES) else str(k): int(m[k].sum()) for k in range(len(m))},
+                confusion=m.tolist())
     return out
 
 
@@ -444,14 +511,17 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
         log(f"  chips with positives off the physics map: {has.mean():.1%}, sampled x"
             f"{1 + float(cfg['off_physics_sampling']):g}")
     sampler = WeightedRandomSampler(torch.as_tensor(sw / sw.sum()), num_samples=len(train_rows), replacement=True)
+    nc = int(cfg.get("n_classes", 0) or 0)
     dl = DataLoader(DS(store, train_rows, mean, std, augment=True, seed=cfg["seed"],
-                       off_physics_weight=cfg.get("off_physics_weight", 1.0), tol_px=cfg["tolerance_m"]),
+                       off_physics_weight=cfg.get("off_physics_weight", 1.0), tol_px=cfg["tolerance_m"],
+                       n_classes=nc, osm_dropout=cfg.get("osm_dropout", 0.0)),
                     batch_size=cfg["batch"],
                     sampler=sampler, num_workers=cfg["workers"], pin_memory=device.type == "cuda",
                     persistent_workers=cfg["workers"] > 0, drop_last=len(train_rows) > cfg["batch"])
     vrows = val_rows.sample(min(len(val_rows), cfg["max_val_chips"]), random_state=cfg["seed"]) if len(val_rows) else val_rows
-    vl = DataLoader(DS(store, vrows, mean, std), batch_size=cfg["batch"], num_workers=cfg["workers"])
-    model = build_model(len(store.bands), cfg["base"], cfg["depth"]).to(device)
+    vl = DataLoader(DS(store, vrows, mean, std, n_classes=nc), batch_size=cfg["batch"], num_workers=cfg["workers"])
+    model = build_model(len(store.bands), cfg["base"], cfg["depth"], nc).to(device)
+    cw = float(cfg.get("class_weight", 0.5))
     opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=cfg["lr"], total_steps=max(1, cfg["epochs"] * len(dl)))
     amp = bool(cfg["amp"]) and device.type == "cuda"
@@ -464,12 +534,17 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
         model.train()
         tl = torch.zeros((), device=device)      # summed on the device: a float() per batch made the GPU wait
         tc = torch.zeros((), device=device)      # for the CPU every step (GPU ~50 % busy, 19 Oct)
+        tk = torch.zeros((), device=device)
         n = 0
-        for x, y, w, v in dl:
-            x, y, w, v = (a.to(device, non_blocking=True) for a in (x, y, w, v))
+        for batch in dl:
+            x, y, w, v = (a.to(device, non_blocking=True) for a in batch[:4])
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=amp):
-                logits = model(x)
+                logits, cls_logits = model.forward_all(x)
             loss, cl = loss_fn(logits, y, w, v, cfg["cldice"], cfg["cldice_iter"])
+            if nc:
+                kl = class_loss(cls_logits, batch[4].to(device, non_blocking=True))
+                loss = loss + cw * kl
+                tk += kl.detach() * len(x)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
@@ -481,15 +556,20 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
         model.eval()
         vl_sum, vn = 0.0, 0
         with torch.no_grad():
-            for x, y, w, v in vl:
-                x, y, w, v = (a.to(device) for a in (x, y, w, v))
+            for batch in vl:
+                x, y, w, v = (a.to(device) for a in batch[:4])
                 with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=amp):
-                    logits = model(x)
-                vl_sum += float(loss_fn(logits, y, w, v, cfg["cldice"], cfg["cldice_iter"])[0]) * len(x)
+                    logits, cls_logits = model.forward_all(x)
+                lv = loss_fn(logits, y, w, v, cfg["cldice"], cfg["cldice_iter"])[0]
+                if nc:
+                    lv = lv + cw * class_loss(cls_logits, batch[4].to(device))
+                vl_sum += float(lv) * len(x)
                 vn += len(x)
         vloss = vl_sum / max(vn, 1) if vn else tl / max(n, 1)
         hist.append(dict(epoch=ep + 1, train_loss=round(tl / max(n, 1), 5), train_cldice=round(tc / max(n, 1), 5),
                          val_loss=round(vloss, 5)))
+        if nc:
+            hist[-1]["train_class"] = round(float(tk) / max(n, 1), 5)
         hist[-1]["minutes"] = round((time.time() - t0) / 60, 2)
         log(f"  epoch {ep + 1}/{cfg['epochs']}: train {tl / max(n, 1):.4f} (clDice {tc / max(n, 1):.3f}), "
             f"validation {vloss:.4f}; {hist[-1]['minutes']:.1f} min, {n / max(time.time() - t0, 1e-6):.0f} chips/s")
@@ -504,7 +584,9 @@ def train_one(store, train_rows, val_rows, cfg, out_dir, device, log=print):
     thr = best_threshold(model, store, vrows, mean, std, device, tol_px, objective=cfg.get("threshold_objective", "f1"),
                          precision_floor=cfg.get("precision_floor", 0.7))[0] if len(vrows) else 0.5
     meta = dict(bands=store.bands, mean=store.card["mean"], std=store.card["std"], base=cfg["base"],
-                depth=cfg["depth"], threshold=thr, best_epoch=best_ep + 1, dataset=store.card.get("name"))
+                depth=cfg["depth"], threshold=thr, best_epoch=best_ep + 1, dataset=store.card.get("name"),
+                n_classes=nc, classes=list(CLASSES[:nc]), osm_dropout=cfg.get("osm_dropout", 0.0),
+                label_file=store.card.get("label_file"))
     (out_dir / "model.json").write_text(json.dumps(meta, indent=1))
     return model, hist, thr
 
@@ -530,7 +612,7 @@ def load_model(model_dir, device):
     import torch
     model_dir = Path(model_dir)
     meta = json.loads((model_dir / "model.json").read_text())
-    model = build_model(len(meta["bands"]), meta["base"], meta["depth"]).to(device)
+    model = build_model(len(meta["bands"]), meta["base"], meta["depth"], meta.get("n_classes", 0)).to(device)
     model.load_state_dict(torch.load(model_dir / "model.pt", map_location=device, weights_only=True))
     model.eval()
     return model, meta
@@ -658,6 +740,15 @@ def report(results) -> str:
             lines.append(f"| {g} | {mo.get('ap')} | {mo['recall_3m']} | {mo['precision_3m']} | {ph['recall_3m']} | "
                          f"{mo.get('recall_off_physics')} ({mo.get('off_physics_cells')}) | {mo.get('new_cells')} "
                          f"({mo.get('new_on_council')}) | {small(mo)} / {small(ph)} |")
+        cls = [(g, m["model"]["classes"]) for g, m in sorted(r["metrics"].items(), key=lambda kv: (kv[0] != "all", kv[0]))
+               if m["model"].get("classes")]
+        if cls:
+            names = list(cls[0][1]["recall"])
+            lines += ["", "| Council | class accuracy | " + " | ".join(f"{n} recall (cells)" for n in names) + " |",
+                      "|---|---|" + "---|" * len(names)]
+            for g, c in cls:
+                lines.append(f"| {g} | {c['accuracy']} | " + " | ".join(f"{c['recall'][n]} ({c['cells'][n]})" for n in names)
+                             + " |")
         sw = (r["metrics"].get("all") or {}).get("sweep")
         if sw:
             lines += ["", "| threshold | recall | precision | recall off physics | new cells (on council) |",

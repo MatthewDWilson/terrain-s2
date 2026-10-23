@@ -41,7 +41,8 @@ The tile's council comes from the manifest (else the council with most line leng
 Labels v5 (``labels: osm: true``; channel network v2, for unet_v4; ``LABEL_VERSION_OSM``), between steps 6 and 7:
 
 6b. *OSM rivers and waterways as positives* (``osm_labels``): the river extents of the tile's OSM river areas
-   refined on the DEM (``guidance.river_extent``), at ``osm_river_weight``; and OSM waterway lines of
+   refined on the DEM (``guidance.river_extent``), at ``osm_river_weight``, within ``osm_river_band_m`` of the
+   extent's edge (the interior of a wide river is ignored: the U-Net is for channels up to ~30 m wide); and OSM waterway lines of
    ``osm_kinds`` snapped onto the bed (``guidance.snap_waterways``), as footprints of ``osm_half_width_m`` by kind,
    at ``osm_line_weight``. They overrule ignored and negative cells (an unrecorded physics channel that OSM maps
    becomes positive); cells within the ring of them that were negative become ignored; the corridor of an OSM line
@@ -71,7 +72,7 @@ COUNCIL_CLASS = dict(stream=2, drain=3, race=3)
 DEFAULTS = dict(unsnapped="ignore", flat_depth_m=0.05, clean_prob=0.05, clean_physics_share=0.1, clean_piece_m=50.0,
                 reviews="labels/manual/review_*.gpkg", review_positive_weight=1.0, review_negative_weight=1.0,
                 review_half_width_m=1.0, review_buffer_m=3.0, osm=False, osm_kinds=("river", "stream", "canal", "drain"),
-                osm_river_weight=1.0, osm_line_weight=0.7,
+                osm_river_weight=1.0, osm_line_weight=0.7, osm_river_band_m=15.0,
                 osm_half_width_m=dict(river=3.0, stream=1.5, canal=2.5, drain=1.0, ditch=0.75))
 
 
@@ -202,17 +203,28 @@ def osm_labels(run, bundle, label, weight, T, valid, b11, b21, cfg):
             if shapes:
                 unplaced = rasterize(shapes, out_shape=shape, transform=T, fill=0, dtype="uint8") > 0
     foot &= valid
-    new_pos = (rx | foot) & valid
+    # a river's interior beyond osm_river_band_m from its edge is ignored, not positive: the U-Net is for channels up
+    # to ~30 m wide, wider rivers come from the OSM areas at inference (design note, 23 Oct); left positive, the wide
+    # rivers' interiors were ~120 million cells against ~46 million council positives (labels v5, first build)
+    interior = np.zeros(shape, bool)
+    if rx.any():
+        interior = rx & (ndi.distance_transform_edt(rx) * cs > float(D["osm_river_band_m"]))
+    rx_pos = rx & ~interior
+    new_pos = (rx_pos | foot) & valid
     before_pos = label == POS
-    w_new = np.where(rx, D["osm_river_weight"], np.where(foot, D["osm_line_weight"], 0.0)).astype(np.float32)
+    w_new = np.where(rx_pos, D["osm_river_weight"], np.where(foot, D["osm_line_weight"], 0.0)).astype(np.float32)
     label[new_pos] = POS
     weight[new_pos] = np.maximum(np.where(before_pos[new_pos], weight[new_pos], 0.0), w_new[new_pos])
+    inner = interior & ~before_pos & ~new_pos                       # council positives inside stay positive
+    label[inner] = IGNORE
+    weight[inner] = 0.0
     ring = ((ndi.distance_transform_edt(~new_pos) * cs <= float(cfg.get("ignore_ring_m", 3.0))) & ~new_pos
             if new_pos.any() else np.zeros(shape, bool))          # (no OSM positive: no ring; edt has no zero then)
     turn = (ring | unplaced) & (label == NEG)
     label[turn] = IGNORE
     weight[turn] = 0.0
-    counts = dict(osm_river_cells=int(rx.sum()), osm_line_cells=int((foot & ~rx).sum()),
+    counts = dict(osm_river_cells=int(rx_pos.sum()), osm_river_interior_ignored=int(inner.sum()),
+                  osm_line_cells=int((foot & ~rx).sum()),
                   osm_new_positive_cells=int((new_pos & ~before_pos).sum()), osm_lines=int(len(S)),
                   osm_lines_snapped=int(S.snapped.astype(bool).sum()) if len(S) else 0, osm_source=g["source"])
     return rx, code, counts
@@ -293,6 +305,10 @@ def tile_labels(run, cfg: dict, council=None, write=True, bundle=None):
         bands["class"] = cls
         counts["class_cells"] = {k: int((cls == v).sum()) for k, v in CLASS.items()}
         counts["class_cells"]["unknown"] = int(((cls == CLASS_UNKNOWN) & (label == POS)).sum())
+    counts.update(positive_final=int((label == POS).sum()), negative_final=int((label == NEG).sum()),
+                  ignored_final=int((label == IGNORE).sum()),
+                  positive_weight_sum_final=round(float(weight[label == POS].sum()), 1),
+                  negative_weight_sum_final=round(float(weight[label == NEG].sum()), 1))
     counts.update(tile=run.name, council=council, label_version=label_version(cfg),
                   unsnapped=dict(DEFAULTS, **(cfg.get("labels") or {}))["unsnapped"])
     if write:

@@ -152,6 +152,77 @@ def test_channel_mask_in_run():
     assert not m2.any() and info2["cells"] == 0 and info["threshold"] == 0.0
 
 
+def _dataset_v4(root, n=12):
+    """Chips version 3: 24 bands (the OSM band) and the class array: streams in the BW tiles, drains in the BX ones,
+    told apart by relief_med5 (a stand-in for whatever the real model uses)."""
+    rng = np.random.default_rng(0)
+    B = C.BANDS_V4
+    (root / "chips").mkdir(parents=True)
+    rows = []
+    for t in ("BW24_10000_0101", "BW24_10000_0102", "BX24_10000_0101", "BX24_10000_0102"):
+        x = rng.normal(0, 1, (n, len(B), S, S)).astype(np.float16)
+        lab = np.zeros((n, S, S), np.uint8)
+        cls = np.full((n, S, S), 255, np.uint8)
+        code = 2 if t.startswith("BW") else 3
+        for i in range(n):
+            r = int(rng.integers(6, S - 6))
+            lab[i, r - 1:r + 2, :] = 1
+            cls[i, r - 1:r + 2, :] = code
+            x[i, B.index("tophat_black11"), r - 1:r + 2, :] += 4
+            x[i, B.index("relief_med5"), r - 1:r + 2, :] += 3 if code == 2 else -3
+            x[i, B.index(C.OSM_BAND)] = 0.0
+            rows.append(dict(tile_id=t, i=i, cx=0.0, cy=0.0, kind="positive", pos_frac=0.1, ignored_frac=0.0,
+                             council="a" if t.startswith("BW") else "b", holdout=t == "BX24_10000_0102"))
+        w = np.where(lab == 1, 1.0, 0.05).astype(np.float16)
+        np.savez_compressed(root / "chips" / f"{t}.npz", x=x, label=lab, weight=w, physics=(lab == 1).astype(np.uint8),
+                            cls=cls)
+    pd.DataFrame(rows).to_parquet(root / "chips.parquet")
+    (root / "card.json").write_text(json.dumps(dict(name="t4", bands=list(B), mean=[0.0] * len(B), std=[1.0] * len(B),
+                                                    label_file="ml_channel_labels_v5.tif")))
+    return root
+
+
+def test_unet_v4_class_head_and_osm_dropout(tmp_path):
+    from terrain_s2.ml import channel_predict as P
+    ds = _dataset_v4(tmp_path / "ds4")
+    store = U.ChipStore(ds)
+    DS = U._dataset_class()
+    mean, std = U.norm_arrays(store.card)
+    d = DS(store, store.index, mean, std, augment=True, n_classes=3, osm_dropout=1.0)
+    x, y, w, v, c = d[0]
+    oi = C.BANDS_V4.index(C.OSM_BAND)
+    assert float(x[oi].min()) == float(x[oi].max()) == 10.0                 # dropped: "no OSM within 500 m" (clipped)
+    assert set(np.unique(c.numpy())) <= {-100, 0, 1, 2} and (c.numpy()[y.numpy() == 1] >= 0).all()
+    assert (c.numpy()[y.numpy() == 0] == -100).all()
+    m = U.build_model(len(C.BANDS_V4), 8, 2, 3)
+    lg, cl = m.forward_all(torch.zeros(2, len(C.BANDS_V4), S, S))
+    assert lg.shape == (2, S, S) and cl.shape == (2, 3, S, S) and m(torch.zeros(1, len(C.BANDS_V4), S, S)).shape == (1, S, S)
+    assert float(U.class_loss(cl, torch.full((2, S, S), -100))) == 0.0
+    cfg = dict(U.DEFAULTS, base=8, depth=2, epochs=4, batch=8, workers=0, folds=["holdout"], val_share=0.25, lr=3e-3,
+               patience=5, n_classes=3, class_weight=1.0, osm_dropout=0.3)
+    res = U.run(ds, tmp_path / "models" / "v4", cfg, folds=["holdout"], device="cpu", log=lambda m: None)
+    cls = res[0]["metrics"]["all"]["model"]["classes"]
+    assert set(cls["recall"]) == {"river", "stream", "drain"} and cls["cells"]["drain"] > 0 and 0 <= cls["accuracy"] <= 1
+    assert "train_class" in res[0]["history"][0]
+    assert "class accuracy" in (tmp_path / "models" / "v4" / "report.md").read_text()
+    model, meta = U.load_model(tmp_path / "models" / "v4" / "holdout", torch.device("cpu"))
+    assert meta["n_classes"] == 3 and meta["classes"] == ["river", "stream", "drain"] and len(meta["bands"]) == 24
+    assert meta["label_file"] == "ml_channel_labels_v5.tif"
+    rng = np.random.default_rng(0)
+    bands = [rng.normal(0, 1, (100, 100)).astype(np.float32) for _ in C.BANDS_V4]
+    prob, mk, info = P.channel_mask_in_run("x", bands, "cpu", threshold=0.5, min_cells=1, model=model, meta=meta)
+    assert prob.shape == (100, 100)
+    try:
+        P.channel_mask_in_run("x", bands[:23], "cpu", model=model, meta=meta)
+        raise AssertionError("23 bands accepted for a 24-band model")
+    except ValueError:
+        pass
+    feats = {b: np.zeros((20, 20), np.float32) for b in C.FEATURE_BANDS}
+    z = np.zeros((20, 20), np.float32)
+    ins = P.run_inputs(feats, z, np.ones((20, 20)), z, z, z, z, np.full((20, 20), 7.0, np.float32), bands=C.BANDS_V4)
+    assert len(ins) == 24 and float(ins[-1].max()) == C.OSM_CAP_M                 # no OSM given: "none within the cap"
+
+
 if __name__ == "__main__":
     test_soft_skeleton_of_a_bar_is_thin()
     test_loss_ignores_ignored_cells()
@@ -161,4 +232,6 @@ if __name__ == "__main__":
         test_predict_tile_and_review(Path(d), Path(d) / "models" / "m" / "holdout")
     with tempfile.TemporaryDirectory() as d:
         test_train_v2_settings(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        test_unet_v4_class_head_and_osm_dropout(Path(d))
     print("unet checks ok")

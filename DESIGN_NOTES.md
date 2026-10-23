@@ -2301,6 +2301,35 @@ labels and class band, and the class head. (An old quirk seen on the way: with n
 `distance_transform_edt` measures from outside the grid's corner, so the ring step of labels v3 ignores a few
 corner cells of such tiles; left as it is, since it changes no labelled tile, and guarded in the v5 step.)
 
+**SH12 stage B, labels v5's first build, chips 3 and unet_v4** (23 Oct). Stage B on SH12's catchment (8 tiles,
+`runs_c`): 1,372 km of channel -> 1,271 km; components per tile 1,182 -> 486; isolated share of length 21.5 % ->
+7.8 % (541 isolated pieces left for stage A); minor drains 14.3 km removed (1 %), fragments 103.2 km (7.5 %);
+10,651 candidate links, 3,849 accepted (end to line 2,702, line to line 883, end to end 264; 67 across a barrier
+with a crossing candidate); the rest too long 4,954, already joined 900, barrier without a crossing 494, end used
+251, weak 203. The minor-drain sweep barely moves (1.2-1.9 % of length over widths 1-2 m and depths 0.2-0.4 m), so
+the defaults stay. Matt (23 Oct): the network looks good.
+
+Labels v5, first build (569 tiles, none failed): OSM lines 32,390, of which 23,567 snapped (73 %); Matt: the class
+raster of CF15_10000_0501 looks very good (rivers clear, drains too, classes sharp). But OSM added 150 million positive
+cells against 46 million council ones, 122 million of them river extents, concentrated in the wide-river tiles (median
+0 a tile): wide rivers' interiors would have swamped training. So river extent cells more than `osm_river_band_m`
+(15 m) inside the extent's edge are now ignored (the U-Net is for channels up to ~30 m; wider rivers come from the OSM
+areas at inference); the labels are to be built again (`--rerun`). The counts now hold the final shares
+(`positive_final` etc., which the script prints), and the interior cells ignored.
+
+Chips version 3 (`chips.py`, `build_chips.py --labels v5 --osm-band --class-shares river=0.2,stream=0.4,drain=0.4`):
+an optional 24th band `dist_osm_waterway_m` (distance to any OSM waterway line or river area, capped at 500 m;
+`ml_osm.tif` per run, `osm_raster`; `BANDS_V4`), the v5 labels with their class array per chip (`cls`), and the
+positive chips split by the class of their centre so drains keep their share. `Mosaic` takes the bands and the label
+file. unet_v4 (`unet.py`, `ml/config/unet_v4.yml`): a head of 1 + 3 outputs (channel; river / stream / drain), the
+class cross-entropy on positive cells with a known class at `class_weight` 0.5, the OSM band set to "none within 500
+m" on 30 % of training chips (`osm_dropout`), the class accuracy and each class's recall in the evaluation and the
+report; `model.json` records `n_classes`, `classes`, `label_file`. Inference follows each model's own bands
+(`channel_predict.model_bands`, `run_inputs(bands=...)`, the OSM band from the bundle in the run); model sets accept
+`BANDS` or `BANDS_V4`; `predict_channels.py --prob-file` writes a new model's probabilities beside unet_v2's (whose
+`ml_channel_prob.tif` the scorer's features and the label cleaning were made from). Class probabilities in the run
+(for stages B and A) come with stage A.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

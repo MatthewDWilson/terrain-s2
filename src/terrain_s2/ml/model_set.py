@@ -11,7 +11,7 @@ uses together, so a run asks for ``model_set="ml3c_v1"`` instead of five options
 
 Model paths are relative to ``TERRAIN_DATA_DIR`` unless absolute. Any run option may be set (``run.OPTIONS``);
 an option the caller gives explicitly wins over the set's. ``load`` checks what can be checked before a run:
-the files exist, the U-Net's bands are the run's (``chips.BANDS``), and a scorer trained on channel-model runs
+the files exist, the U-Net's bands are ones the run can make (``chips.BANDS`` or ``BANDS_V4``), and a scorer trained on channel-model runs
 (its features include ml_*) comes with a channel model. ``describe`` is the set's record for ``network.json``
 and the generator key (S2-13): the set's name and file hash, and for each model its folder, the sha256 of its
 weights and what its own record says (dataset, threshold; the scorer's name, code and number of features).
@@ -80,10 +80,11 @@ def _check(s):
         mj = Path(cm) / "model.json"
         if not mj.exists() or not (Path(cm) / "model.pt").exists():
             raise FileNotFoundError(f"model set {s['name']}: no U-Net at {cm} (model.json, model.pt)")
-        from .chips import BANDS
+        from .chips import BANDS, BANDS_V4
         bands = json.loads(mj.read_text()).get("bands")
-        if list(bands or []) != list(BANDS):
-            raise ValueError(f"model set {s['name']}: the U-Net's bands differ from the run's (chips.BANDS)")
+        if tuple(bands or ()) not in (tuple(BANDS), tuple(BANDS_V4)):
+            raise ValueError(f"model set {s['name']}: the U-Net's bands are not ones the run can make "
+                             "(chips.BANDS or BANDS_V4)")
     if xm:
         pk = Path(xm) / "model.pkl" if Path(xm).is_dir() else Path(xm)
         if not pk.exists():

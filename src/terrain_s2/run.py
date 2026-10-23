@@ -337,8 +337,11 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         from .ml import channel_predict as CP
         ctx = a.context or (str(Path(a.roads).with_name("context.gpkg")) if a.roads else None)
         ways = CP.ways_distance(w.z.shape, w.transform, hcrs, roads, ctx)
+        mb = CP.model_bands(opts["channel_model"])
+        from .ml.chips import OSM_BAND
+        osm_d = CP.osm_distance_in_run(w.z.shape, w.transform, ctx) if OSM_BAND in mb else None
         bands_in = CP.run_inputs(res.feats, w.z, res.upa, res.breach.z_breached, res.dep.depth,
-                                 hand if fp is not None else None, dsm, ways)
+                                 hand if fp is not None else None, dsm, ways, osm=osm_d, bands=mb)
         ml_prob, ml_mask, ml_info = CP.channel_mask_in_run(opts["channel_model"], bands_in, a.device,
                                                            opts.get("channel_threshold"), opts.get("channel_min_cells", 30))
         del bands_in, ways

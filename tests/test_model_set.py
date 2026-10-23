@@ -64,7 +64,7 @@ def test_load_resolves_checks_and_describes(tmp_path):
     with pytest.raises(FileNotFoundError, match="no U-Net"):
         MS.load(_set(tmp_path, "channel_model: models/nothing\n"), data)
     (data / "models" / "unet_t" / "holdout" / "model.json").write_text(json.dumps(dict(bands=["z"])))
-    with pytest.raises(ValueError, match="bands differ"):
+    with pytest.raises(ValueError, match="bands are not"):
         MS.load(_set(tmp_path, "channel_model: models/unet_t/holdout\n"), data)
     with pytest.raises(FileNotFoundError, match="no model set"):
         MS.find("no_such_set")

@@ -147,5 +147,17 @@ def test_labels_v5_osm_positives_and_classes(tmp_path):
     cls = CR.class_band(label, T, foot, lines, rx, code)
     assert cls[30, 100] == CR.CLASS["river"] and cls[120, 100] == CR.CLASS["stream"] and cls[170, 100] == CR.CLASS["drain"]
     assert cls[80, 100] == CR.CLASS_UNKNOWN                                          # not a positive
+    # a 60 m wide river: positive within 15 m of its banks, its interior ignored
+    z2 = np.full((N, N), 10.0, np.float32)
+    z2[60:121, :] = 8.0
+    dataio.write_stack(bundle / "dem.tif", {"z": z2}, T, "EPSG:2193")
+    wide = LineString([(X0, Y0 - 90), (X0 + N, Y0 - 90)]).buffer(30.0)
+    gpd.GeoDataFrame({"water_kind": ["river_area"]}, geometry=[wide], crs=2193).to_file(bundle / "context.gpkg",
+                                                                                        layer="osm_water", driver="GPKG")
+    lab2 = np.full((N, N), CR.NEG, np.uint8)
+    w2 = np.full((N, N), 0.05, np.float32)
+    rx2, _, n2 = CR.osm_labels(tmp_path / "runs" / "x", bundle, lab2, w2, T, valid, b11 * 0, b11 * 0, cfg)
+    assert lab2[65, 100] == CR.POS and lab2[90, 100] == CR.IGNORE and w2[90, 100] == 0
+    assert n2["osm_river_interior_ignored"] > 0
     assert CR.label_version(cfg) == 5 and CR.label_file(cfg) == "ml_channel_labels_v5.tif"
     assert CR.label_version(CFG) == 3 and CR.label_file(CFG) == "ml_channel_labels.tif"

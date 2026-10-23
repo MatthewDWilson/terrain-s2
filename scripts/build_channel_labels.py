@@ -77,10 +77,15 @@ def main():
             if "error" in s:
                 print(f"[{i}/{len(jobs)}] {s['tile']}: FAILED {s['error']}")
                 continue
+            for k in ("positive", "negative", "ignored", "positive_weight_sum", "negative_weight_sum"):   # final (v5)
+                if f"{k}_final" in s:
+                    s[k] = s[f"{k}_final"]
             n = s["positive"] + s["negative"] + s["ignored"]
+            extra = (f"; OSM +{s['osm_new_positive_cells'] / n:.2%} of cells, river interiors ignored "
+                     f"{s.get('osm_river_interior_ignored', 0) / n:.2%}" if "osm_new_positive_cells" in s else "")
             print(f"[{i}/{len(jobs)}] {s['tile']} ({s['council']}): positive {s['positive'] / n:.2%}, ignored "
                   f"{s['ignored'] / n:.1%}, negative {s['negative'] / n:.1%}; weight positive / negative "
-                  f"{s['positive_weight_sum'] / max(s['negative_weight_sum'], 1e-9):.2f}")
+                  f"{s['positive_weight_sum'] / max(s['negative_weight_sum'], 1e-9):.2f}" + extra)
     if rows:
         df = pd.DataFrame(rows)
         out = Path(a.summary) if a.summary else runs / "channel_labels_summary.csv"

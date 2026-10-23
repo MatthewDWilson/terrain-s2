@@ -1,0 +1,29 @@
+# ML-3b, unet_v4 (channel network v2, 23 Oct 2026): unet_v2's settings (ml/config/unet_v2.yml) on chips version 3
+# (labels v5: OSM river extents and snapped waterways as positives, the class band; the OSM waterway distance as a
+# 24th input), plus a class head (river / stream / drain) and OSM-band dropout. Train fold 1 and the holdout first,
+# as for unet_v3, and compare with unet_v2's fold 1 on the council labels (OSM is also a label source here).
+base: 32
+depth: 4
+epochs: 30
+batch: 128
+lr: 0.0015
+weight_decay: 0.0001
+cldice: 0.5
+cldice_iter: 5
+council_balance: 0.5
+val_share: 0.1
+patience: 6
+tolerance_m: 3.0
+folds: [blocks, council, holdout]
+block_folds: 5
+workers: 12
+amp: true
+seed: 0
+max_val_chips: 4000
+off_physics_weight: 3.0
+off_physics_sampling: 1.0
+threshold_objective: off_physics
+precision_floor: 0.7
+n_classes: 3            # river, stream, drain (labels v5 class band)
+class_weight: 0.5       # the class cross-entropy beside the channel loss
+osm_dropout: 0.3        # share of training chips with the OSM band set to "no OSM within 500 m"
