@@ -94,15 +94,19 @@ def _topology(geoms, touch_m):
 
 
 def measure(run_dir, aoi, touch_m: float = 0.5, edge_m: float = 5.0, river_m: float = 2.0, pond_m: float = 5.0,
-            fp_limit_m: float = 40.0, end_m: float = 1.0, join_m=JOIN_M):
+            fp_limit_m: float = 40.0, end_m: float = 1.0, join_m=JOIN_M, outlets=None, ponds_anchor: bool = True,
+            channels=None):
     """(summary dict, components GeoDataFrame) for one run folder (``network.gpkg``); ``aoi``: the tile's AOI
-    (a geometry in the layers' CRS). See the module docstring."""
+    (a geometry in the layers' CRS). See the module docstring. ``outlets``: further geometries a component may drain
+    to (lakes, tidal flats, the coastline: stage B), within ``river_m``; ``ponds_anchor=False`` stops residual ponds
+    counting as anchors (they anchored ~177 pieces a tile, 23 Oct); ``channels``: a channels layer to measure
+    instead of the run's (the other layers still come from the run)."""
     import geopandas as gpd
     import shapely
     from shapely import STRtree
     from shapely.ops import nearest_points
     gpkg = Path(run_dir) / "network.gpkg"
-    ch = _layer(gpkg, "channels")
+    ch = channels if channels is not None else _layer(gpkg, "channels")
     if ch is None or not len(ch):
         return dict(reaches=0), None
     ch = ch[~ch.geometry.is_empty & ch.geometry.notna()].reset_index(drop=True)
@@ -134,7 +138,12 @@ def measure(run_dir, aoi, touch_m: float = 0.5, edge_m: float = 5.0, river_m: fl
         for k in np.flatnonzero(anchor == ""):
             if len(rt.query(cgeom[k], predicate="dwithin", distance=river_m)):
                 anchor[k] = "river"
-    ponds = _layer(gpkg, "residual_ponds")
+    if outlets is not None and len(outlets):
+        ot = STRtree(np.asarray(list(outlets), object))
+        for k in np.flatnonzero(anchor == ""):
+            if len(ot.query(cgeom[k], predicate="dwithin", distance=river_m)):
+                anchor[k] = "outlet"
+    ponds = _layer(gpkg, "residual_ponds") if ponds_anchor else None
     if ponds is not None and len(ponds):
         pt = STRtree(ponds.geometry.to_numpy())
         for k in np.flatnonzero(anchor == ""):
@@ -185,7 +194,7 @@ def measure(run_dir, aoi, touch_m: float = 0.5, edge_m: float = 5.0, river_m: fl
     hist = np.histogram(gap[isolated & np.isfinite(gap)], bins=GAP_BINS)[0]
     summary = dict(reaches=n, components=ncomp, km=round(total / 1000, 3),
                    anchored_edge=int((anchor == "edge").sum()), anchored_river=int((anchor == "river").sum()),
-                   anchored_pond=int((anchor == "pond").sum()),
+                   anchored_pond=int((anchor == "pond").sum()), anchored_outlet=int((anchor == "outlet").sum()),
                    anchored_floodplain_limit=int((anchor == "floodplain_limit").sum()),
                    isolated=int(isolated.sum()), isolated_km=round(float(clen[isolated].sum() / 1000), 3),
                    isolated_share=round(float(clen[isolated].sum() / total), 4) if total else 0.0,

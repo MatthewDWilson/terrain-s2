@@ -1,0 +1,69 @@
+# Labels v5 (23 Oct 2026): channels.yml plus OSM rivers and waterways as positives and the class band (unet_v4).
+# Written to ml_channel_labels_v5.tif beside the earlier labels. Keep the rest in step with channels.yml.
+# ML-3 (a learned channel map): council channel labels, widths and weights (terrain_s2.ml.channel_labels).
+# Design and Matt's decisions: docs/ml3_channel_model.md, section 7. Council names are the manifests' `council` column.
+#
+# positive_weight: how completely a council records what the DEM can show (decision 1).
+# negatives: where unlabelled cells count as (weak) negatives: all = everywhere outside the positives, their ring and
+#   the ignored cells; flat = only flat, un-incised ground (Auckland: long stretches run underground, so a detection
+#   with no council line is not an error). Test `flat` against no negatives at all before choosing (decision 1).
+# ignore_unrecorded: physics channel cells that match no council line are ignored (they may be unrecorded drains).
+# Used from ML-3a step 4 (label rasters): the negative weight, the ring and the negative rules.
+councils:
+  waimakariri:            {sources: [waimakariri_channels], positive_weight: 1.0, negatives: all,  ignore_unrecorded: true}
+  hbrc:                   {sources: [hbrc_channels],        positive_weight: 1.0, negatives: all,  ignore_unrecorded: true}
+  # ES lines are coarse (a vertex every few hundred m) and drawn up to ~25 m off large scheme drains: on CD08_10000_0502,
+  # a +-15 m corridor "snapped" onto paddock furrows 25 m from the drain; +-40 m with a 0.3 m bed finds the drain (1.5 m)
+  environment_southland:  {sources: [es_drainage],          positive_weight: 1.5, negatives: all,  ignore_unrecorded: true,
+                           snap: {corridor_m: 40.0, bed_depth_m: 0.3}}
+  auckland:               {sources: [auckland_channels],    positive_weight: 0.7, negatives: flat, ignore_unrecorded: true}
+  # wave 3 (17 Oct): scheme drains only (private and farm drains absent), so unrecorded detections are ignored;
+  # weights 1.0 until their snapping and the first model say otherwise. Snapping starts from the defaults; each
+  # council's offsets, physics_frac and a clip are checked after the first pass (Environment Southland needed +-40 m).
+  waikato:                {sources: [waikato_lds_drains],     positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  hauraki:                {sources: [hauraki_land_drains],    positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  otago:                  {sources: [otago_scheduled_drains], positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  gisborne:               {sources: [gisborne_rural_drains],  positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+  ecan:                   {sources: [ecan_drains],            positive_weight: 1.0, negatives: all, ignore_unrecorded: true}
+negative_weight: 0.05
+ignore_ring_m: 3.0
+# Label rasters (terrain_s2.ml.channel_rasters, ML-3a step 4).
+labels:
+  osm: true                  # labels v5 (unet_v4, channel network v2): OSM river extents and snapped OSM waterways
+                             # as positives, and the class band (river / stream / drain); channel_rasters.osm_labels
+  osm_kinds: [river, stream, canal, drain]
+  osm_river_weight: 1.0
+  osm_line_weight: 0.7
+  unsnapped: ignore          # lines the snapping left at their council position: their corridor is ignored, not
+                             # positive (positive: footprints at their halved weight)
+  flat_depth_m: 0.05         # `negatives: flat`: negatives only where the 11 m black top-hat is below this (21 m: 2x)
+# Forms (Auckland's SW_ASSET_TYPE; others have none): a multiplier on the positive weight. Swales are broad, shallow,
+# grassed: weak in the DEM. To be confirmed with Matt (17 Oct).
+form_weights: {unlined: 1.0, lined: 1.0, flume: 1.0, swale: 0.5, other: 1.0}
+# Matt (17 Oct): swales count, at reduced weight, as long as they do not harm the model: ML-3b compares swale weight 0.5
+# with swales ignored (weight 0; their cells then join the ignored ring), on Auckland's held-out blocks.
+
+# Snapping council lines to the bed (terrain_s2.ml.snap; DESIGN_NOTES 11, 17 Oct, BW24_10000_0402).
+snap:
+  corridor_m: 15.0           # +- around the council line
+  piece_m: 200.0             # long lines are snapped in pieces, each starting where the last ended
+  depth_scale_m: 0.15        # cost = base + exp(-depth / depth_scale_m) + lateral * (distance / corridor_m)^2
+  lateral: 0.3
+  bed_depth_m: 0.10          # a cell is on a bed when the 11 m black top-hat is at least this (field p90 0.09 m)
+  min_bed_frac: 0.6          # snapped when the path is on a bed for at least this share of its cells
+  unsnapped_weight: 0.5      # weight multiplier for lines left at their council position
+
+# Channel half-width for the label rasters (decision 4), worked out after snapping, in this order:
+#   1. council:  the council's top width, else its base width, if within plausible_width_m (Auckland's 1-3 "mm"
+#                base widths are dropped, not reinterpreted);
+#   2. river:    a line lying mostly inside a wide-channel polygon (network.gpkg `rivers`) takes the polygon;
+#   3. physics:  the channel map's half-width along the (snapped) line: distance to the edge of channel_mask
+#                (hydro.tif) at the line's cells, median, if at least physics_min_inside of the line is in the mask;
+#   4. default:  by class.
+width:
+  plausible_width_m: [0.3, 30.0]
+  physics_min_inside: 0.5
+  physics_half_width_m: [0.5, 4.0]       # 4 m = the rivers' 8 m minimum width (network.river_polygons)
+  river_min_inside: 0.5
+  river_reach_m: 20.0           # a river line labels its polygons only within this distance of the line
+  default_half_width_m: {drain: 1.0, stream: 2.0, race: 0.75, other: 1.0}

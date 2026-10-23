@@ -4,7 +4,8 @@
     python scripts/build_channel_labels.py --manifest ml/manifests/wave1.csv ml/manifests/wave2.csv --workers 12
 
 Needs each run's saved rasters and ml_channels.gpkg (snap_channels.py); other tiles are skipped. Tiles done with this
-LABEL_VERSION are skipped unless --rerun. Writes ml_channel_labels.tif (label 1 / 0 / 255 ignored, weight) and
+label version are skipped unless --rerun. Labels v5 (``--config ml/config/channels_v5.yml``: OSM rivers and waterways
+as positives and a class band, for unet_v4) go to ml_channel_labels_v5.tif / .json, beside the earlier labels. Writes ml_channel_labels.tif (label 1 / 0 / 255 ignored, weight) and
 ml_channel_labels.json beside each run, and a summary (--summary, default <runs>/channel_labels_summary.csv).
 """
 import argparse
@@ -41,7 +42,10 @@ def main():
     a = ap.parse_args()
     import pandas as pd
     from terrain_s2.acquire.elevation import default_data_dir
-    from terrain_s2.ml.channel_rasters import LABEL_VERSION
+    from terrain_s2.ml import channel_labels as CL
+    from terrain_s2.ml import channel_rasters as CR
+    cfg = CL.load_config(a.config)
+    LVERSION, LFILE = CR.label_version(cfg), CR.label_file(cfg)
     runs = Path(a.runs or default_data_dir() / "runs")
     tiles = {t: None for t in a.tiles}
     for m in a.manifest:
@@ -55,10 +59,10 @@ def main():
         if not ((r / "ml_channels.json").exists() and (r / "features.tif").exists() and (r / "hydro.tif").exists()):
             skipped["not_snapped"] += 1
             continue
-        j = r / "ml_channel_labels.json"
-        if not a.rerun and j.exists() and (r / "ml_channel_labels.tif").exists():
+        j = r / LFILE.replace(".tif", ".json")
+        if not a.rerun and j.exists() and (r / LFILE).exists():
             try:
-                if json.loads(j.read_text()).get("label_version") == LABEL_VERSION:
+                if json.loads(j.read_text()).get("label_version") == LVERSION:
                     skipped["done"] += 1
                     continue
             except ValueError:

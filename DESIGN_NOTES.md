@@ -2270,6 +2270,37 @@ crossing tier within 10 m and the anchors; network.json `c_outputs` with the con
 `c_proto` = ml3c_v1 + both. `catchments.py` and `scripts/catchment_tiles.py`: the catchment holding a site or a
 point, its partition tiles plus a 500 m band as a manifest, and the catchment saved for stage A.
 
+**Stage B and the labels for unet_v4** (23 Oct). SH12's sea-draining catchment (MfE id 1373): 43 km2, 8 tiles (6
+with area inside, 2 in the 500 m band), wholly under LiDAR; its stage C batch runs as `runs_c` (model set
+`c_proto`). To do (Matt): fetch the sea-draining catchments through the data service's API, as the LINZ layers are
+(data.mfe.govt.nz is a Koordinates service like LINZ's), instead of a manual download; the layer's name field was
+not recognised (`catchment_name` None).
+
+Stage B (`cleanup.py`, `scripts/stage_b.py`; on stage C's stored outputs, writing `network_b.gpkg` and
+`stage_b.json` beside them): (1) candidate links accepted shortest first, one per dangling end, no loops, when short
+enough for their kind (end to end 20 m, end to line 15 m, line to line 10 m) and either flat enough (rise at most
+0.3 m above the higher end) with channel evidence (U-Net probability 0.2, channel mask 0.3, or under 5 m), or across
+a barrier (a rise or a road) with a crossing candidate of tier high or medium on them, which is then the evidence
+(an embankment has no channel on it) and the link a crossing; (2) minor drains (class drain, not river, not OSM
+river / stream / canal; width under 1.5 m or depth under 0.3 m, on the LiDAR) removed from the network's ends
+inwards, links that become leaves with them, reaches at the tile edge kept for stage A; (3) fragments under 100 m
+that drain nowhere removed (anchors: tile edge, river polygons, OSM lakes, tidal flats and coastline, the floodplain
+limit; residual ponds no longer). Longer isolated pieces stay, flagged, for stage A. Every removal is in `rejected`
+with its reason; `--sweep` gives the length the minor-drain rule removes at widths 1-2 m and depths 0.2-0.4 m, for
+choosing the thresholds. `connectivity.measure` gained `outlets`, `ponds_anchor` and a given channels layer.
+
+Labels v5 (`ml/config/channels_v5.yml`, `channel_rasters.osm_labels` / `class_band`; LABEL_VERSION 5, written to
+`ml_channel_labels_v5.tif` beside the earlier labels so earlier chip sets stay reproducible; the chip set "labels
+v4" was version 3 with both reviews): OSM river extents (refined on the DEM) positive at weight 1.0, snapped OSM
+river / stream / canal / drain lines positive as footprints (half widths 3 / 1.5 / 2.5 / 1.0 m) at 0.7; they overrule
+ignored and negative cells, their ring is ignored, the corridor of an OSM line the snapping could not place is
+ignored; the review answers still overrule them. A third band, `class`: river 1 (river extents, council river
+footprints), stream 2, drain 3 (OSM tag first, then the council class; a council class never implies size), 255
+unknown or not positive. Next for unet_v4: the OSM waterway band as an input (with dropout), chips reading the v5
+labels and class band, and the class head. (An old quirk seen on the way: with no positives at all,
+`distance_transform_edt` measures from outside the grid's corner, so the ring step of labels v3 ignores a few
+corner cells of such tiles; left as it is, since it changes no labelled tile, and guarded in the v5 step.)
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
