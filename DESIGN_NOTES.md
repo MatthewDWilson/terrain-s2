@@ -2228,6 +2228,48 @@ kind of near-meeting (end to end, end to line, line to line: Matt's curving-away
 if gaps up to 2, 5, 10, 20 and 50 m were joined; the isolated length's U-Net-only and drain shares. Per tile
 `fragments.gpkg` (components, connectors) on request, for QGIS. Nothing in the runs is changed.
 
+**Channel network v2: the design and stage C begins** (23 Oct). The connectivity measures (569 tiles) and Matt's
+look at CF15_10000_0501 showed the network is not ready for production: about 970 pieces per tile in both the
+channel-model and the physics runs, the anchors too lenient (residual ponds anchored ~177 pieces a tile), large
+rivers missing where a wide flat bed gives weak channel evidence, and the nearest-neighbour connectors (diagnostic
+only) crossing roads, which is why blind joining is wrong. The parity check's larger score differences turned out
+not to be near the tile edge (median 641-1,046 m; top-100 overlap 0.97): unexplained, small, set aside. CPU timing
+(BY20_10000_0405): 604 s a tile on CPU against 142 s on GPU (U-Net 292 s against 11 s); ~10.5 GB peak either way.
+
+Design (the Claude Docs note "Channel network v2: design note", 23 Oct; agreed with Matt): connected by
+construction, main rivers always present, minor drains left out, classification in network context, crossings
+where the connected network meets barriers, the LiDAR deciding position. Three stages: C, the first pass per tile
+(U-Net channel and class probabilities, river extents from OSM areas refined on the DEM, the reach graph and
+candidate links with their evidence); B, clean-up per tile (join gaps the terrain supports, cross barriers only
+with crossing evidence, drop minor drains and fragments, keep open ends at tile edges); A, catchment mode per
+sea-draining catchment (stitch tiles, walk upstream from each outlet, connect or drop what is left, classify in
+context, write back per tile). Decisions (Matt, 23 Oct): prototype on the SH12 test site's catchment; a minor drain
+is decided by width and depth on the LiDAR (a council class is a guide only, never implying size); wide rivers from
+OSM water areas refined on the DEM, the U-Net for channels up to about 30 m; OSM waterways as a U-Net input band;
+drains ending on tidal flats or estuaries are outlets; where LiDAR ends inside a catchment, a provisional outlet;
+coastline and lakes from OSM; catchments from MfE's sea-draining catchments (layer 99776, CC BY 4.0, extracted from
+DOC's FENZ v1.0), not REC2 (derived from coarse elevation, poor for small catchments); REC2 not used for position;
+council lines secondary (labels and checks, snapped); REC1 later, for stream bathymetry, snapped to the network;
+stopbanks kept where identified (lower priority), and a culvert in a stopbank flagged but never burned (usually
+one-way). B and A are developed on today's C outputs while unet_v4 (rivers, a class head, the OSM band) is trained.
+
+**Stage C, first part** (this change). OSM: the extract and Overpass now also give `water` polygons with
+`water_kind` (river_area: natural=water with water=river / stream / canal / oxbow / riverbank or waterway=riverbank;
+lake; tidal: tidal flats, salt marsh, mangrove, mud) and `coastline` lines; bundles gain `osm_water` and
+`osm_coastline` (the extract must be converted again; `guidance.load` reads them from the extract for bundles built
+before). `guidance.py`: `river_extent` (OSM river areas refined on the DEM: a local water level from the area's lower
+cells carried to a 15 m band, cells within 0.5 m of it and connected to the area; a polygon 7 m off the bed lands
+on it in the tests) and `snap_waterways` (OSM river, stream, canal and drain lines snapped onto the bed by the
+council-line snapping, corridors 30 / 20 / 20 / 15 m; only lines landing on a bed are used; parts inside river
+extents left to the river's centreline). Run options `osm_guidance` (river extents join the rivers, snapped lines
+the skeleton, within the floodplain restriction; reaches gain `osm_share` and `osm_waterway`; network.json
+`guidance`) and `c_outputs` (`channel_prob.tif`, the U-Net probability over the window as a uint8 COG; the
+`links` layer: candidate links from each dangling end to up to two other pieces within 30 m and line-to-line near
+meetings, with rise above the higher end, drop, U-Net probability, channel-mask share, road crossing, the best
+crossing tier within 10 m and the anchors; network.json `c_outputs` with the connectivity measures). Model set
+`c_proto` = ml3c_v1 + both. `catchments.py` and `scripts/catchment_tiles.py`: the catchment holding a site or a
+point, its partition tiles plus a 500 m band as a manifest, and the catchment saved for stage A.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

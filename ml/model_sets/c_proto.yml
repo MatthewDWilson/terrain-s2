@@ -1,0 +1,13 @@
+name: c_proto
+description: >
+  Channel network v2, stage C prototype (design note, 23 Oct 2026): ml3c_v1 (unet_v2 holdout model, its filter,
+  scorer_waves12_ml3c) plus OSM guidance (river extents from OSM river areas refined on the DEM; OSM waterway lines
+  snapped onto the bed) and the stored outputs stages B and A read (channel_prob.tif, the links layer, connectivity
+  measures in network.json). For the SH12 catchment prototype; unet_v4 replaces unet_v2 when it is trained.
+channel_model: models/unet_v2/holdout
+channel_min_cells: 30
+channel_min_sharpness: 0.15
+channel_max_urban: 0.05
+crossing_model: models/scorer_waves12_ml3c
+osm_guidance: true
+c_outputs: true

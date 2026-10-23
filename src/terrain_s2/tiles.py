@@ -1,7 +1,8 @@
 """Tiles: a partition tile's bundle, for the batch and for the production tile route (``run.tile``).
 
 A tile's bundle (``<bundles>/<tile>/``) is what Stage 2's own acquisition builds for it (``acquire.build``): the
-1 m DEM and DSM through the shared elevation reader, roads, context (OSM ways, buildings, REC2 rivers), labels
+1 m DEM and DSM through the shared elevation reader, roads, context (OSM ways and buildings; OSM water areas and
+coastline from Oct 2026), labels
 (council and asset records) and ``site.json`` (provenance). ``ensure_bundle`` builds it when it is missing or
 unusable (``bundle_ok``: a DEM and no elevation error) and returns its folder. Tile ownership and merging (S2-8)
 will join this module.

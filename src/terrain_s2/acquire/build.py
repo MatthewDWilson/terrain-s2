@@ -3,7 +3,7 @@
 Bundle (``<out>/<site id>/``):
     dem.tif, dsm.tif          LINZ 1 m clips of the AOI + buffer (EPSG:2193 as published)
     labels.gpkg               harmonised layers: channels, crossings, stopbanks (+ <source>_raw layers)
-    context.gpkg              roads, rail, tracks, osm_waterways, osm_culverts
+    context.gpkg              roads, rail, tracks, osm_waterways, osm_culverts, osm_water (water_kind), osm_coastline
     roads.gpkg                road centrelines for run_network.py --roads (LINZ if fetched, else OSM)
     site.json                 provenance: site, elevation surveys and tiles, every source query
     snapshots/                raw responses + manifest.jsonl (URL, parameters, time, sha256)
@@ -192,7 +192,7 @@ def _fetch(http, store, name, spec, window, dry_run):
             parts, meta = osm.query(http, window, spec.get("endpoint", osm.OVERPASS), source=name)
         lyrs = {}
         for k, target in (("road", "osm_roads"), ("rail", "osm_rail"), ("waterway", "osm_waterways"), ("culvert", "osm_culverts"),
-                          ("building", "osm_buildings")):
+                          ("building", "osm_buildings"), ("water", "osm_water"), ("coastline", "osm_coastline")):
             if k in parts and len(parts[k]):
                 lyrs[target] = parts[k].assign(source=name, retrieved=now)
         return dict(meta=dict(kind=kind, **meta), layers=lyrs)
