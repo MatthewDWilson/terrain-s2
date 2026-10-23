@@ -145,9 +145,9 @@ def _osm_guidance(a, w, res, riv, rpolys, sk, fp_buf):
     return rpolys, riv, sk, path, kind, info
 
 
-def _c_outputs(out, gpkg, core, w, ml_prob, mask, roads, cr, crs):
+def _c_outputs(out, gpkg, core, w, ml_prob, mask, roads, cr, crs, ml_cls=None, ml_cls_names=None):
     """Stage C's stored outputs for stages B and A: ``channel_prob.tif`` (the U-Net's probability over the whole
-    window, 0-250 as uint8, 255 = no data; a COG) and the ``links`` layer of ``network.gpkg`` (candidate links between
+    window, 0-250 as uint8, 255 = no data; a COG), ``channel_class.tif`` (unet_v4: a band per class, the same way) and the ``links`` layer of ``network.gpkg`` (candidate links between
     the network's pieces with their evidence, ``connectivity.candidate_links``); returns a summary with the run's
     connectivity measures."""
     from . import connectivity
@@ -160,6 +160,16 @@ def _c_outputs(out, gpkg, core, w, ml_prob, mask, roads, cr, crs):
         with rasterio.open(out / "channel_prob.tif", "w", **prof) as f:
             f.write(q, 1)
         info["channel_prob"] = "channel_prob.tif"
+    if ml_cls is not None:                      # unet_v4: one band per class, 0-250, 255 = no data
+        import rasterio
+        q = np.where(np.isfinite(ml_cls), np.clip(np.round(ml_cls * 250), 0, 250), 255).astype(np.uint8)
+        prof = dict(driver="COG", height=q.shape[1], width=q.shape[2], count=q.shape[0], dtype="uint8", crs=crs,
+                    transform=w.transform, nodata=255, compress="deflate")
+        with rasterio.open(out / "channel_class.tif", "w", **prof) as f:
+            f.write(q)
+            for k, n in enumerate(ml_cls_names or []):
+                f.set_band_description(k + 1, str(n))
+        info["channel_class"] = dict(file="channel_class.tif", classes=list(ml_cls_names or []))
     summ, comps = connectivity.measure(out, core)
     info["connectivity"] = summ
     if comps is not None:
@@ -332,7 +342,7 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     # ML-3c: the channel U-Net's channels join the physics channel map (union), so the network, its classes and
     # the crossing tests (A, B, road crossings, road-end pairs) see them too; reaches the model alone found are
     # flagged channel_source = "ml"
-    ml_only = ml_prob = ml_info = None
+    ml_only = ml_prob = ml_info = ml_cls = ml_cls_names = None
     if opts.get("channel_model"):
         from .ml import channel_predict as CP
         ctx = a.context or (str(Path(a.roads).with_name("context.gpkg")) if a.roads else None)
@@ -342,8 +352,13 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         osm_d = CP.osm_distance_in_run(w.z.shape, w.transform, ctx) if OSM_BAND in mb else None
         bands_in = CP.run_inputs(res.feats, w.z, res.upa, res.breach.z_breached, res.dep.depth,
                                  hand if fp is not None else None, dsm, ways, osm=osm_d, bands=mb)
+        cls_out = {} if int(CP.model_meta(opts["channel_model"]).get("n_classes", 0) or 0) else None
+        kw = dict(classes_out=cls_out) if cls_out is not None else {}
         ml_prob, ml_mask, ml_info = CP.channel_mask_in_run(opts["channel_model"], bands_in, a.device,
-                                                           opts.get("channel_threshold"), opts.get("channel_min_cells", 30))
+                                                           opts.get("channel_threshold"), opts.get("channel_min_cells", 30),
+                                                           **kw)
+        ml_cls = cls_out.get("probs") if cls_out else None
+        ml_cls_names = cls_out.get("names") if cls_out else None
         del bands_in, ways
         if opts.get("channel_min_sharpness") is not None or (opts.get("channel_max_urban") is not None and
                                                             opts.get("channel_min_contrast") is None and
@@ -429,6 +444,20 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         near_ml = ndi.binary_dilation(ml_only, iterations=1)
         ch["channel_source"] = ["ml" if len(R.cells) and near_ml[R.cells[:, 0], R.cells[:, 1]].mean() > 0.5 else "physics"
                                 for R in reaches]
+    if ml_cls is not None:                       # the U-Net's class (unet_v4): the mean class probabilities on the reach
+        names_c = list(ml_cls_names or ["river", "stream", "drain"])
+        mc, mp = [], []
+        for R in reaches:
+            if not len(R.cells):
+                mc.append(None); mp.append(np.nan)
+                continue
+            v = np.nanmean(ml_cls[:, R.cells[:, 0], R.cells[:, 1]], axis=1)
+            if not np.isfinite(v).any():
+                mc.append(None); mp.append(np.nan)
+                continue
+            k = int(np.nanargmax(v))
+            mc.append(names_c[k] if k < len(names_c) else str(k)); mp.append(round(float(v[k]), 3))
+        ch["ml_class"], ch["ml_class_p"] = mc, mp
     if osm_path is not None:                     # share of each reach on a snapped OSM waterway, and its tag
         near_o = ndi.binary_dilation(osm_path, iterations=2)
         names = (None, "river", "stream", "canal", "drain")
@@ -516,7 +545,7 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     T.mark("write")
     c_info = None
     if opts["c_outputs"]:                       # network v2, stage C: what stages B and A read
-        c_info = _c_outputs(out, gpkg, core, w, ml_prob, net["mask"], roads, cr, hcrs)
+        c_info = _c_outputs(out, gpkg, core, w, ml_prob, net["mask"], roads, cr, hcrs, ml_cls, ml_cls_names)
         T.mark("c_outputs")
     T.stop()
     info = dict(dem=a.dem, dsm=a.dsm, roads=a.roads, stream_model=a.stream_model, aoi=a.aoi,

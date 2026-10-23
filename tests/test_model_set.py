@@ -110,3 +110,31 @@ def test_model_set_runs_the_channel_model_and_a_scorer_that_needs_it(tmp_path, m
                 device="cpu", crossing_model=data / "models" / "scorer_t", record_sources=[])
     with pytest.raises(ValueError, match="no channel_model"):
         MS.load(_set(tmp_path, "crossing_model: models/scorer_t\n"), data)
+
+
+def test_class_probabilities_reach_the_reaches_and_c_outputs(tmp_path, monkeypatch):
+    """A U-Net with a class head (unet_v4): the run gives each reach its class and stage C stores the class COG."""
+    d = _write(tmp_path)
+    md = tmp_path / "models" / "unet_c" / "holdout"
+    md.mkdir(parents=True)
+    (md / "model.json").write_text(json.dumps(dict(bands=list(BANDS), threshold=0.5, n_classes=3,
+                                                   classes=["river", "stream", "drain"])))
+    (md / "model.pt").write_bytes(b"w")
+
+    def fake(model_dir, bands, device="auto", threshold=None, min_cells=30, model=None, meta=None, classes_out=None):
+        prob, m, info = _fake_unet(model_dir, bands, device, threshold, min_cells)
+        if classes_out is not None:
+            c = np.zeros((3,) + prob.shape, np.float32)
+            c[2] = 0.9                                              # everything a drain
+            c[0] = c[1] = 0.05
+            classes_out.update(probs=c, names=["river", "stream", "drain"])
+        return prob, m, info
+    monkeypatch.setattr(CP, "channel_mask_in_run", fake)
+    res = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "cls", buffer=50.0, rasters="none",
+                  device="cpu", channel_model=str(md), c_outputs=True)
+    ch = res.layers["channels"]
+    assert "ml_class" in ch and set(ch.ml_class.dropna()) == {"drain"} and (ch.ml_class_p.dropna() > 0.85).all()
+    import rasterio
+    with rasterio.open(d / "cls" / "channel_class.tif") as s:
+        assert s.count == 3 and list(s.descriptions) == ["river", "stream", "drain"]
+    assert res.info["c_outputs"]["channel_class"]["classes"] == ["river", "stream", "drain"]

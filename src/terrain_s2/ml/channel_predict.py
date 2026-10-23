@@ -28,15 +28,19 @@ def _taper(window):
     return np.outer(t, t).astype(np.float32)
 
 
-def predict_windows(get, h, w, model, device, window=128, step=64, batch=256):
+def predict_windows(get, h, w, model, device, window=128, step=64, batch=256, classes=False):
     """Blended probability over an h x w grid from windows of the chips' size, overlapping by half, with a smooth
     taper: ``get(r, c)`` returns the standardised inputs (bands, window, window) and the valid mask of the window
-    whose top-left cell is (r, c) (which may lie outside the grid). NaN where no window had valid input."""
+    whose top-left cell is (r, c) (which may lie outside the grid). NaN where no window had valid input. With
+    ``classes`` and a model with a class head (unet_v4): ``(probability, class probabilities (n_classes, h, w))``,
+    the classes' softmax blended the same way."""
     import torch
+    nc = int(getattr(model, "n_classes", 0) or 0) if classes else 0
     wt = _taper(window)
     off = (window - step) // 2
     acc = np.zeros((h + 2 * window, w + 2 * window), np.float32)
     den = np.zeros_like(acc)
+    cacc = np.zeros((nc, h + 2 * window, w + 2 * window), np.float32) if nc else None
     good = np.zeros((h, w), bool)
     jobs = [(r, c) for r in range(-off, h, step) for c in range(-off, w, step)]
     for k in range(0, len(jobs), batch):
@@ -45,18 +49,31 @@ def predict_windows(get, h, w, model, device, window=128, step=64, batch=256):
         with torch.no_grad():
             xt = torch.from_numpy(np.stack([g[0] for g in got])).to(device)
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
-                pr = torch.sigmoid(model(xt).float()).cpu().numpy()
-        for (r, c), p, (_, ok) in zip(part, pr, got):
+                if nc:
+                    lg, cl = model.forward_all(xt)
+                else:
+                    lg, cl = model(xt), None
+            pr = torch.sigmoid(lg.float()).cpu().numpy()
+            cp = torch.softmax(cl.float(), 1).cpu().numpy() if cl is not None else None
+        for j, ((r, c), p, (_, ok)) in enumerate(zip(part, pr, got)):
             ww = wt * ok
             acc[r + window:r + 2 * window, c + window:c + 2 * window] += ww * p
             den[r + window:r + 2 * window, c + window:c + 2 * window] += ww
+            if cp is not None:
+                cacc[:, r + window:r + 2 * window, c + window:c + 2 * window] += ww * cp[j]
             r0, c0 = max(r, 0), max(c, 0)
             r1, c1 = min(r + window, h), min(c + window, w)
             if r1 > r0 and c1 > c0:
                 good[r0:r1, c0:c1] |= ok[r0 - r:r1 - r, c0 - c:c1 - c]
     d = den[window:window + h, window:window + w]
-    out = acc[window:window + h, window:window + w] / np.maximum(d, 1e-6)
-    return np.where(good & (d > 0), out, np.nan).astype(np.float32)
+    ok = good & (d > 0)
+    out = np.where(ok, acc[window:window + h, window:window + w] / np.maximum(d, 1e-6), np.nan).astype(np.float32)
+    if not classes:
+        return out
+    if cacc is None:
+        return out, None
+    cls = np.where(ok, cacc[:, window:window + h, window:window + w] / np.maximum(d, 1e-6), np.nan).astype(np.float32)
+    return out, cls
 
 
 def _norm(meta):
@@ -160,10 +177,18 @@ def run_inputs(feats, z, upa, z_breached, dep_depth, rem, dsm, ways, osm=None, b
     return [np.asarray(b[n], np.float32) for n in bands]
 
 
-def channel_mask_in_run(model_dir, bands, device="auto", threshold=None, min_cells=30, model=None, meta=None):
+def model_meta(model_dir) -> dict:
+    """A U-Net's model.json (empty when there is none)."""
+    f = Path(model_dir) / "model.json"
+    return json.loads(f.read_text()) if f.exists() else {}
+
+
+def channel_mask_in_run(model_dir, bands, device="auto", threshold=None, min_cells=30, model=None, meta=None,
+                        classes_out=None):
     """(probability, channel mask, info) on the run's window: the U-Net over the in-memory bands (``run_inputs``),
     thresholded (the model's threshold unless given), with fragments of fewer than ``min_cells`` cells dropped.
-    ``model``/``meta`` may be given directly (tests); otherwise loaded from ``model_dir``."""
+    ``model``/``meta`` may be given directly (tests); otherwise loaded from ``model_dir``. ``classes_out``: a dict
+    that receives the class probabilities (``probs``: (n_classes, h, w)) and names of a model with a class head."""
     import time
 
     import torch
@@ -188,7 +213,11 @@ def channel_mask_in_run(model_dir, bands, device="auto", threshold=None, min_cel
                 x[k, r0 - r:r1 - r, c0 - c:c1 - c] = a[r0:r1, c0:c1]
         ok = np.isfinite(x).all(axis=0)
         return np.clip((np.where(np.isfinite(x), x, 0.0) - mean) / std, -10, 10).astype(np.float32), ok
-    prob = predict_windows(get, h, w, model, dev, window=win, step=64)
+    if classes_out is not None and int(meta.get("n_classes", 0) or 0):
+        prob, cprob = predict_windows(get, h, w, model, dev, window=win, step=64, classes=True)
+        classes_out.update(probs=cprob, names=list(meta.get("classes") or []))
+    else:
+        prob = predict_windows(get, h, w, model, dev, window=win, step=64)
     thr = float(threshold if threshold is not None else meta.get("threshold", 0.5))
     m = np.nan_to_num(prob) >= thr
     if min_cells > 1 and m.any():

@@ -122,6 +122,13 @@ def test_predict_tile_and_review(tmp_path, model_dir):
     prob, T2, crs = P.predict_tile(run, M, model, meta, torch.device("cpu"), window=32, step=16, batch=8)
     assert prob.shape == (N, N) and np.isfinite(prob).all() and 0 <= prob.min() and prob.max() <= 1
     P.write_prob(run, prob, T2, crs, model_dir, 0.5)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ccm", Path(__file__).resolve().parents[1] / "scripts" / "compare_channel_models.py")
+    ccm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ccm)
+    sc = ccm.score_tile(run, prob, "ml_channel_labels.tif", (0.5, 0.9))
+    r = sc[0.5].result()
+    assert set(sc) == {0.5, 0.9} and r["centreline_cells"] > 0 and 0 <= r["recall_3m"] <= 1
     r = P.review_reaches(run, prob, T2, crs, threshold=2.0)             # nothing predicted: the council line is missed
     assert set(r.kind) == {"council_missed"} and set(r.exists) == {""}
 
@@ -210,8 +217,11 @@ def test_unet_v4_class_head_and_osm_dropout(tmp_path):
     assert meta["label_file"] == "ml_channel_labels_v5.tif"
     rng = np.random.default_rng(0)
     bands = [rng.normal(0, 1, (100, 100)).astype(np.float32) for _ in C.BANDS_V4]
-    prob, mk, info = P.channel_mask_in_run("x", bands, "cpu", threshold=0.5, min_cells=1, model=model, meta=meta)
-    assert prob.shape == (100, 100)
+    co = {}
+    prob, mk, info = P.channel_mask_in_run("x", bands, "cpu", threshold=0.5, min_cells=1, model=model, meta=meta,
+                                           classes_out=co)
+    assert prob.shape == (100, 100) and co["probs"].shape == (3, 100, 100) and co["names"] == ["river", "stream", "drain"]
+    assert np.allclose(np.nansum(co["probs"], axis=0)[np.isfinite(prob)], 1.0, atol=1e-3)
     try:
         P.channel_mask_in_run("x", bands[:23], "cpu", model=model, meta=meta)
         raise AssertionError("23 bands accepted for a 24-band model")

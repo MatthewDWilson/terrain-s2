@@ -2330,6 +2330,39 @@ report; `model.json` records `n_classes`, `classes`, `label_file`. Inference fol
 `ml_channel_prob.tif` the scorer's features and the label cleaning were made from). Class probabilities in the run
 (for stages B and A) come with stage A.
 
+**unet_v4, first results; stage A** (23-24 Oct). Labels v5 rebuilt with the wide rivers' interiors ignored:
+positives per council 0.38-1.23 % of cells (council-only labels v4: 0.14-0.40 %). Chips `ml3_waves123_v5`
+(version 3, 24 bands): 170,700 chips, mean positive share 3.75 % (v4: 2.15 %); positive cells river 71.0 million,
+stream 17.3 million, drain 13.4 million (wide rivers' banks still dominate the cells, though not the chip
+centres). unet_v4 (fold 1 + holdout, 30 epochs each, validation loss still falling a little at the end): fold 1 AP
+0.935, recall 0.964, precision 0.691 at 0.4, recall off the physics map 0.918 (physics recall 0.629); holdout AP 0.960,
+recall 0.983, precision 0.773 at 0.3; class accuracy 0.88 (fold 1; river 0.93, stream 0.83, drain 0.74; Southland's
+drains 0.22 on few cells, Auckland's 0.43; Waimakariri weakest, 0.69) and 0.90 (holdout; Waimakariri streams 0.49).
+These numbers cannot be set beside unet_v2's (fold 1: off physics 0.65 at precision 0.64, on labels v3): unet_v4 is
+scored on labels v5, whose OSM banks and waterways are easy and which its OSM band points at. So
+`scripts/compare_channel_models.py`: models predict the same whole test tiles (``--per-council`` per council) and are
+scored on one label raster (default the council labels, no OSM) as the U-Net's evaluation scores chips, at each
+model's threshold and 0.5-0.8; ``--drop-osm`` scores an OSM-band model again with the band set to "no OSM".
+Class probabilities now reach the run: ``predict_windows(classes=True)`` blends the class softmax like the
+probability; with a class-head model the run gives each reach ``ml_class`` and ``ml_class_p`` (the mean class
+probabilities over its cells) and stage C stores ``channel_class.tif`` (a band per class).
+
+Stage A (`catchment_mode.py`, `scripts/stage_a.py`): per catchment, (1) each tile's stage B reaches clipped to its
+core (S2-8's ownership: no duplicates from the buffers), within the catchment plus 500 m; reaches whose interior
+another reach's end touches split there; dangling ends on a core edge joined to another tile's within 5 m; (2) outlets:
+nodes within 20 m of OSM coastline, tidal flats or lakes; dangling ends at the band's outer edge and at the edge of
+LiDAR coverage inside the catchment (provisional); the lowest dangling end when nothing is on the coast; (3) shortest
+upstream paths from the outlets (Dijkstra; a reach's length plus 50 per metre it would run uphill beyond 0.5 m),
+each reach flowing to its end nearer an outlet, Strahler order and upstream length on the tree, uphill reaches
+flagged; (4) each unreached piece gets a least-cost path (U-Net probability, cost 1 + 9 (1 - p); roads +20 unless a
+high or medium crossing candidate lies within 10 m) from its lowest node (the one nearest the network among equals)
+to the connected network, accepted within 60 m, rising at most 0.5 m (or through a crossing), with mean probability
+0.3 or under 10 m; then oriented again; still unconnected: dropped under 500 m, else kept and flagged isolated;
+(5) class_v2 (river: river polygon or flag, OSM river, the U-Net's class; stream: OSM stream, the U-Net's class, order
+3+ with stream probability 0.5, or stream probability 0.5; else drain), and minor drains left as leaves removed; (6)
+`<catchment>/network_a.gpkg` (channels drawn downstream, outlets, connections, attempts, dropped), `stage_a.json`,
+and each tile's `network_a.gpkg`.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;
