@@ -75,26 +75,15 @@ def _label_cfg():
 
 
 def _bundle_ok(bundle: Path) -> bool:
-    """A usable bundle: site.json without elevation errors, and a DEM (a build that failed on elevation
-    still writes site.json: BJ39_10000_0303 in wave 1 was skipped as built and then had no DEM)."""
-    f = bundle / "site.json"
-    if not f.exists() or not (bundle / "dem.tif").exists():
-        return False
-    try:
-        errs = json.loads(f.read_text()).get("errors", [])
-    except ValueError:
-        return False
-    return not any(str(e.get("step", "")).startswith("elevation") for e in errs)
+    """A usable bundle (``tiles.bundle_ok``)."""
+    from ..tiles import bundle_ok
+    return bundle_ok(bundle)
 
 
 def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> dict:
     """Bundle and network for one tile; returns a record (also written as done.json when it succeeds)."""
-    from ..acquire import registry
-    from ..acquire.build import build_site
-    from ..acquire.elevation import default_data_dir
-    from ..acquire.site import load_sources, tile_site
     from ..run import network
-    root = Path(__file__).resolve().parents[3]
+    from ..tiles import ensure_bundle
     params = dict(DEFAULT_PARAMS, **cfg.params)
     t0 = time.perf_counter()
     rec = dict(tile_id=tile_id, device=device, params=params, params_hash=params_hash(_hashed(params, cfg)),
@@ -102,14 +91,9 @@ def run_tile(tile_id: str, cfg: BatchConfig, device: str = "cpu", log=print) -> 
     bundle = Path(cfg.bundles) / tile_id
     try:
         if cfg.build and not _bundle_ok(bundle):
-            sources_path = cfg.sources or str(root / "sites" / "sources.yml")
-            idx_path = Path(cfg.index) if cfg.index else registry.default_index_path(sources_path)
-            site = tile_site(tile_id, cfg.partition, params.get("buffer", 200.0))
-            prov = build_site(site, load_sources(sources_path), cfg.bundles, cfg.cache or str(default_data_dir()),
-                              index=registry.load_index(idx_path), mirror=cfg.mirror, log=log)
-            rec["build_errors"] = prov["errors"]
-            if any(e["step"].startswith("elevation") for e in prov["errors"]):
-                raise RuntimeError(f"elevation failed: {prov['errors']}")
+            _, errs = ensure_bundle(tile_id, cfg.bundles, cfg.partition, params.get("buffer", 200.0), cfg.sources,
+                                    cfg.index, cfg.cache, cfg.mirror, log=log)
+            rec["build_errors"] = errs
         rec["build_s"] = round(time.perf_counter() - t0, 1)
         dsm = bundle / "dsm.tif"
         run_params = dict(params, device=device)

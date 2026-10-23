@@ -479,6 +479,31 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     return NetworkResult(info=info, out=out, layers=written, paths=paths, state=state)
 
 
+TILE_DEFAULTS = dict(buffer=200.0, rasters="none")
+
+
+def tile(tile_id: str, model_set=None, out=None, bundles=None, partition=None, build: bool = True, params=None,
+         sources=None, index=None, cache=None, mirror: bool = True, log=print, **options) -> NetworkResult:
+    """One partition tile by Stage 2's own route (integration step 2): the tile's bundle (``tiles.ensure_bundle``:
+    built if missing, with the DEM, DSM, roads, context and records the model set needs), then ``network`` on
+    it with ``model_set`` (e.g. ``"ml3c_v1"``). ``out``: default ``<TERRAIN_DATA_DIR>/network/<tile>``. Options as
+    ``network`` (``TILE_DEFAULTS``: the bundle's 200 m buffer, no rasters; ``options`` win over ``params``).
+    ``network.json`` gains ``tile`` (id, bundle, the bundle's build errors)."""
+    from . import tiles
+    from .acquire.elevation import default_data_dir
+    opts = dict(TILE_DEFAULTS, **(params or {}), **options)
+    if model_set is not None:
+        opts["model_set"] = model_set
+    bundle, errors = tiles.ensure_bundle(tile_id, bundles, partition, opts["buffer"], sources, index, cache, mirror,
+                                         build, log)
+    inp = tiles.bundle_inputs(bundle)
+    out = Path(out or default_data_dir() / "network" / tile_id)
+    res = network(inp["dem"], inp["dsm"], inp["aoi"], roads=inp["roads"], out=out, params=opts)
+    res.info["tile"] = dict(id=tile_id, bundle=str(bundle), build_errors=errors)
+    (out / "network.json").write_text(json.dumps(res.info, indent=2, default=str))
+    return res
+
+
 def _aoi_path(aoi, out, aoi_crs, dem0, assume_crs):
     """A path for dataio.read_aoi: as given, or the geometry written to <out>/aoi_input.geojson."""
     if isinstance(aoi, (str, Path)):

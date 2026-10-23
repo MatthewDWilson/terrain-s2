@@ -2181,6 +2181,53 @@ probability in memory and the run's candidates, `apply.model_features` adds them
 as `compare_ml3c.py` did); `--parity` uses each tile's held-out fold, as the batch did, so the candidates should
 match one for one and the scores to rounding.
 
+**Model set parity; the plan refined with Matt; steps 2 and 3 started** (23 Oct). `check_model_set.py` on two wave
+3 tiles (BY20_10000_0405, CF15_10000_0501; 2.5-4 min a tile, GPU machine). With each tile's held-out fold
+(`--parity`): candidates one for one (1,107 and 3,246, all matched), scores median difference 0, rank correlation
+0.997-0.998, max difference 0.23-0.26 on a few candidates. Likely cause: the scorer's training probabilities were
+predicted on the physics runs' saved rasters, cropped to the tile, while the run predicts over its 200 m buffer
+too, so within about one U-Net window of the edge the run's probability has context the stored one lacked (the
+check now reports the top-100 overlap and where the large differences lie; `--reuse` compares without
+rerunning). With the set's own U-Net (holdout model; it trained on these tiles, so a stability check): 93-94 % of
+candidates matched (72 and 127 new), rank correlation 0.986-0.988, median score difference ~0.002.
+
+Matt's points (23 Oct): (a) the tile route uses Stage 2's own acquisition (the bundle), which already covers OSM
+and context; Stage 1's DEM route stays an option (Input A). (b) S2-7 is the structures layer of plan 8.1 (one row
+per structure: cutline, class, recorded match, inverts, widths, barrier and crest heights, scores, burn outcome).
+(c) Burning in the plan is of structures (8.2/8.3: culverts cut through embankments where the channel is wide
+enough, decks removed, obstructions breached, repairs; never raising the DEM), not channels. Channel bathymetry is
+open (code 5, ML-4): estimate stream beds below the LiDAR water surface, possibly with REC1 flows from Stage 1;
+streams burned by default, drains not. A methods note comes before code. "Model-only reach" means a reach only the
+U-Net mapped (`channel_source = ml`), not one absent from council or OSM data; these are targets and stay in;
+the burning rules decide which candidate culverts are burned. (d) A connectivity clean-up comes before
+conditioning: the network should be connected; a small gap should join the end nodes, and lines that nearly touch
+away from their ends (one curving away) must be handled too. (e) The public `eddie_terrain` module carries the
+code and the model set (the U-Net for on-demand networks), not the data; the national run's results are hosted
+for on-demand use (design open: e.g. per tile the structures, network and a sparse modification raster over the
+LINZ DEM, found through a STAC catalogue by tile and generator key; licences of training labels to check before
+publishing weights; CPU inference time to measure). (f) A full documentation set, and the move to
+`GeospatialResearch/eddie_terrain` (history to check for anything not to publish).
+
+Revised order: 1 model sets (done), 2 the tile route + CPU timing, 3 connectivity clean-up (measured first), 4 S2-7,
+5 S2-6 (structures as planned; the bathymetry methods note before code), 6 S2-8 and S2-13, 7 module contents,
+hosting, Docker test, 8 documents and the move (alongside, finishing last).
+
+**Step 2: the tile route.** `run.tile(tile_id, model_set=..., out=...)`: the tile's bundle (`tiles.ensure_bundle`:
+built through `acquire.build` when missing or unusable, the batch's logic moved into the new `tiles.py`, which
+the batch now uses), then `network` on it with the bundle's 200 m buffer and no rasters by default; network.json
+gains `tile` (id, bundle, build errors). `scripts/run_tile.py` is its command line and prints the device, total
+and U-Net times and peak memory (`--device cpu` for the CPU timing). For EDDIE (eddie/ is not the Stage 2
+agent's): `ensure_network(tile_id=...)` should call `terrain_s2.run.tile(tile_id, model_set=..., out=...)` rather
+than the Stage 1 DEM route, with the model set from the module's configuration.
+
+**Step 3, measuring first.** `connectivity.measure` (and `scripts/network_fragments.py` over manifests):
+components of touching reaches (0.5 m); anchored if they reach the tile edge, a river polygon, a residual pond
+(a dangling end within 5 m) or the floodplain restriction's limit (a dangling end 40 m or more outside the
+floodplain: the run cut the channel there), else isolated; each component's nearest other component and the
+kind of near-meeting (end to end, end to line, line to line: Matt's curving-away case); the isolated length left
+if gaps up to 2, 5, 10, 20 and 50 m were joined; the isolated length's U-Net-only and drain shares. Per tile
+`fragments.gpkg` (components, connectors) on request, for QGIS. Nothing in the runs is changed.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

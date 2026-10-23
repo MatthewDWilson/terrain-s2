@@ -16,7 +16,10 @@ against the stored one). Without it, the set's own U-Net (every tile outside the
 production run would: the candidates and scores differ somewhat, and the summary says by how much.
 
 Per tile: reference and new candidates (recorded structures added by the scorer left out), the share matched
-within 0.5 m, max and median |p difference| and the rank correlation of p over the matched ones, and the time.
+within 0.5 m, max and median |p difference| and the rank correlation of p over the matched ones, the overlap of
+the two top-100 lists, the candidates differing by more than 0.05 with their median distance to the tile edge and
+the share within 128 m of it (one U-Net window: the stored probabilities were made on rasters cropped to the
+tile, the run predicts over its 200 m buffer too), and the time.
 """
 import argparse
 import importlib.util
@@ -46,7 +49,9 @@ def main():
     ap.add_argument("--bundles")
     ap.add_argument("--out", help="default <data>/scratch/model_set_check[_parity]")
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--reuse", action="store_true", help="compare the runs already in --out instead of running again")
     a = ap.parse_args()
+    import geopandas as gpd
     import numpy as np
     import pandas as pd
     from scipy.spatial import cKDTree
@@ -76,13 +81,17 @@ def main():
                 continue
             extra["channel_model"] = str(cm.parent / oof[t])
         t0 = time.perf_counter()
-        res = network(b / "dem.tif", b / "dsm.tif" if (b / "dsm.tif").exists() else None, b / "aoi.geojson",
-                      roads=b / "roads.gpkg" if (b / "roads.gpkg").exists() else None, out=out / t,
-                      buffer=200.0, rasters="none", device=a.device, model_set=a.model_set, **extra)
+        if a.reuse and (out / t / "network.gpkg").exists() and (out / t / "network.json").exists():
+            info = json.loads((out / t / "network.json").read_text())
+            new = gpd.read_file(out / t / "network.gpkg", layer="crossings")
+        else:
+            res = network(b / "dem.tif", b / "dsm.tif" if (b / "dsm.tif").exists() else None, b / "aoi.geojson",
+                          roads=b / "roads.gpkg" if (b / "roads.gpkg").exists() else None, out=out / t,
+                          buffer=200.0, rasters="none", device=a.device, model_set=a.model_set, **extra)
+            info, new = res.info, res.layers["crossings"]
         sec = time.perf_counter() - t0
-        new = res.layers["crossings"]
         new = new[new.tier != "recorded"] if "tier" in new else new
-        rec = dict(tile=t, seconds=round(sec, 1), new=len(new), u_net=Path(res.info["channel_model"]["model"]).name)
+        rec = dict(tile=t, seconds=round(sec, 1), new=len(new), u_net=Path(info["channel_model"]["model"]).name)
         rf = ref / t / "ml_features.parquet"
         if not rf.exists():
             print(f"{t}: no reference features at {rf}")
@@ -96,6 +105,17 @@ def main():
             pn = new.p_structure.to_numpy(float)[i[m]]
             pr = sc.p.to_numpy(float)[m]
             dp = np.abs(pn - pr)
+            edge = gpd.read_file(b / "aoi.geojson").to_crs(new.crs).union_all().boundary
+            xy = sc[["x", "y"]].to_numpy()[m]
+            big = dp > 0.05
+            from shapely import points
+            de = edge.distance(points(xy[big])) if big.any() else np.array([])
+            top_r = set(np.argsort(-pr)[:100])
+            top_n = set(np.argsort(-pn)[:100])
+            rec.update(top100_overlap=round(len(top_r & top_n) / max(1, min(100, len(pr))), 3),
+                       n_dp_over_0_05=int(big.sum()),
+                       edge_m_of_those=round(float(np.median(de)), 1) if len(de) else None,
+                       within_128m_of_edge=round(float((de <= 128).mean()), 3) if len(de) else None)
             rec.update(matched=round(float(m.mean()), 4), new_unmatched=int(len(new) - len(np.unique(i[m]))),
                        max_dp=round(float(dp.max()), 4) if len(dp) else None,
                        median_dp=round(float(np.median(dp)), 5) if len(dp) else None,
