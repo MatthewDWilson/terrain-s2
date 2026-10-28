@@ -2406,6 +2406,31 @@ candidate's p_structure, or `needs_structure`. `--trace X,Y` reports what each s
 by probability too (`cleanup.judge_links`: across a barrier with a candidate, the candidate's probability; otherwise
 p_evidence x p_barrier x p_rise; accepted at 0.5; the length limits only bound the search).
 
+**Stage A version 2 on SH12; the outlet from OSM and the network on the 1 m channels** (27-28 Oct). Matt: one outlet,
+but in the wrong place, which then shapes the network upstream (it was the edge cell beside the sea collecting the most
+area in a first routing; at SH12 the harbour's tidal flats line a long stretch of the catchment's edge, so "beside the
+sea" covered far more than the mouth); the network otherwise reasonable, with a spatial shift from the coarsening and
+spurious channels in places (expected worse on flat land such as the Canterbury plains); crossings reasonable, and the
+SH12 culvert is crossed. Agreed order (also in the design note): (1) the outlet where the catchment's main OSM waterway
+leaves it; (2) the network redrawn on the detected 1 m channels and the bed, its offset measured; (3) the channel
+probability learned from council and OSM lines; (4) a second prototype on flat land, sea-draining catchment catch_id
+1589 (fid 655), low-lying beside the braided Ashley River; (5) the U-Net choice, the aerial imagery test (stage 2:
+the U-Net with RGB bands) and the scorer retrained on the new network's crossings, then the integration steps.
+
+(1) `routed_network.osm_outlet`: the OSM rivers, canals and streams in the catchment joined into connected systems;
+the main one has the most rank-weighted length inside the catchment (river 3, canal 2, stream 1) times the square of
+its share inside (so a river along the boundary, as the Ashley beside 1589, loses to the catchment's own waterway);
+the outlet is the lowest, on the coarse DEM, of its crossings of the boundary and its ends at the sea, snapped to the
+nearest edge cell within 100 m; `outlet_xy` overrides it; the routing method remains the fallback, and the summary
+says which was used (`method`). (2) The segments' ends moved to the cheapest cell within 5 m, shared ends together,
+and each segment redrawn between them through a 10 m corridor over `cost_window`: 1 + 9 (1 - p), p the larger of the
+U-Net probability and the stage B channels' evidence (a detected channel is followed where there is one), plus 5 x
+the height above the lowest cell within 11 m over 0.5 m, capped at 1 (the bed elsewhere). `offsets` in the summary:
+median distance and share within 3 m of the network from the stage B channels and from the council lines (bundles'
+labels `channels`), before and after the redrawing; the synthetic test's median falls from 2.5 m to under 1 m.
+`catchments.by_id` and `catchment_tiles.py --id / --fid` (MfE's id field is `catch_id`, now recognised: the "1373"
+printed for SH12 was the row number).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

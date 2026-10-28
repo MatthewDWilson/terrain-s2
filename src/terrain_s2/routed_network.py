@@ -11,9 +11,11 @@ detected channels decide where it runs and how far up it goes:
    1 m cell in it (channels survive the coarsening, banks and noise do not). OSM tidal flats and coastal water inside
    the catchment are sea. Depressions are then breached by least cost (an embankment no candidate opens is cut
    where it is thinnest, not filled into a lake).
-2. **One outlet** per sea-draining catchment: routed once with every edge cell an outlet, the edge cell beside the
-   sea (coastline or tidal flats within ``coast_m``) with the largest upstream area is the mouth; failing that, the
-   edge cell with the largest upstream area. Routed again with that cell alone as the outlet, so every cell of the
+2. **One outlet** per sea-draining catchment: where the catchment's main OSM waterway leaves it (``osm_outlet``: the
+   connected OSM river / canal / stream system with the most rank-weighted length inside the catchment, at the
+   lowest of its crossings of the boundary or its ends at the sea; Matt, 28 Oct), snapped to the nearest edge cell;
+   ``outlet_xy`` overrides it; failing both, the edge cell beside the sea (coastline or tidal flats within
+   ``coast_m``) with the largest upstream area in a first routing with every edge cell an outlet. Routed again with that cell alone as the outlet, so every cell of the
    catchment drains to it (pyflwdir: depressions filled towards it). The other mouths the first routing found are
    reported (``outlet_report``): a reason to allow a second outlet would show there.
 3. **The routed network**: streams where the upstream area is at least ``a_min_m2``, as segments between
@@ -24,8 +26,12 @@ detected channels decide where it runs and how far up it goes:
    Segments are removed from the heads down while ``p_channel`` < ``keep_p``, and each head left is trimmed to
    where, coming down it, the smoothed p_channel first reaches ``keep_p``; a doubtful segment between two believed
    ones stays (the network stays connected). (Hand-set for now; to be learned from council and OSM lines.)
-5. **On the 1 m channels**: each kept segment redrawn between its ends as the least-cost path through a corridor of
-   ``refine_corridor_m`` over the U-Net probability (cost 1 + 9 (1 - p)), so it runs in the detected channel.
+5. **On the 1 m channels**: the segments' ends moved to the cheapest cell within ``node_snap_m`` (shared ends move
+   together), and each segment redrawn between them as the least-cost path through a corridor of
+   ``refine_corridor_m`` (``cost_window``: 1 + 9 (1 - p), p the larger of the U-Net probability and the stage B
+   channels' evidence, so a detected channel is followed; plus ``bed_weight`` for height above the local bed, so the
+   path keeps to the bed elsewhere). ``offsets`` in the summary: the network's distance from the stage B channels and
+   the council lines, before and after.
 6. **Drains join it**: stage B drains away from the routed network (too small to route) are joined where a
    least-cost path to it is probable enough, ``p_join = p_evidence x p_barrier x p_rise >= keep_p``: the evidence of a
    channel along the path, ``1 - (1 - mean U-Net probability)(1 - exp(-length / gap_scale_m))`` (a short gap is
@@ -50,6 +56,8 @@ import numpy as np
 DEFAULTS = dict(res_m=5.0, burn_max_m=2.0, carve_max_m=5.0, breach_max_m=200.0, gap_scale_m=10.0, coast_m=20.0,
                 a_min_m2=5000.0, a50_m2=1.0e5,
                 prior_scale=0.5, evid_dist_m=6.0, keep_p=0.5, refine_corridor_m=10.0, rise_sigma_m=0.3,
+                node_snap_m=5.0, bed_weight=5.0, bed_scale_m=0.5, bed_window_m=11.0, outlet_snap_m=100.0,
+                outlet_xy=None, waterway_rank=dict(river=3.0, canal=2.0, stream=1.0),
                 road_prior=0.05, join_max_m=60.0, min_piece_m=20.0, river_min_m2=5.0e7, tier_p=dict(high=0.8,
                 medium=0.5, low=0.2), crossing_search_m=25.0, overlap_m=500.0, max_outlets=1)
 NODATA = -9999.0
@@ -211,9 +219,10 @@ def breach(z5, P):
     return np.where(np.isfinite(zb), zb, NODATA).astype(np.float32)
 
 
-def choose_outlet(z5, T5, sea_mask, P):
-    """(outlet cell index, report): the mouth the first routing finds beside the sea with the largest upstream area
-    (else the edge cell with the largest), and the other mouths that routing found."""
+def choose_outlet(z5, T5, sea_mask, P, osm_xy=None, osm_rec=None):
+    """(outlet cell index, report). In order: ``outlet_xy`` (given); the main OSM waterway's exit (``osm_outlet``),
+    snapped to the nearest edge cell; else the mouth the first routing finds beside the sea with the largest upstream
+    area (else the edge cell with the largest). The report holds the mouths that routing found either way."""
     import pyflwdir
     f = pyflwdir.from_dem(z5, nodata=NODATA, transform=T5, latlon=False, outlets="edge")
     upa = f.upstream_area("m2")
@@ -228,9 +237,112 @@ def choose_outlet(z5, T5, sea_mask, P):
                 area_km2=round(float(a[j]) / 1e6, 4), coast=bool(coast[j])) for j, p in zip(order[:5], pits[order[:5]])]
     cand = order[coast[order]] if coast.any() else order
     out = int(pits[cand[0]])
+    method = dict(method="routing")
+    xy = tuple(P["outlet_xy"]) if P.get("outlet_xy") else osm_xy
+    if xy is not None:
+        rr, cc = np.nonzero(edge_cells(z5))
+        if len(rr):
+            ex = T5.c + (cc + 0.5) * T5.a
+            ey = T5.f + (rr + 0.5) * T5.e
+            d = np.hypot(ex - xy[0], ey - xy[1])
+            j = int(np.argmin(d))
+            if d[j] <= P["outlet_snap_m"]:
+                out = int(rr[j] * z5.shape[1] + cc[j])
+                method = dict(method="given" if P.get("outlet_xy") else "osm", snapped_m=round(float(d[j]), 1),
+                              **({k: v for k, v in (osm_rec or {}).items() if k != "method"} if not P.get("outlet_xy")
+                                 else {}))
+            else:
+                method = dict(method="routing", osm_point_too_far_m=round(float(d[j]), 1))
+    elif osm_rec is not None:
+        method = dict(method="routing", osm=osm_rec.get("reason"))
     chosen = dict(x=float(T5.c + (out % z5.shape[1] + 0.5) * T5.a), y=float(T5.f + (out // z5.shape[1] + 0.5) * T5.e),
-                  area_km2=round(float(upa.ravel()[out]) / 1e6, 4), coast=bool(near.ravel()[out]))
+                  area_km2=round(float(upa.ravel()[out]) / 1e6, 4), coast=bool(near.ravel()[out]), **method)
     return out, dict(mouths=rep, chosen=chosen)
+
+
+def osm_outlet(catchment, lines, sea, z5, T5, P):
+    """Where the catchment's main OSM waterway leaves it (Matt, 28 Oct): the waterways (``waterway_rank``: river over
+    canal over stream) are joined into connected systems; the main one has the most rank-weighted length inside the
+    catchment, weighted again by the square of its share inside (so a river along the boundary does not win); its
+    outlet is the lowest (on the coarse DEM) of the points where it crosses the
+    catchment's boundary or ends at the sea. Returns ((x, y), record) or (None, record)."""
+    import shapely
+    from shapely.geometry import Point
+    from shapely.ops import linemerge, unary_union
+    rec = dict(method="osm")
+    if lines is None or not len(lines) or "waterway" not in lines:
+        return None, dict(rec, reason="no OSM waterways")
+    W = lines[lines.waterway.isin(list(P["waterway_rank"]))]
+    W = W[W.intersects(catchment)]
+    if not len(W):
+        return None, dict(rec, reason="no OSM river, canal or stream in the catchment")
+    merged = unary_union(list(W.geometry))
+    parts = list(getattr(merged, "geoms", [merged]))
+    from .connectivity import _UF
+    uf = _UF(len(parts))
+    tree = shapely.STRtree(np.asarray(parts, object))
+    a, b = tree.query(np.asarray(parts, object), predicate="dwithin", distance=1.0)
+    for i, j in zip(a, b):
+        if i != j:
+            uf.union(i, j)
+    lab = uf.labels()
+    # a part's rank: the highest of the OSM ways it overlaps
+    pr = []
+    wtree = shapely.STRtree(W.geometry.to_numpy())
+    for g in parts:
+        idx = wtree.query(g, predicate="intersects")
+        pr.append(max([P["waterway_rank"].get(W.waterway.iloc[i], 1.0) for i in idx], default=1.0))
+    # a system's score: rank-weighted length inside the catchment x (its share inside)^2, so a large river that only
+    # runs along the boundary (the Ashley beside catchment 1589) loses to the catchment's own waterway
+    band = catchment.buffer(P["overlap_m"])
+    inside, near_ = {}, {}
+    for k, g in enumerate(parts):
+        inside[lab[k]] = inside.get(lab[k], 0.0) + pr[k] * g.intersection(catchment).length
+        near_[lab[k]] = near_.get(lab[k], 0.0) + pr[k] * g.intersection(band).length
+    score = {k: inside[k] * (inside[k] / max(near_[k], 1e-9)) ** 2 for k in inside}
+    main = max(score, key=score.get)
+    sys_lines = linemerge([parts[k] for k in range(len(parts)) if lab[k] == main])
+    geom = sys_lines
+    cand = []
+    x = geom.intersection(catchment.boundary)
+    for q in getattr(x, "geoms", [x]):
+        if q.is_empty:
+            continue
+        cand.append(q if q.geom_type == "Point" else q.centroid)
+    if sea:
+        seau = unary_union(sea)
+        for g in getattr(geom, "geoms", [geom]):
+            for c in (g.coords[0], g.coords[-1]):
+                q = Point(c)
+                if seau.distance(q) <= P["coast_m"]:
+                    cand.append(q)
+    if not cand:
+        return None, dict(rec, reason="the main OSM waterway does not leave the catchment")
+    h, w = z5.shape
+    zs = []
+    for q in cand:
+        r = int(min(max((T5.f - q.y) // abs(T5.e), 0), h - 1))
+        c = int(min(max((q.x - T5.c) // T5.a, 0), w - 1))
+        r0, r1, c0, c1 = max(r - 3, 0), min(r + 4, h), max(c - 3, 0), min(c + 4, w)
+        win = z5[r0:r1, c0:c1]
+        v = win[win != NODATA]
+        zs.append(float(v.min()) if v.size else np.inf)
+    k = int(np.argmin(zs))
+    names = W.get("name")
+    nm = None
+    if names is not None:
+        inside = W[W.intersects(geom.buffer(1.0))]
+        nn = inside.name.dropna()
+        nm = str(nn.mode().iloc[0]) if len(nn) else None
+    return (cand[k].x, cand[k].y), dict(rec, waterway=nm, candidates=len(cand), z=round(zs[k], 2),
+                                        main_length_km=round(geom.intersection(catchment).length / 1000, 3))
+
+
+def edge_cells(z5):
+    """The coarse DEM's valid cells beside an invalid one (where an outlet can be)."""
+    from scipy import ndimage as ndi
+    valid = z5 != NODATA
+    return valid & ndi.binary_dilation(~valid, structure=np.ones((3, 3), bool), border_value=1)
 
 
 def route(z5, T5, outlet):
@@ -367,35 +479,123 @@ def prune_heads(S, p, P):
     return keep
 
 
-def refine(line, prob_files, P):
-    """The least-cost path between the line's ends through a corridor around it over the U-Net probability."""
+def cost_window(bounds, prob_files, dem_files, reaches, evidence, P):
+    """(cost, transform) on a 1 m window: ``1 + 9 (1 - p) + bed_weight x clip(relz / bed_scale_m, 0, 1)``, with ``p``
+    the larger of the U-Net probability and the stage B channels' evidence (so a detected channel is followed where
+    there is one) and ``relz`` the height above the lowest cell within ``bed_window_m`` (so the path keeps to the
+    bed). None when no probability or DEM covers the window."""
+    from rasterio.features import rasterize
+    from scipy import ndimage as ndi
+    from shapely.geometry import box
+
+    from .catchment_mode import _mosaic
+    pr, T = _mosaic(prob_files, bounds)
+    zz, Tz = _mosaic(dem_files, bounds)
+    if pr is None and zz is None:
+        return None, None
+    if pr is None:
+        pr, T = np.full(zz.shape, 0.0, np.float32), Tz
+    p = np.where(np.isfinite(pr) & (pr <= 250), pr / 250.0, 0.0)
+    if reaches is not None and len(reaches):
+        win = box(*bounds)
+        idx = np.flatnonzero(reaches.intersects(win).to_numpy())
+        if len(idx):
+            shp = sorted(((reaches.geometry.iloc[i], float(evidence[i])) for i in idx), key=lambda t: t[1])
+            b = rasterize(shp, out_shape=p.shape, transform=T, fill=0, all_touched=True, dtype="float32")
+            p = np.maximum(p, b)
+    cost = 1.0 + 9.0 * (1.0 - p)
+    if zz is not None and zz.shape == p.shape and np.isfinite(zz).any():
+        zf = np.where(np.isfinite(zz), zz, np.nanmax(zz))
+        k = max(3, int(round(P["bed_window_m"])) | 1)
+        relz = zf - ndi.minimum_filter(zf, size=k)
+        cost = cost + P["bed_weight"] * np.clip(relz / P["bed_scale_m"], 0.0, 1.0)
+    return cost, T
+
+
+def snap_nodes(S, prob_files, dem_files, reaches, evidence, P):
+    """{node key: (x, y)}: each segment end moved to the cheapest cell within ``node_snap_m`` (a coarse cell's centre
+    is up to half a cell off the channel), the same for every segment sharing it, so the network stays joined."""
+    out = {}
+    r = P["node_snap_m"]
+    for g in S.geometry:
+        for c in (g.coords[0], g.coords[-1]):
+            key = (round(c[0], 2), round(c[1], 2))
+            if key in out:
+                continue
+            b = (np.floor(c[0] - r - 1), np.floor(c[1] - r - 1), np.ceil(c[0] + r + 1), np.ceil(c[1] + r + 1))
+            cost, T = cost_window(b, prob_files, dem_files, reaches, evidence, P)
+            if cost is None:
+                out[key] = c
+                continue
+            ys, xs = np.mgrid[0:cost.shape[0], 0:cost.shape[1]]
+            cx = T.c + (xs + 0.5) * T.a
+            cy = T.f + (ys + 0.5) * T.e
+            ok = np.hypot(cx - c[0], cy - c[1]) <= r
+            if not ok.any():
+                out[key] = c
+                continue
+            cc = np.where(ok, cost, np.inf)
+            j = np.unravel_index(int(np.argmin(cc)), cc.shape)
+            out[key] = (float(cx[j]), float(cy[j]))
+    return out
+
+
+def refine(line, prob_files, P, dem_files=(), reaches=None, evidence=None, ends=None):
+    """The least-cost path between the line's ends (moved to ``ends`` when given) through a corridor of
+    ``refine_corridor_m`` around it, over ``cost_window``: on a detected channel where there is one, on the bed
+    elsewhere."""
     from rasterio.features import rasterize
     from shapely.geometry import LineString
     from skimage.graph import MCP_Geometric
-
-    from .catchment_mode import _mosaic
+    a = ends[0] if ends else line.coords[0]
+    z = ends[1] if ends else line.coords[-1]
     c = P["refine_corridor_m"]
     x0, y0, x1, y1 = line.bounds
+    x0, y0 = min(x0, a[0], z[0]), min(y0, a[1], z[1])
+    x1, y1 = max(x1, a[0], z[0]), max(y1, a[1], z[1])
     b = (np.floor(x0 - c - 2), np.floor(y0 - c - 2), np.ceil(x1 + c + 2), np.ceil(y1 + c + 2))
-    pr, T = _mosaic(prob_files, b)
-    if pr is None:
-        return line
-    p = np.where(np.isfinite(pr) & (pr <= 250), pr / 250.0, 0.0)
-    corr = rasterize([(line.buffer(c), 1)], out_shape=p.shape, transform=T, fill=0) > 0
-    cost = np.where(corr, 1.0 + 9.0 * (1.0 - p), -1.0)                    # negative: not passable
+    cost, T = cost_window(b, prob_files, dem_files, reaches, evidence, P)
+    if cost is None:
+        return LineString([a] + list(line.coords[1:-1]) + [z])
+    corr = rasterize([(LineString([a] + list(line.coords) + [z]).buffer(c), 1)], out_shape=cost.shape, transform=T,
+                     fill=0) > 0
+    cost = np.where(corr, cost, -1.0)                                     # negative: not passable
     rc = lambda xy: (int((T.f - xy[1]) // abs(T.e)), int((xy[0] - T.c) // T.a))
-    s, e = rc(line.coords[0]), rc(line.coords[-1])
-    if not all(0 <= a < n for a, n in zip(s + e, p.shape * 2)) or cost[s] < 0 or cost[e] < 0:
-        return line
+    s_, e_ = rc(a), rc(z)
+    inside = all(0 <= v < n for v, n in zip(s_ + e_, cost.shape * 2))
+    if not inside or cost[s_] < 0 or cost[e_] < 0:
+        return LineString([a] + list(line.coords[1:-1]) + [z])
     mcp = MCP_Geometric(cost)
-    mcp.find_costs([s], ends=[e])
-    path = np.array(mcp.traceback(e))
+    mcp.find_costs([s_], ends=[e_])
+    path = np.array(mcp.traceback(e_))
     if len(path) < 2:
-        return line
+        return LineString([a, z])
     xs = T.c + (path[:, 1] + 0.5) * T.a
     ys = T.f + (path[:, 0] + 0.5) * T.e
-    coords = [line.coords[0]] + list(zip(xs[1:-1].tolist(), ys[1:-1].tolist())) + [line.coords[-1]]
+    coords = [a] + list(zip(xs[1:-1].tolist(), ys[1:-1].tolist())) + [z]
     return LineString(coords).simplify(0.5)
+
+
+def offset_stats(lines, ref, max_m=10.0, step=5.0):
+    """How far the network lies from reference lines (stage B channels, council lines): over points every ``step`` m
+    along the network within ``max_m`` of a reference line, the median distance and the share within 3 m; and the
+    share of the network's points with a reference line within ``max_m``."""
+    from shapely import STRtree, points
+    if ref is None or not len(ref) or not len(lines):
+        return None
+    pts = []
+    for g in lines.geometry:
+        n = max(int(g.length // step), 1)
+        pts += [g.interpolate(t).coords[0] for t in np.linspace(0, g.length, n + 1)]
+    pts = points(np.array(pts))
+    tree = STRtree(ref.geometry.to_numpy())
+    j = tree.nearest(pts)
+    d = np.array([ref.geometry.iloc[k].distance(q) for k, q in zip(j, pts)])
+    near = d <= max_m
+    if not near.any():
+        return dict(points=int(len(d)), near_share=0.0)
+    return dict(points=int(len(d)), near_share=round(float(near.mean()), 3),
+                median_m=round(float(np.median(d[near])), 2), within_3m=round(float((d[near] <= 3.0).mean()), 3))
 
 
 def join_path(start_xy, z_start, targets, prob_files, dem_files, roads, crossings, P):
@@ -608,7 +808,7 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     from rasterio.features import rasterize
 
     from . import guidance as G
-    from .catchment_mode import assemble, sample_z, _mosaic  # noqa: F401
+    from .catchment_mode import _layer, _mosaic, assemble, sample_z  # noqa: F401
     P = dict(DEFAULTS, **(params or {}))
     cd = Path(catchment_dir)
     cat = gpd.read_file(cd / "catchment.gpkg", layer="catchment").to_crs(2193)
@@ -623,9 +823,14 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     ev = reach_evidence(R, prob_files) if len(R) else np.zeros(0)
     log(f"{len(tiles)} tiles; {len(R)} stage B pieces ({R.length.sum() / 1000:.1f} km); {len(cross)} crossing candidates")
     # sea, OSM river areas
-    sea, areas = [], []
+    sea, areas, wlines, council = [], [], [], []
     for t in tiles:
         g = G.load(Path(bundles) / t / "context.gpkg", tuple(cores[t].buffer(500).bounds))
+        if len(g["lines"]):
+            wlines.append(g["lines"][g["lines"].intersects(cores[t])])
+        lab = _layer(Path(bundles) / t / "labels.gpkg", "channels")
+        if lab is not None and len(lab):
+            council.append(lab[lab.intersects(cores[t])][["geometry"]])
         a = g["areas"]
         if len(a) and "water_kind" in a:
             sea += [x for x in a[a.water_kind == "tidal"].geometry if x is not None]
@@ -641,9 +846,11 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     if not (z5 != NODATA).any():
         raise RuntimeError("no DEM inside the catchment")
     z5 = breach(z5, P)
-    outlet, orep = choose_outlet(z5, T5, sea_mask, P)
-    log(f"outlet at {orep['chosen']['x']:.0f}, {orep['chosen']['y']:.0f} ({orep['chosen']['area_km2']} km2 in the "
-        f"first routing; beside the sea: {orep['chosen']['coast']})")
+    W = gpd.GeoDataFrame(pd.concat(wlines, ignore_index=True), geometry="geometry", crs=2193) if wlines else None
+    oxy, orec = osm_outlet(catchment, W, sea, z5, T5, P)
+    outlet, orep = choose_outlet(z5, T5, sea_mask, P, oxy, orec)
+    log(f"outlet ({orep['chosen']['method']}) at {orep['chosen']['x']:.0f}, {orep['chosen']['y']:.0f} "
+        f"({orep['chosen'].get('waterway') or ''}; beside the sea: {orep['chosen']['coast']})")
     flw = route(z5, T5, outlet)
     S = segments(flw, T5, cmask, P)
     upa = flw.upstream_area("m2")
@@ -676,7 +883,17 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     S = S[keep].reset_index(drop=True)
     log(f"routed: {len(S) + len(pruned)} segments over {P['a_min_m2'] / 1e4:g} ha; kept {len(S)} "
         f"({S.length.sum() / 1000:.1f} km), heads pruned {len(pruned)} ({pruned.length.sum() / 1000:.1f} km)")
-    S["geometry"] = [refine(g, prob_files, P) for g in S.geometry]
+    raw = S[["geometry"]].copy()
+    nodes_xy = snap_nodes(S, prob_files, dem_files, R, ev, P) if len(S) else {}
+    key = lambda c: (round(c[0], 2), round(c[1], 2))
+    S["geometry"] = [refine(g, prob_files, P, dem_files, R, ev, (nodes_xy.get(key(g.coords[0]), g.coords[0]),
+                                                                  nodes_xy.get(key(g.coords[-1]), g.coords[-1])))
+                     for g in S.geometry]
+    CL = gpd.GeoDataFrame(pd.concat(council, ignore_index=True), geometry="geometry", crs=2193) if council else None
+    offsets = dict(stage_b_before=offset_stats(raw, R), stage_b_after=offset_stats(S, R),
+                   council_before=offset_stats(raw, CL), council_after=offset_stats(S, CL))
+    log(f"offset from the stage B channels: median {(offsets['stage_b_before'] or {}).get('median_m')} m -> "
+        f"{(offsets['stage_b_after'] or {}).get('median_m')} m")
     cls, src = classes(S, R, osm_areas, None, P)
     S["class_v2"], S["class_source"] = cls, src
     S["channel_source"] = "routed"
@@ -733,7 +950,7 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     km = lambda g: round(float(g.length.sum()) / 1000, 3)
     summary = dict(catchment=str(cat.catchment_id.iloc[0]) if "catchment_id" in cat else cd.name, tiles=len(tiles),
                    params={k: (list(v) if isinstance(v, tuple) else v) for k, v in P.items()},
-                   outlet=orep, routed_km=km(S), pruned_heads_km=km(pruned),
+                   outlet=orep, offsets=offsets, routed_km=km(S), pruned_heads_km=km(pruned),
                    joined=dict(tried=len(attempts), accepted=len(joins),
                                reasons={k: int(v) for k, v in pd.Series([a.get("reason") or "accepted" for a in attempts])
                                         .value_counts().items()} if attempts else {}),

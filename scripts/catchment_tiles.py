@@ -3,9 +3,10 @@
 
     python scripts/catchment_tiles.py --site sh12 --out ml/manifests/catchment_sh12.csv
     python scripts/catchment_tiles.py --xy 1640000 6080000 --overlap 500
+    python scripts/catchment_tiles.py --id 1589 --slug ashley_1589
 
-The catchment is the one holding the site's AOI centre (``--site``: ``sites/<site>.yml``) or a point (``--xy``,
-NZTM), from ``catchments.load`` (MfE sea-draining catchments; ``--catchments`` for another path). Lists every
+The catchment is the one with an id (``--id``: catch_id in MfE's layer; ``--fid``: its feature id), or the one holding
+the site's AOI centre (``--site``: ``sites/<site>.yml``) or a point (``--xy``, NZTM), from ``catchments.load`` (MfE sea-draining catchments; ``--catchments`` for another path). Lists every
 partition tile meeting the catchment plus an overlap band (``--overlap`` m), with the share of each inside the
 catchment, and writes the manifest (``tile_id``, ``council`` = ``catchment_<slug>``, ``wave`` = ``catchment``, the
 partition's fields, ``in_catchment``, ``overlap_only``) and the catchment itself to
@@ -27,6 +28,8 @@ def main():
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--site", help="a site in sites/ (its AOI's centre)")
     g.add_argument("--xy", nargs=2, type=float, metavar=("X", "Y"), help="a point in NZTM")
+    g.add_argument("--id", help="the catchment's id (catch_id in MfE's layer)")
+    g.add_argument("--fid", help="the catchment's GeoPackage feature id")
     ap.add_argument("--catchments", help="the catchment layer (default <data>/reference/sea_draining_catchments.gpkg)")
     ap.add_argument("--partition", help="default <data>/partition/nz_tiles.gpkg")
     ap.add_argument("--overlap", type=float, default=500.0, help="band around the catchment (m)")
@@ -40,15 +43,20 @@ def main():
     from terrain_s2 import catchments, tiles
     from terrain_s2.acquire.elevation import default_data_dir
     data = default_data_dir()
-    if a.site:
-        site = yaml.safe_load((ROOT / "sites" / f"{a.site}.yml").read_text())
-        aoi = gpd.read_file(ROOT / site["aoi"]).to_crs(2193)
-        pt = aoi.union_all().centroid
+    if a.id or a.fid:
+        c = catchments.by_id(a.id or a.fid, a.catchments, field=None if a.id else "fid")
+        if c is None:
+            sys.exit(f"no catchment with {'catch_id' if a.id else 'fid'} {a.id or a.fid}")
     else:
-        pt = Point(*a.xy)
-    c = catchments.at(pt, a.catchments)
-    if c is None:
-        sys.exit(f"no catchment holds {pt.x:.0f}, {pt.y:.0f}")
+        if a.site:
+            site = yaml.safe_load((ROOT / "sites" / f"{a.site}.yml").read_text())
+            aoi = gpd.read_file(ROOT / site["aoi"]).to_crs(2193)
+            pt = aoi.union_all().centroid
+        else:
+            pt = Point(*a.xy)
+        c = catchments.at(pt, a.catchments)
+        if c is None:
+            sys.exit(f"no catchment holds {pt.x:.0f}, {pt.y:.0f}")
     slug = a.slug or a.site or re.sub(r"[^A-Za-z0-9_-]+", "_", str(c.catchment_id))
     part = a.partition or tiles.default_partition(data)
     t = catchments.tiles_for(c, part, a.overlap)

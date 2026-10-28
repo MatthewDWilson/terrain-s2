@@ -20,7 +20,7 @@ def _reach(g, cls="stream", src="physics"):
                 osm_waterway=None, p_stream=0.8)
 
 
-def _tile(root, name, x0, reaches, crossings=None, roads=None, coast=None, prob_boxes=()):
+def _tile(root, name, x0, reaches, crossings=None, roads=None, coast=None, prob_boxes=(), waterways=None):
     import rasterio
     run, b = root / "runs" / name, root / "tiles" / name
     run.mkdir(parents=True)
@@ -50,6 +50,8 @@ def _tile(root, name, x0, reaches, crossings=None, roads=None, coast=None, prob_
         roads.to_file(b / "roads.gpkg", layer="roads", driver="GPKG")
     if coast is not None:
         gpd.GeoDataFrame(geometry=[coast], crs=2193).to_file(b / "context.gpkg", layer="osm_coastline", driver="GPKG")
+    if waterways is not None:
+        waterways.to_file(b / "context.gpkg", layer="osm_waterways", driver="GPKG")
 
 
 def _catchment(root):
@@ -70,12 +72,17 @@ def test_stage_a_v2_routes_one_network_to_the_coast(tmp_path):
           _reach(L([(800, 600), (800, 545)]), cls="drain"),           # a small drain 45 m short of the stream
           _reach(L([(100, 950), (300, 950)]), cls="drain")]           # a drain far up the slope
     t2 = [_reach(L([(1000, 500), (1494, 500)])), _reach(L([(1506, 500), (1985, 500)]))]
-    _tile(tmp_path, "T1", 0, t1, roads=roads, prob_boxes=[(797, 500, 803, 545)])
-    _tile(tmp_path, "T2", 1000, t2, crossings=culvert, roads=roads, coast=L([(1990, 0), (1990, 1000)]))
+    river = gpd.GeoDataFrame(dict(waterway=["river"], name=["Test River"]), geometry=[L([(100, 503), (1995, 503)])],
+                             crs=2193)
+    _tile(tmp_path, "T1", 0, t1, roads=roads, prob_boxes=[(797, 500, 803, 545)], waterways=river)
+    _tile(tmp_path, "T2", 1000, t2, crossings=culvert, roads=roads, coast=L([(1990, 0), (1990, 1000)]), waterways=river)
     cd = _catchment(tmp_path)
     s = RN.run_catchment(cd, tmp_path / "runs", tmp_path / "tiles", log=lambda m: None,
                          trace_points=[(1500.0, 500.0), (700.0, 500.0)])
-    assert s["outlet"]["chosen"]["coast"] and s["outlet"]["chosen"]["x"] > 1950          # one outlet, at the mouth
+    o = s["outlet"]["chosen"]
+    assert o["method"] == "osm" and o["waterway"] == "Test River" and o["x"] > 1950 and abs(o["y"] - 500) < 10
+    off = s["offsets"]
+    assert off["stage_b_after"]["median_m"] < off["stage_b_before"]["median_m"] and off["stage_b_after"]["median_m"] < 1.0
     N = gpd.read_file(cd / "network_a.gpkg", layer="channels")
     routed = N[N.channel_source == "routed"]
     from shapely import union_all
@@ -121,3 +128,27 @@ def test_point_probability_and_trim():
 def test_join_probability_counts_a_short_gap():
     P = dict(RN.DEFAULTS)
     assert np.exp(-2.5 / P["gap_scale_m"]) > 0.7 and np.exp(-40 / P["gap_scale_m"]) < 0.02
+
+
+def test_osm_outlet_prefers_the_main_waterway_inside_and_its_lowest_exit():
+    cat = box(0, 0, 1000, 1000)
+    T5 = Affine(5, 0, -10, 0, -5, 1010)
+    xs = -10 + 5 * np.arange(204) + 2.5
+    z5 = np.tile(20.0 - xs / 100.0, (204, 1)).astype(np.float32)        # falling east
+    W = gpd.GeoDataFrame(dict(waterway=["stream", "river"], name=["Inner Creek", "Edge River"]),
+                         geometry=[L([(100, 500), (1050, 500)]),          # a stream across the catchment
+                                   L([(-50, 990), (1050, 1010)])],        # a river hugging the boundary, mostly outside
+                         crs=2193)
+    xy, rec = RN.osm_outlet(cat, W, [], z5, T5, RN.DEFAULTS)
+    assert rec["waterway"] == "Inner Creek" and xy[0] == pytest.approx(1000.0) and xy[1] == pytest.approx(500.0)
+    xy2, rec2 = RN.osm_outlet(cat, W.iloc[0:0], [], z5, T5, RN.DEFAULTS)
+    assert xy2 is None and "no OSM" in rec2["reason"]
+
+
+def test_catchment_by_id(tmp_path):
+    from terrain_s2 import catchments
+    f = tmp_path / "c.gpkg"
+    gpd.GeoDataFrame(dict(catch_id=[1373, 1589]), geometry=[box(0, 0, 10, 10), box(10, 0, 20, 10)], crs=2193).to_file(f)
+    assert catchments.by_id(1589, f).geometry.bounds[0] == 10
+    assert catchments.by_id(1, f, field="fid").catchment_id == "1373"          # GeoPackage feature ids start at 1
+    assert catchments.by_id(9999, f) is None

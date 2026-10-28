@@ -5,8 +5,9 @@ extracted from DOC's Freshwater Ecosystems of New Zealand v1.0 geodatabase), dow
 ``<TERRAIN_DATA_DIR>/reference/sea_draining_catchments.gpkg`` (``DEFAULT``). Their boundaries are approximate at
 LiDAR scale: catchment mode uses them as units with an overlap band, not as hard boundaries.
 
-``load``: the layer in NZTM, with ``catchment_id`` (the layer's own id field when it has one, else the row number)
-and ``catchment_name`` (its name field when it has one). ``at(point)``: the catchment holding a point.
+``load``: the layer in NZTM, with ``catchment_id`` (the layer's own id field, ``catch_id`` in MfE's layer, else the
+row number), ``fid`` (the GeoPackage feature id) and ``catchment_name`` (its name field when it has one).
+``at(point)``: the catchment holding a point; ``by_id(value, field=...)``: by ``catch_id`` (default) or ``fid``.
 ``tiles_for(catchment, partition, overlap_m)``: the partition tiles meeting the catchment plus the band, with the
 share of each tile inside the catchment itself.
 """
@@ -15,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 DEFAULT = Path("reference") / "sea_draining_catchments.gpkg"
-ID_FIELDS = ("catchment_id", "CatchID", "CATCH_ID", "nzsegment", "NZREACH", "OBJECTID", "id", "ID", "fid")
+ID_FIELDS = ("catchment_id", "catch_id", "CatchID", "CATCH_ID", "nzsegment", "NZREACH", "OBJECTID", "id", "ID")
 NAME_FIELDS = ("catchment_name", "Name", "NAME", "name", "CatchName", "CATCH_NAME", "River", "RIVER")
 
 
@@ -33,7 +34,8 @@ def load(path=None, bbox=None):
     if not path.exists():
         raise FileNotFoundError(f"no catchment layer at {path}: download MfE's sea-draining catchments (layer 99776) "
                                 "as a GeoPackage there")
-    g = gpd.read_file(path)
+    g = gpd.read_file(path, fid_as_index=True)
+    g["fid"] = g.index.astype(int)
     if g.crs is not None and g.crs.to_epsg() != 2193:
         g = g.to_crs(2193)
     if bbox is not None:
@@ -45,6 +47,15 @@ def load(path=None, bbox=None):
     g["catchment_id"] = g[idf].astype(str) if idf else [str(i) for i in g.index]
     g["catchment_name"] = g[nmf].astype(str) if nmf else None
     return g
+
+
+def by_id(value, path=None, field=None):
+    """The catchment row whose ``field`` (default ``catchment_id``, i.e. the layer's id field such as ``catch_id``;
+    or ``fid``) equals ``value``, or None."""
+    g = load(path)
+    f = field or "catchment_id"
+    g = g[g[f].astype(str) == str(value)]
+    return g.iloc[0] if len(g) else None
 
 
 def at(point, path=None):
