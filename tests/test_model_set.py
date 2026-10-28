@@ -138,3 +138,22 @@ def test_class_probabilities_reach_the_reaches_and_c_outputs(tmp_path, monkeypat
     with rasterio.open(d / "cls" / "channel_class.tif") as s:
         assert s.count == 3 and list(s.descriptions) == ["river", "stream", "drain"]
     assert res.info["c_outputs"]["channel_class"]["classes"] == ["river", "stream", "drain"]
+
+
+def test_rivers_from_the_physics_mask(tmp_path, monkeypatch):
+    """river_mask="physics": a wide U-Net mask no longer makes river polygons (SH12, 27 Oct); "merged" as tested."""
+    d = _write(tmp_path)
+
+    def wide(model_dir, bands, device="auto", threshold=None, min_cells=30, model=None, meta=None):
+        h, w = bands[0].shape
+        prob = np.zeros((h, w), np.float32)
+        prob[h // 2 - 8:h // 2 + 8, w // 4:3 * w // 4] = 0.9                  # a 16 m wide "channel" only it sees
+        return prob, prob >= 0.5, dict(model="m", threshold=0.5, device="cpu", cells=int((prob >= 0.5).sum()),
+                                        seconds=0.0, dataset="t")
+    monkeypatch.setattr(CP, "channel_mask_in_run", wide)
+    kw = dict(buffer=50.0, rasters="none", device="cpu", channel_model="m")
+    merged = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "m", river_mask="merged", **kw)
+    phys = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "p", river_mask="physics", **kw)
+    nm = len(merged.layers.get("rivers", [])) if merged.layers.get("rivers") is not None else 0
+    np_ = len(phys.layers.get("rivers", [])) if phys.layers.get("rivers") is not None else 0
+    assert nm > np_

@@ -77,7 +77,7 @@ OPTIONS = dict(stream_model=None, buffer=200.0, max_hand=10.0, clean=True, aoi_c
                profile=False, keep=False, crossing_model=None, record_sources=None, channel_model=None,
                channel_threshold=None, channel_min_cells=30, channel_min_contrast=None, channel_max_width_m=None,
                channel_max_urban=None, channel_min_sharpness=None, model_set=None, osm_guidance=False,
-               c_outputs=False)
+               c_outputs=False, river_mask="merged")
 
 
 def _paths(p):
@@ -400,8 +400,17 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
     culvert_edges = [r for r in res.test_a if r["test_a"] and r["kind"] == "crossing" and r["h_b"] >= 0.3]
     for r in culvert_edges:
         _burn(sk, r["geometry"], w.transform)
-    # rivers: one centreline per wide channel instead of lines along both banks
-    rpolys, riv = network_mod.river_polygons(net["mask"], w.transform)
+    net_p = None
+    if ml_only is not None:                      # the physics network on its own (for its candidates, below)
+        net_p = drains.build_drain_network(strong_physics, res.feats, w.z, w.transform, dsm)
+        if fp_buf is not None:
+            net_p["skeleton"] &= fp_buf
+    # rivers: one centreline per wide channel instead of lines along both banks. river_mask="physics" draws them from
+    # the physics network's mask: the U-Net's mask is wider than the channels it marks (its probability spreads) and
+    # made hundreds of river polygons a tile, holding half the channel length (SH12, 27 Oct); "merged" (the default,
+    # as ML-3c was tested) from the merged mask
+    rmask = net_p["mask"] if (opts.get("river_mask") == "physics" and net_p is not None) else net["mask"]
+    rpolys, riv = network_mod.river_polygons(rmask, w.transform)
     osm_path = osm_kind = guidance_info = None
     if opts["osm_guidance"]:                 # network v2, stage C: OSM rivers and waterways, placed on the LiDAR
         rpolys, riv, sk, osm_path, osm_kind, guidance_info = _osm_guidance(a, w, res, riv, rpolys, sk, fp_buf)
@@ -480,9 +489,6 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
         # evidence was lost (6 ECan tiles, 20 Oct: gap -24 %, bump +20 %). With both, the channel model only adds
         # candidates and evidence (merged within 8 m below, keeping every source).
         import pandas as pd
-        net_p = drains.build_drain_network(strong_physics, res.feats, w.z, w.transform, dsm)
-        if fp_buf is not None:
-            net_p["skeleton"] &= fp_buf
         Cp = products.crossings(net_p, w.z, w.transform, dsm, roads)
         ml_info["candidates_merged_network"], ml_info["candidates_physics_network"] = int(len(C)), int(len(Cp))
         C = pd.concat([C, Cp], ignore_index=True)

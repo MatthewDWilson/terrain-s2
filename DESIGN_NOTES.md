@@ -2363,6 +2363,49 @@ to the connected network, accepted within 60 m, rising at most 0.5 m (or through
 `<catchment>/network_a.gpkg` (channels drawn downstream, outlets, connections, attempts, dropped), `stage_a.json`,
 and each tile's `network_a.gpkg`.
 
+**Stage A on SH12, unet_v4 against unet_v2, and stage A version 2** (24-27 Oct). Stage A (version 1) on SH12: 278 km of
+stage B pieces, 158 outlets (142 coast, 16 band), only 5.6 % of the length reaching an outlet in round 1 (7.5 % after
+17 of 884 connections), 4,130 pieces in large components kept as isolated, 4,582 of 4,741 reaches classed river. The
+river-polygon check (Matt): 239-773 river polygons a tile, 40-178 ha, holding 42-68 % of the channel length, against
+almost no OSM river area (0-12 ha; the tidal harbour 171-816 ha in three tiles). Cause: since ML-3c, river polygons
+come from the merged channel mask, and the U-Net's mask is wider than the channels it marks; `river_mask="physics"`
+(new run option, set in `c_proto`; "merged", the default, keeps ML-3c as tested) draws them from the physics network's
+mask. And B counted touching a river polygon as anchored while A needed a path of lines. Matt (27 Oct): too many
+outlets; the sea-draining catchment should be the primary control, with one outlet at the coast (more only for a very
+good reason); the SH12 culvert stream (1642255.6, 6075854.7), found by the physics chain and the early ML runs, is no
+longer a crossing; streams flow into drains and upper-catchment streams stay disconnected, which basic terrain
+processing would avoid: a coarse (5-10 m) DEM through a river-network algorithm as the first input; hard cut-offs
+(rise, crossing distance) replaced by probabilities (crossings' p_structure, the stream / drain classes).
+
+unet_v4 against unet_v2 (`compare_channel_models.py`, fold 1, 29 test tiles, council labels v4): at about the same
+precision (~0.30) unet_v2 recall 0.946 (off physics 0.713) at 0.6, unet_v4 0.916 (0.576) at 0.7, unet_v4 with its OSM
+band blanked 0.940 (0.678) at 0.6 (precision 0.27): unet_v4 is worse on council channels, and its OSM band hurts
+(blanking it improves recall and precision). Precision is low for every model on whole tiles (unrecorded drains count
+as false) and the measure cannot credit v4's rivers and OSM channels. Matt: not convinced leaving OSM out is right (OSM
+gives the large rivers, which are easy and needed), but unet_v5 (labels v5, the class head, no OSM band) may be tried
+after the stage A changes are checked.
+
+Stage A version 2 (`routed_network.py`; `scripts/stage_a.py`, `--v1` for the first version): (1) a conditioned 5 m
+DEM tile by tile: the 1 m DEM lowered along stage B reaches by 2 m x their evidence (physics 1, U-Net-only their mean
+probability, joins 0.5) and along each crossing candidate's cutline by 5 m x its p_structure (by tier when unscored),
+then each 5 m cell the lowest 1 m cell in it; OSM tidal flats and coastline are sea; depressions breached by least
+cost (`hydro.breach_least_cost`, up to 200 m: an embankment no candidate opens is cut at its thinnest rather than
+filled into a lake, which in the tests sent the routing anywhere across the flat). (2) One outlet: routed with every
+edge an outlet, the mouth beside the sea with the largest upstream area (else the largest); routed again with that cell
+alone (pyflwdir, outlets "min"); the other mouths reported. (3) The routed network over 0.5 ha, as segments between
+confluences, drawn downstream. (4) How far up, as a probability: evidence along a segment (stage B reaches within
+6 m by their evidence, or the U-Net probability) and a prior from upstream area (logistic in log10 area, 0.5 at 10 ha),
+p_channel = 1 - (1 - e)(1 - p_area); heads removed while below 0.5, and each head left trimmed where the smoothed
+p_channel first reaches 0.5 (hand-set; to be learned). (5) Segments redrawn on the 1 m channels: the least-cost path
+between their ends through a 10 m corridor over the U-Net probability. (6) Stage B drains too small to route joined
+by probability: p_join = p_evidence (1 - (1 - mean U-Net probability)(1 - exp(-length / 10 m))) x p_barrier (the
+crossing candidate's p_structure where the path crosses a road, 0.05 without one) x exp(-rise / 0.3 m) >= 0.5. (7)
+Classes from OSM areas and tags, the U-Net's class, the stage B class, a very large upstream area; then consistent
+downstream (nothing below a stream is a drain). (8) Crossings where the network meets a road, each with the nearest
+candidate's p_structure, or `needs_structure`. `--trace X,Y` reports what each stage has near a point. Stage B's joins
+by probability too (`cleanup.judge_links`: across a barrier with a candidate, the candidate's probability; otherwise
+p_evidence x p_barrier x p_rise; accepted at 0.5; the length limits only bound the search).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

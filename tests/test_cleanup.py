@@ -76,17 +76,28 @@ def test_stage_b_joins_peels_and_drops(tmp_path):
 
 def test_barrier_needs_a_crossing(tmp_path):
     reaches = [_reach(L([(0, 500), (494, 500)])), _reach(L([(506, 500), (700, 500)]))]   # 12 m across the road
-    P = B._params(dict(link_max_m=dict(end_end=20.0)))
+    P = B._params({})
     (tmp_path / "a").mkdir()
     run, _ = _run(tmp_path / "a", reaches)
     j = B.judge_links(C._layer(run / "network.gpkg", "links"), P)
     e = j[j.length_m.round(1) == 12.0]
-    assert len(e) == 1 and not e.accepted.iloc[0] and e.reason.iloc[0] == "barrier"
+    assert len(e) == 1 and not e.accepted.iloc[0] and e.reason.iloc[0] == "improbable" and e.p_link.iloc[0] < 0.05
     (tmp_path / "b").mkdir()
     run2, _ = _run(tmp_path / "b", reaches, crossing=L([(494, 500), (506, 500)]).centroid)
     j2 = B.choose_links(B.judge_links(C._layer(run2 / "network.gpkg", "links"), P))
     e2 = j2[j2.length_m.round(1) == 12.0]
-    assert e2.accepted.iloc[0] and e2.is_crossing.iloc[0]
+    assert e2.accepted.iloc[0] and e2.is_crossing.iloc[0] and e2.p_link.iloc[0] == 0.8     # the candidate's tier
+
+
+def test_link_probability_without_cutoffs():
+    import geopandas as gpd
+    P = B._params({})
+    L0 = gpd.GeoDataFrame(dict(kind=["end_end"] * 4, length_m=[3.0, 25.0, 25.0, 6.0], prob_mean=[0.0, 0.0, 0.9, 0.0],
+                               mask_share=[0.0] * 4, rise_m=[0.0, 0.0, 0.1, 1.5], crosses_road=[False] * 4,
+                               crossing_tier=[None] * 4), geometry=[L([(0, 0), (1, 0)])] * 4, crs=2193)
+    j = B.judge_links(L0, P)
+    assert list(j.accepted) == [True, False, True, False]     # short gap; long without evidence; long seen; a climb
+    assert j.p_link.iloc[3] < j.p_link.iloc[0]
 
 
 def test_minor_sweep(tmp_path):

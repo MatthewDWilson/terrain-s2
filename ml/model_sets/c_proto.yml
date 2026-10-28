@@ -11,3 +11,4 @@ channel_max_urban: 0.05
 crossing_model: models/scorer_waves12_ml3c
 osm_guidance: true
 c_outputs: true
+river_mask: physics      # rivers from the physics network's mask, not the U-Net's wider one (27 Oct)

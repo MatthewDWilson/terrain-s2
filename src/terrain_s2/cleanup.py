@@ -4,11 +4,9 @@ Reads what stage C stored in a run folder (``network.gpkg``: ``channels``, ``lin
 and the tile's OSM outlets (lakes, tidal flats, the coastline: ``guidance.load``), and writes ``network_b.gpkg``
 beside it, changing nothing of C's:
 
-1. **Join supported gaps.** A candidate link (``connectivity.candidate_links``) is accepted when it is short enough
-   for its kind (``link_max_m``) and either the terrain lets flow along it (it rises at most ``rise_tol_m`` above
-   its higher end) and it has channel evidence (U-Net probability or channel mask along it, or it is shorter than
-   ``link_free_m``), or, where it crosses a barrier (rises more, or crosses a road), a crossing candidate of a tier
-   in ``crossing_tiers`` lies on it (the candidate is then the evidence: an embankment has no channel on it). Links are taken shortest first, at most one per dangling end, and none that
+1. **Join probable gaps.** A candidate link (``connectivity.candidate_links``) is accepted when its probability
+   (``judge_links``: the channel evidence along it and its shortness, a road it crosses, how far it climbs; or, across
+   a barrier, the crossing candidate on it) reaches ``keep_p``; no fixed rise, length or tier (Matt, 27 Oct). Links are taken shortest first, at most one per dangling end, and none that
    would join two pieces already joined (no loops). An accepted link across a barrier is a crossing (``is_crossing``).
 2. **Drop minor drains.** A drain (class ``drain``, not a river, not mapped by OSM as river, stream or canal) is
    minor when its width (``width_m``, on the LiDAR) is below ``minor_width_m`` or its depth (``incision_m``) below
@@ -29,8 +27,8 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULTS = dict(link_max_m=dict(end_end=20.0, end_line=15.0, line_line=10.0), link_free_m=5.0, link_min_prob=0.2,
-                link_min_mask=0.3, rise_tol_m=0.3, crossing_tiers=("high", "medium"), minor_width_m=1.5,
+DEFAULTS = dict(link_max_m=dict(end_end=30.0, end_line=30.0, line_line=30.0), gap_scale_m=10.0, rise_sigma_m=0.3,
+                road_prior=0.05, tier_p=dict(high=0.8, medium=0.5, low=0.2), keep_p=0.5, minor_width_m=1.5,
                 minor_depth_m=0.3, keep_osm=("river", "stream", "canal"), fragment_min_m=100.0, touch_m=0.5,
                 edge_m=5.0)
 
@@ -54,31 +52,43 @@ def outlets(context, window):
 
 
 def judge_links(links, P):
-    """``accepted`` (candidate) and ``reason`` per link, before the greedy choice: too_long, weak (no channel
-    evidence), barrier (rises or crosses a road with no crossing candidate on it); ``is_crossing``."""
+    """``p_link``, ``accepted`` (a candidate, before the greedy choice), ``reason`` and ``is_crossing`` per link, by
+    probability rather than fixed cut-offs (Matt, 27 Oct):
+
+    - a link across a barrier (it crosses a road, or rises more than ``rise_sigma_m``) with a crossing candidate on
+      it: ``p_link`` = the candidate's probability (``tier_p`` by its tier): the structure is what carries the channel
+      through, and an embankment has no channel on it to see;
+    - any other link: ``p_evidence x p_barrier x p_rise``, with ``p_evidence = 1 - (1 - e)(1 - exp(-length /
+      gap_scale_m))`` (``e`` the U-Net probability or the channel-mask share along it, whichever is larger: a gap of a
+      few metres is likely the same channel), ``p_barrier = road_prior`` when it crosses a road (else 1) and ``p_rise =
+      exp(-rise / rise_sigma_m)``.
+
+    Accepted when ``p_link >= keep_p``; ``link_max_m`` only bounds the search."""
     L = links.copy()
     if not len(L):
-        for c in ("accepted", "reason", "is_crossing"):
+        for c in ("p_link", "accepted", "reason", "is_crossing"):
             L[c] = []
         return L
-    mx = L.kind.map(P["link_max_m"]).fillna(min(P["link_max_m"].values())).to_numpy(float)
+    mx = L.kind.map(P["link_max_m"]).fillna(max(P["link_max_m"].values())).to_numpy(float)
     length = L.length_m.to_numpy(float)
-    prob = L.prob_mean.to_numpy(float) if "prob_mean" in L else np.full(len(L), np.nan)
-    mask = L.mask_share.to_numpy(float) if "mask_share" in L else np.full(len(L), np.nan)
+    prob = np.nan_to_num(L.prob_mean.to_numpy(float), nan=0.0) if "prob_mean" in L else np.zeros(len(L))
+    mask = np.nan_to_num(L.mask_share.to_numpy(float), nan=0.0) if "mask_share" in L else np.zeros(len(L))
     rise = np.nan_to_num(L.rise_m.to_numpy(float), nan=0.0) if "rise_m" in L else np.zeros(len(L))
     road = L.crosses_road.fillna(False).astype(bool).to_numpy() if "crosses_road" in L else np.zeros(len(L), bool)
     tier = L.crossing_tier.astype(object).to_numpy() if "crossing_tier" in L else np.full(len(L), None)
-    evidence = (length <= P["link_free_m"]) | (np.nan_to_num(prob, nan=-1) >= P["link_min_prob"]) | \
-        (np.nan_to_num(mask, nan=-1) >= P["link_min_mask"])
-    barrier = (rise > P["rise_tol_m"]) | road
-    crossing = np.array([t in P["crossing_tiers"] for t in tier])
-    # across a barrier the crossing candidate is the evidence (an embankment has no channel on it); elsewhere the
-    # link needs channel evidence of its own
-    reason = np.where(length > mx, "too_long", np.where(barrier & ~crossing, "barrier",
-                                                         np.where(~barrier & ~evidence, "weak", "")))
+    p_cand = np.array([P["tier_p"].get(str(t), 0.0) if t is not None else 0.0 for t in tier])
+    barrier = road | (rise > P["rise_sigma_m"])
+    e = np.maximum(prob, mask)
+    pe = 1.0 - (1.0 - e) * (1.0 - np.exp(-length / P["gap_scale_m"]))
+    pb = np.where(road, P["road_prior"], 1.0)
+    pr = np.exp(-np.maximum(rise, 0.0) / P["rise_sigma_m"])
+    through = barrier & (p_cand > 0)
+    p = np.where(through, p_cand, pe * pb * pr)
+    L["p_link"] = np.round(p, 3)
+    reason = np.where(length > mx, "too_long", np.where(p < P["keep_p"], "improbable", ""))
     L["accepted"] = reason == ""
     L["reason"] = reason
-    L["is_crossing"] = barrier & crossing
+    L["is_crossing"] = through
     return L
 
 

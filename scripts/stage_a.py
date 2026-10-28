@@ -1,14 +1,17 @@
 #!/usr/bin/env python
-"""Stage A of channel network v2 (``catchment_mode.run_catchment``): catchment mode on one catchment's tiles.
+"""Stage A of channel network v2 on one catchment's tiles: the network routed from one outlet
+(``routed_network.run_catchment``, version 2, 27 Oct), or the first version (``--v1``: ``catchment_mode``).
 
-    python scripts/stage_a.py --catchment sh12 --runs ~/terrain_data/runs_c
-    python scripts/stage_a.py --catchment sh12 --runs ~/terrain_data/runs_c --param connect_max_m=80
+    python scripts/stage_a.py --catchment sh12 --runs ~/terrain_data/runs_c --trace 1642255.6,6075854.7
+    python scripts/stage_a.py --catchment sh12 --runs ~/terrain_data/runs_c --param a50_m2=50000 --param res_m=10
 
 ``--catchment``: a folder name under ``<TERRAIN_DATA_DIR>/catchments`` (``catchment_tiles.py`` writes it), or a path.
 The runs should have stage B's ``network_b.gpkg`` (else stage C's network is used) and stage C's
-``channel_prob.tif``. Writes ``<catchment>/network_a.gpkg`` (channels drawn downstream, with Strahler order,
-upstream length, distance to the outlet, the outlet's kind, class_v2 and its source, uphill and isolated flags;
-outlets; connections; attempts; dropped), ``<catchment>/stage_a.json``, and ``<runs>/<tile>/network_a.gpkg``.
+``channel_prob.tif``. Version 2 writes ``<catchment>/network_a.gpkg`` (channels: routed segments drawn downstream
+with Strahler order, upstream area, evidence and p_channel, class_v2 and its source; joined drains and their joins;
+crossings with their candidate's p_structure or needs_structure; the outlet; pruned heads; join attempts),
+``dem_routed.tif`` (the conditioned coarse DEM), ``stage_a.json`` and ``<runs>/<tile>/network_a.gpkg``. ``--trace X,Y``
+(repeatable) reports what each stage has near a point (a known culvert, say).
 """
 import argparse
 import json
@@ -32,6 +35,8 @@ def main():
     ap.add_argument("--runs", required=True)
     ap.add_argument("--bundles")
     ap.add_argument("--param", action="append", default=[], metavar="KEY=VALUE")
+    ap.add_argument("--trace", action="append", default=[], metavar="X,Y")
+    ap.add_argument("--v1", action="store_true", help="the first version (catchment_mode)")
     a = ap.parse_args()
     from terrain_s2 import catchment_mode as A
     from terrain_s2.acquire.elevation import default_data_dir
@@ -40,9 +45,16 @@ def main():
     if not (cd / "catchment.gpkg").exists():
         cd = data / "catchments" / a.catchment
     params = {k: _value(v) for k, v in (kv.split("=", 1) for kv in a.param)}
-    s = A.run_catchment(cd, a.runs, a.bundles or data / "tiles", params=params)
-    keys = ("km_in", "km_out", "km_in_catchment", "reached_share_of_length", "isolated_kept", "isolated_kept_km",
-            "outlets", "connections", "dropped", "uphill", "class_km", "class_sources", "strahler_km")
+    if a.v1:
+        s = A.run_catchment(cd, a.runs, a.bundles or data / "tiles", params=params)
+        keys = ("km_in", "km_out", "km_in_catchment", "reached_share_of_length", "isolated_kept", "isolated_kept_km",
+                "outlets", "connections", "dropped", "uphill", "class_km", "class_sources", "strahler_km")
+    else:
+        from terrain_s2 import routed_network as RN
+        pts = [tuple(float(v) for v in t.split(",")) for t in a.trace]
+        s = RN.run_catchment(cd, a.runs, a.bundles or data / "tiles", params=params, trace_points=pts)
+        keys = ("outlet", "routed_km", "pruned_heads_km", "joined", "drains_joined_km", "network_km", "class_km",
+                "class_sources", "strahler_km", "crossings", "trace")
     print("\n" + "\n".join(f"{k}: {s.get(k)}" for k in keys))
     print(f"\n-> {cd / 'network_a.gpkg'}\n-> {cd / 'stage_a.json'}")
 
