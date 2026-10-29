@@ -60,3 +60,13 @@ def test_stage_a_uses_the_model(tmp_path, monkeypatch):
                                                                                 presence_model=str(tmp_path / "none.pkl")))
     assert info2["source"] == "hand-set" and thr2 == RN.DEFAULTS["keep_p"]
     assert isinstance(pd.Series(ev2).sum(), float)
+
+
+def test_constant_and_empty_features_are_left_out():
+    rng = np.random.default_rng(2)
+    real = rng.random(80) < 0.5
+    X = CP.features(_reaches(80, rng, real))                 # unet_prob all NaN; corners, p_stream, classes constant
+    M, rep, _ = CP.fit(X.assign(recorded=real))
+    assert "unet_prob" not in M["features"] and "corners" not in M["features"] and "width_m" in M["features"]
+    assert set(rep["features_constant"]) >= {"unet_prob", "corners", "p_stream"}
+    assert len(CP.predict(M, X)) == 80                        # predicts from the full table, using its own list

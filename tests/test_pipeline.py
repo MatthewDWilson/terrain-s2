@@ -1,10 +1,12 @@
 """The unattended plan runner (scripts/pipeline.py): order, dependencies, retries, resuming, reports, the summary."""
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("pipeline", ROOT / "scripts" / "pipeline.py")
@@ -25,6 +27,7 @@ def _run(monkeypatch, plan, *extra):
     PL.main()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="plans run their steps with bash, in WSL (terrain_hpc.sh pipeline)")
 def test_plan_runs_in_order_skips_dependents_and_resumes(tmp_path, monkeypatch):
     data = tmp_path / "data"
     monkeypatch.setenv("TERRAIN_DATA_DIR", str(data))
@@ -57,7 +60,8 @@ def test_dry_run_and_sizing(tmp_path, monkeypatch, capsys):
     plan = _plan(tmp_path, [dict(name="a", run="echo {sizing} {work}")])
     _run(monkeypatch, plan, "--dry-run")
     o = capsys.readouterr().out
-    assert "--workers" in o and "pipelines/t" in o and not (tmp_path / "data" / "pipelines" / "t" / "a.done").exists()
+    work = str(tmp_path / "data" / "pipelines" / "t")
+    assert "--workers" in o and work in o and not (tmp_path / "data" / "pipelines" / "t" / "a.done").exists()
 
 
 def test_the_weekend_plan_fills():

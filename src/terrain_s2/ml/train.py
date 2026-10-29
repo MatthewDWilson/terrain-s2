@@ -123,6 +123,33 @@ def design(d, cols, cfg):
     return X, y, w, keep
 
 
+class VaryingColumns:
+    """A classifier fitted on the columns that vary in its training data, predicting from the full table: some
+    scikit-learn versions (1.9) fail to bin a column with fewer than two distinct values ("window shape cannot be larger
+    than input array shape", 30 Oct 2026), and such a column carries nothing. Models saved before are plain estimators
+    and load as they were."""
+
+    def __init__(self, model, keep):
+        self.model, self.keep = model, np.asarray(keep, int)
+
+    def predict_proba(self, X):
+        return self.model.predict_proba(np.asarray(X)[:, self.keep])
+
+    def predict(self, X):
+        return self.model.predict(np.asarray(X)[:, self.keep])
+
+
+def varying(X):
+    """Indices of the columns of X with at least two distinct finite values."""
+    keep = []
+    for j in range(X.shape[1]):
+        v = X[:, j]
+        v = v[np.isfinite(v)]
+        if len(np.unique(v)) >= 2:
+            keep.append(j)
+    return keep
+
+
 def fit(d, cols, cfg, target="structure"):
     from sklearn.ensemble import HistGradientBoostingClassifier
     if target == "bridge":
@@ -137,9 +164,12 @@ def fit(d, cols, cfg, target="structure"):
     params = dict(cfg["model"])
     if params.get("early_stopping") and min(np.bincount(y)) < 20:     # too few of a class for a validation split
         params["early_stopping"] = False
+    keep = varying(X)
+    if not keep:
+        return None
     m = HistGradientBoostingClassifier(random_state=cfg["seed"], **params)
-    m.fit(X, y, sample_weight=w)
-    return m
+    m.fit(X[:, keep], y, sample_weight=w)
+    return VaryingColumns(m, keep)
 
 
 def baseline_score(d):

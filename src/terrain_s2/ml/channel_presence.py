@@ -14,7 +14,8 @@ understates real channels. The threshold is therefore set on the channel reviews
 detected-only reach when its probability reaches that threshold.
 
 ``table`` builds the rows of one run; ``fit`` trains (scikit-learn's HistGradientBoostingClassifier, as the scorer) with
-cross-validation by council; ``predict`` applies a model to a reach table.
+cross-validation by council, on the features that vary (``usable``; the model keeps their list); ``predict`` applies
+a model to a reach table.
 """
 from __future__ import annotations
 
@@ -125,12 +126,14 @@ def fit(T, P=None, groups=None):
     from sklearn.ensemble import HistGradientBoostingClassifier
     from sklearn.metrics import average_precision_score, roc_auc_score
     P = dict(DEFAULTS, **(P or {}))
-    X = T[list(FEATURES)].to_numpy(float)
+    feats = usable(T)
+    X = T[feats].to_numpy(float)
     y = T["recorded"].to_numpy(bool)
     mk = lambda: HistGradientBoostingClassifier(max_iter=P["max_iter"], learning_rate=P["learning_rate"],
                                                 max_leaf_nodes=P["max_leaf_nodes"],
                                                 l2_regularization=P["l2_regularization"], random_state=P["seed"])
-    rep = dict(rows=int(len(T)), recorded_share=round(float(y.mean()), 4), folds={})
+    rep = dict(rows=int(len(T)), recorded_share=round(float(y.mean()), 4), folds={},
+               features_used=feats, features_constant=[f for f in FEATURES if f not in feats])
     oof = np.full(len(T), np.nan)
     if groups is not None:
         g = np.asarray(groups)
@@ -150,7 +153,21 @@ def fit(T, P=None, groups=None):
             rep["held_out"] = dict(auc=round(float(roc_auc_score(y[ok], oof[ok])), 4),
                                    ap=round(float(average_precision_score(y[ok], oof[ok])), 4))
     m = mk().fit(X, y)
-    return dict(model=m, features=list(FEATURES), threshold=0.5, params=P), rep, oof
+    return dict(model=m, features=feats, threshold=0.5, params=P), rep, oof
+
+
+def usable(T):
+    """The features with at least two distinct values in ``T`` (constant or empty ones carry nothing, and some
+    scikit-learn versions fail to bin them: "window shape cannot be larger than input array shape", Windows, 30 Oct)."""
+    out = []
+    for f in FEATURES:
+        v = T[f].to_numpy(float)
+        v = v[np.isfinite(v)]
+        if len(np.unique(v)) >= 2:
+            out.append(f)
+    if not out:
+        raise ValueError("no feature varies across the reaches")
+    return out
 
 
 def predict(M, X):

@@ -17,6 +17,7 @@ copied to ``{work}/reports`` when it succeeds).
 Each step logs to ``{work}/<step>.log``; ``{work}/status.json`` says where it stands; a step that succeeded leaves
 ``{work}/<step>.done`` and is skipped next time. A failed step does not stop the plan: the steps that do not need it
 go on. At the end ``{work}/summary.md`` lists every step (status, time, log) with the last lines of its log.
+The steps run with bash: plans are for WSL or Linux (``terrain_hpc.sh pipeline``), not Windows itself.
 """
 import argparse
 import json

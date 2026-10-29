@@ -49,11 +49,13 @@ pythonpath = ["src", "eddie/src"]
 testpaths = ["tests", "eddie/tests"]
 # Deprecations raised from our own code fail the tests; known third-party warnings are silenced narrowly:
 # rasterio 1.5.1 and rioxarray 0.23.0 (and its master, 14 Oct 2026) compose transforms with `*`, pending
-# deprecation in affine 3. affine is pinned below 4 until both use `@` (environment.yml, dependencies).
+# deprecation in affine 3. affine is pinned below 4 until both use `@` (environment.yml, dependencies). pyflwdir 0.5.12
+# does the same in gis_utils (stage A's routing, 30 Oct 2026).
 filterwarnings = [
   "error::DeprecationWarning:terrain_s2",
   "error::PendingDeprecationWarning:terrain_s2",
   "error::FutureWarning:terrain_s2",
   "ignore:Use `@` matmul:PendingDeprecationWarning:rasterio",
   "ignore:Use `@` matmul:PendingDeprecationWarning:rioxarray",
+  "ignore:Use `@` matmul:PendingDeprecationWarning:pyflwdir",
 ]

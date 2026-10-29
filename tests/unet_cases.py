@@ -159,7 +159,7 @@ def test_channel_mask_in_run():
     assert not m2.any() and info2["cells"] == 0 and info["threshold"] == 0.0
 
 
-def _dataset_v4(root, n=12):
+def _dataset_v4(root, n=6):
     """Chips version 3: 24 bands (the OSM band) and the class array: streams in the BW tiles, drains in the BX ones,
     told apart by relief_med5 (a stand-in for whatever the real model uses)."""
     rng = np.random.default_rng(0)
@@ -205,7 +205,7 @@ def test_unet_v4_class_head_and_osm_dropout(tmp_path):
     lg, cl = m.forward_all(torch.zeros(2, len(C.BANDS_V4), S, S))
     assert lg.shape == (2, S, S) and cl.shape == (2, 3, S, S) and m(torch.zeros(1, len(C.BANDS_V4), S, S)).shape == (1, S, S)
     assert float(U.class_loss(cl, torch.full((2, S, S), -100))) == 0.0
-    cfg = dict(U.DEFAULTS, base=8, depth=2, epochs=4, batch=8, workers=0, folds=["holdout"], val_share=0.25, lr=3e-3,
+    cfg = dict(U.DEFAULTS, base=4, depth=2, epochs=2, batch=8, workers=0, folds=["holdout"], val_share=0.25, lr=3e-3,
                patience=5, n_classes=3, class_weight=1.0, osm_dropout=0.3)
     res = U.run(ds, tmp_path / "models" / "v4", cfg, folds=["holdout"], device="cpu", log=lambda m: None)
     cls = res[0]["metrics"]["all"]["model"]["classes"]

@@ -2475,6 +2475,18 @@ and the class head, no OSM band), the imagery test's stage 2 (`imagery_rasters.p
 from the survey closest to the LiDAR; chips `ml3_waves123_rgb` with 26 bands on labels v4; unet_rgb with unet_v3's
 settings, unet_v3 its control), and every U-Net on the same fold 1 tiles and council labels.
 
+**Windows test failures after the 29 Oct patch** (30 Oct). Five failures on Matt's Windows clone: (1-2) the channel
+presence tests: scikit-learn 1.9 (Windows; 1.8 in the sandbox passed) cannot bin a column with fewer than two distinct
+values ("window shape cannot be larger than input array shape"), and real reach tables have such columns (the U-Net's
+class columns without a class head, an all-missing U-Net probability); `channel_presence.fit` now uses only the features
+that vary (`usable`, listed in the model and the report), and the scorer's `train.fit` the same through
+`VaryingColumns` (the estimator on the varying columns, predicting from the full table; models saved before load as
+they were), since the weekend's scorer step would have hit it too; both checked under scikit-learn 1.8 and 1.9. (3) The
+U-Net checks timed out at 600 s on Windows (CPU PyTorch) after the unet_v4 case was added: the case is smaller and
+the limit 1,800 s. (4-5) The pipeline tests: plans run their steps with bash, so the run test is skipped on Windows
+(the runner is for WSL), and the dry-run test no longer assumes forward slashes. pyflwdir 0.5.12's pending deprecation
+(transforms composed with `*`) is silenced as rasterio's is.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

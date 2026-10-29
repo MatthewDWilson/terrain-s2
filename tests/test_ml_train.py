@@ -102,3 +102,24 @@ def test_blocks_are_balanced_across_councils():
     for _, tr, te in f:
         assert set(d[te].council) == {"a", "b"} and not (tr & te).any()
         assert not set(d[te].tile_id.map(TR.block_of)) & set(d[tr].tile_id.map(TR.block_of))
+
+
+def test_fit_leaves_constant_columns_out():
+    """scikit-learn 1.9 cannot bin a constant column (30 Oct 2026); the model predicts from the full table anyway."""
+    import numpy as np
+    import pandas as pd
+
+    from terrain_s2.ml import train as TR
+    rng = np.random.default_rng(0)
+    n = 300
+    d = pd.DataFrame(dict(a=rng.normal(size=n), const=np.full(n, 2.0), empty=np.full(n, np.nan)))
+    d["struct"] = np.where(d.a + rng.normal(0, 0.5, n) > 0, 1.0, np.nan)
+    d["near_positive"] = False
+    d["weight"] = 1.0
+    d["struct_class"] = "culvert"
+    d["label_kind"] = "council"
+    d["n_labels"] = d.struct.notna().astype(int)
+    cfg = TR.load_config()
+    cfg["model"]["max_iter"] = 20
+    m = TR.fit(d, ["a", "const", "empty"], cfg)
+    assert list(m.keep) == [0] and m.predict_proba(d[["a", "const", "empty"]].to_numpy(np.float32)).shape == (n, 2)

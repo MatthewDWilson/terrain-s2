@@ -20,6 +20,6 @@ def test_unet_checks():
     if os.name == "nt":                       # two OpenMP runtimes (PyTorch's, numpy's) in the checks' process
         env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     r = subprocess.run([sys.executable, str(ROOT / "tests" / "unet_cases.py")], capture_output=True, text=True,
-                       timeout=600, env=env, cwd=ROOT)
+                       timeout=1800, env=env, cwd=ROOT)              # CPU PyTorch on Windows is slow
     assert r.returncode == 0, (r.stdout[-3000:] + r.stderr[-3000:])
     assert "unet checks ok" in r.stdout
