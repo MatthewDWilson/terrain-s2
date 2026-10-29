@@ -186,3 +186,34 @@ def test_main_end_to_end(tmp_path, monkeypatch, capsys):
     d = pd.read_csv(manual / "review_imagery.csv")
     assert len(d) == 5 and d.img_survey.eq("canterbury_2020_0.3m").all() and "sharpness" in d and "wkt" in d
     assert "model-only reaches: 3 y, 2 n" in out and "bright_twoside" in out and "leave-one-tile-out" in out
+
+
+def test_imagery_raster_and_rgb_chips(tmp_path):
+    """ml_rgb.tif on a run's grid (8-bit, 0 no data), read by the chip mosaic as the imagery bands."""
+    from terrain_s2 import dataio
+    from terrain_s2.ml import chips as C
+    f20 = _rgba(tmp_path / "a.tif", (120, 140, 90))
+    http = _catalogue(tmp_path, [("canterbury", "canterbury_2020_0.3m", ("2020-01-01", "2020-02-01"),
+                                  "rural-aerial-photos", "rgb", {SHEET: f20})])
+    src = _src(tmp_path, http)
+    run = tmp_path / "runs" / TILE
+    run.mkdir(parents=True)
+    T = Affine(1.0, 0, SX0 + 100, 0, -1.0, SY0 + 600)                # 400 x 300 m inside the sheet, then 50 m beyond it
+    z = np.zeros((300, 450), np.float32)
+    dataio.write_stack(run / "features.tif", {"z": z}, T, "EPSG:2193")
+    b = tmp_path / "tiles" / TILE
+    b.mkdir(parents=True)
+    (b / "site.json").write_text(json.dumps({"elevation": [{"product": "dem", "capture": ["2019-06-01", "2019-07-01"],
+                                                             "surveys": [{"region": "canterbury"}]}]}))
+    rec = C.imagery_raster(run, b, src=src)
+    assert rec["surveys"] == ["canterbury_2020_0.3m"] and 0.7 < rec["valid"] < 0.95
+    with rasterio.open(run / "ml_rgb.tif") as s:
+        assert s.count == 3 and s.dtypes[0] == "uint8" and s.nodata == 0 and list(s.descriptions) == list(C.IMG_BANDS)
+        a = s.read()
+    assert a[0, 10, 10] == 120 and a[1, 10, 10] == 140 and (a[:, 10, -10] == 0).all()     # beyond the sheet: no data
+    cfg = dict(rgb=True)
+    assert C.bands_for(cfg) == C.BANDS + C.IMG_BANDS and C.bands_for(dict(rgb=True, osm_band=True))[-4] == C.OSM_BAND
+    M = C.Mosaic({TILE: run}, bands=C.IMG_BANDS)
+    out = M.read_inputs(T.c, T.f, 450, 300)
+    assert out.shape == (3, 300, 450) and out[0, 10, 10] == 120 and np.isnan(out[0, 10, -10])   # no data: missing
+    M.close()

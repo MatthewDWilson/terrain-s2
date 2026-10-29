@@ -58,6 +58,9 @@ DEFAULTS = dict(res_m=5.0, burn_max_m=2.0, carve_max_m=5.0, breach_max_m=200.0, 
                 prior_scale=0.5, evid_dist_m=6.0, keep_p=0.5, refine_corridor_m=10.0, rise_sigma_m=0.3,
                 node_snap_m=5.0, bed_weight=5.0, bed_scale_m=0.5, bed_window_m=11.0, outlet_snap_m=100.0,
                 outlet_xy=None, waterway_rank=dict(river=3.0, canal=2.0, stream=1.0),
+                burn_mapped_m=5.0, mapped_corridor_m=20.0, mapped_piece_m=400.0,
+                mapped_kinds=("river", "stream", "canal", "drain", "ditch"), evidence_share=0.5, split_min_m=20.0,
+                presence_model=None, xs_step_m=20.0, xs_half_m=15.0,
                 road_prior=0.05, join_max_m=60.0, min_piece_m=20.0, river_min_m2=5.0e7, tier_p=dict(high=0.8,
                 medium=0.5, low=0.2), crossing_search_m=25.0, overlap_m=500.0, max_outlets=1)
 NODATA = -9999.0
@@ -680,7 +683,7 @@ def join_path(start_xy, z_start, targets, prob_files, dem_files, roads, crossing
 
 # ---------------------------------------------------------------- classes and crossings
 
-def classes(S, reaches, osm_areas, ml_cls_src, P):
+def classes(S, reaches, osm_areas, ml_cls_src, P, propagate=True):
     """Class per segment from its evidence (OSM river areas or tags, the U-Net's class, the stage B class nearby,
     a very large upstream area), then made consistent downstream (``RANK``)."""
     from shapely import STRtree
@@ -727,6 +730,8 @@ def classes(S, reaches, osm_areas, ml_cls_src, P):
     big = S.upa_m2.to_numpy(float) >= P["river_min_m2"]
     base[big & (base != "river")] = "river"
     src[big] = np.where(src[big] == "routed", "upstream area", src[big])
+    if not propagate:
+        return list(base), list(src)
     # downstream consistency: a segment is at least the highest class flowing into it
     rank = np.array([RANK[c] for c in base])
     by_idx = {int(i): k for k, i in enumerate(S.idx)}
@@ -735,7 +740,7 @@ def classes(S, reaches, osm_areas, ml_cls_src, P):
         d = by_idx.get(int(S.idx_ds.iloc[k]))
         if d is not None and rank[d] < rank[k]:
             rank[d] = rank[k]
-            src[d] = "below a " + base[k]
+            src[d] = "below a " + {v: n for n, v in RANK.items()}[rank[k]]
     inv = {v: k for k, v in RANK.items()}
     return [inv[r] for r in rank], list(src)
 
@@ -799,16 +804,202 @@ def trace(points, layers, P):
     return out
 
 
-# ---------------------------------------------------------------- the catchment
+# ---------------------------------------------------------------- version 3: mapped lines, evidence, flow paths
+
+OSM_CLASS = dict(river="river", stream="stream", canal="drain", drain="drain", ditch="drain")
+
+
+def mapped_lines(W, council, catchment_band, P):
+    """The OSM waterways (``mapped_kinds``) and council channel lines meeting the band, as one table with
+    ``mapped_source`` (osm / council), ``mapped_class`` (river / stream / drain; a council class is a guide to kind) and
+    ``name``; long lines cut into pieces of ``mapped_piece_m`` for the redrawing."""
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.ops import substring
+    rows = []
+    if W is not None and len(W) and "waterway" in W:
+        for g, ww, nm in zip(W.geometry, W.waterway, W.get("name", pd.Series([None] * len(W), index=W.index))):
+            if ww in P["mapped_kinds"] and g is not None and g.intersects(catchment_band):
+                rows.append(dict(geometry=g, mapped_source="osm", mapped_class=OSM_CLASS.get(ww, "drain"),
+                                 waterway=ww, name=nm))
+    if council is not None and len(council):
+        cls = council["class"].astype(str) if "class" in council else pd.Series(["drain"] * len(council))
+        for g, c in zip(council.geometry, cls):
+            if g is not None and g.intersects(catchment_band):
+                rows.append(dict(geometry=g, mapped_source="council",
+                                 mapped_class="stream" if c == "stream" else "drain", waterway=None, name=None))
+    if not rows:
+        return gpd.GeoDataFrame(geometry=[], crs=2193)
+    M = gpd.GeoDataFrame(rows, geometry="geometry", crs=2193).explode(index_parts=False)
+    M = M[M.geometry.geom_type == "LineString"].reset_index(drop=True)
+    out = []
+    for r in M.to_dict("records"):
+        g = r.pop("geometry")
+        n = max(1, int(np.ceil(g.length / P["mapped_piece_m"])))
+        for k in range(n):
+            piece = substring(g, k * g.length / n, (k + 1) * g.length / n)
+            if piece.length > 0.5:
+                out.append(dict(r, geometry=piece))
+    return gpd.GeoDataFrame(out, geometry="geometry", crs=2193)
+
+
+def presence_evidence(R, runs, P, log=print):
+    """Evidence per stage B reach and the threshold it is judged against: the channel presence model's probability
+    (``presence_model``, else ``<data>/models/channel_presence/model.pkl`` when it exists) and its calibrated threshold;
+    else the hand-set evidence (``reach_evidence``) and ``keep_p``."""
+    import pickle
+    from .acquire.elevation import default_data_dir
+    f = Path(P["presence_model"]) if P.get("presence_model") else default_data_dir() / "models" / "channel_presence" / \
+        "model.pkl"
+    prob_files = sorted({str(Path(runs) / t / "channel_prob.tif") for t in R.tile.dropna().unique()}) if len(R) else []
+    if f.exists() and len(R):
+        from .ml import channel_presence as CPm
+        with open(f, "rb") as h:
+            M = pickle.load(h)
+        p = np.zeros(len(R))
+        for t, idx in R.groupby("tile", dropna=False).groups.items():
+            sub = R.loc[idx]
+            X = CPm.features(sub, Path(runs) / str(t) / "channel_prob.tif" if t is not None else None)
+            p[R.index.get_indexer(idx)] = CPm.predict(M, X)
+        return p, float(M.get("threshold", 0.5)), dict(source="model", model=str(f), threshold=M.get("threshold"))
+    return reach_evidence(R, prob_files), P["keep_p"], dict(source="hand-set", threshold=P["keep_p"])
+
+
+def evidence_runs(d, ind, P):
+    """Pieces of a line's samples with and without evidence: [(start m, end m, has evidence)], runs shorter than
+    ``split_min_m`` merged into their neighbours."""
+    if not len(d):
+        return []
+    runs = []
+    s0 = 0
+    for k in range(1, len(d) + 1):
+        if k == len(d) or ind[k] != ind[s0]:
+            runs.append([float(d[s0]), float(d[k - 1]) if k < len(d) else float(d[-1]), bool(ind[s0])])
+            s0 = k
+    changed = True
+    while changed and len(runs) > 1:
+        changed = False
+        for j, r in enumerate(runs):
+            if r[1] - r[0] < P["split_min_m"]:
+                nb = j - 1 if j > 0 else j + 1
+                a, b = sorted((j, nb))
+                runs[a] = [runs[a][0], runs[b][1], runs[nb][2]]
+                del runs[b]
+                changed = True
+                break
+    for j in range(len(runs) - 1):                                  # contiguous
+        runs[j + 1][0] = runs[j][1]
+    return [tuple(r) for r in runs]
+
+
+def _xs_one(g, zz, T, P):
+    """(width, depth) of one line from a DEM array covering it (see ``cross_sections``)."""
+    h = P["xs_half_m"]
+    ws, ds = [], []
+    off = np.arange(-h, h + 0.5, 1.0)
+    for t in np.arange(min(P["xs_step_m"] / 2, g.length / 2), g.length, P["xs_step_m"]):
+        a = g.interpolate(max(t - 1, 0)).coords[0]
+        b = g.interpolate(min(t + 1, g.length)).coords[0]
+        c = g.interpolate(t).coords[0]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = np.hypot(dx, dy) or 1.0
+        px, py = c[0] - dy / n * off, c[1] + dx / n * off
+        r = ((T.f - py) // abs(T.e)).astype(int)
+        cc = ((px - T.c) // T.a).astype(int)
+        if not ((r >= 0) & (r < zz.shape[0]) & (cc >= 0) & (cc < zz.shape[1])).all():
+            continue
+        prof = zz[r, cc]
+        if not np.isfinite(prof).all():
+            continue
+        mid = len(off) // 2
+        bed = prof[mid - 2:mid + 3].min()
+        dep = min(prof[:mid - 1].max(), prof[mid + 2:].max()) - bed
+        if dep <= 0.05:
+            ws.append(0.0)
+            ds.append(max(dep, 0.0))
+            continue
+        half = bed + dep / 2
+        li = np.flatnonzero(prof[:mid] >= half)
+        ri = np.flatnonzero(prof[mid:] >= half)
+        ws.append(float(((mid - li[-1]) if len(li) else mid) + (ri[0] if len(ri) else len(off) - mid)))
+        ds.append(float(dep))
+    return (float(np.median(ws)) if ws else np.nan, float(np.median(ds)) if ds else np.nan)
+
+
+def cross_sections(lines, tiles, cores, bundles, P):
+    """(width m, depth m) per line from the 1 m DEM: profiles across it every ``xs_step_m``, ``xs_half_m`` either side;
+    depth = the lower bank's top above the bed, width = between where the profile rises halfway up; medians. Each
+    tile's DEM (core and buffer) is read once, for the lines whose middle lies in its core."""
+    import rasterio
+    from affine import Affine  # noqa: F401
+    from shapely import STRtree, points
+    out = [(np.nan, np.nan)] * len(lines)
+    if not len(lines):
+        return out
+    names = list(tiles)
+    tree = STRtree([cores[t].buffer(0.01) for t in names])
+    mids = points([g.interpolate(0.5, normalized=True).coords[0] for g in lines])
+    li, ti = tree.query(mids, predicate="within")
+    own = {}
+    for a_, b_ in zip(li, ti):
+        own.setdefault(int(b_), []).append(int(a_))
+    for k, idx in own.items():
+        f = Path(bundles) / names[k] / "dem.tif"
+        if not f.exists():
+            continue
+        with rasterio.open(f) as s:
+            zz = s.read(1).astype(np.float32)
+            if s.nodata is not None:
+                zz[zz == s.nodata] = np.nan
+            T = s.transform
+        for i in dict.fromkeys(idx):
+            out[i] = _xs_one(lines[i], zz, T, P) if lines[i] is not None and lines[i].length >= 2 else (np.nan, np.nan)
+        del zz
+    return out
+
+
+def classes_v3(N, seg_down, P):
+    """Classes made consistent downstream, through flow paths: a channel is at least the highest channel class that
+    flows into it, directly or through flow paths; flow paths keep their class. ``seg_down``: index of each row's
+    downstream row (-1: none). Returns (classes, sources)."""
+    cls = list(N.class_v2)
+    src = list(N.class_source)
+    order = np.argsort(N.upa_m2.fillna(0).to_numpy(float))
+    carry = np.full(len(N), -1)
+    rank = np.array([RANK.get(c, -1) for c in cls])
+    for k in order:
+        eff = rank[k] if cls[k] != "flow path" else carry[k]
+        eff = max(eff, carry[k]) if cls[k] != "flow path" else eff
+        d = seg_down[k]
+        if d < 0:
+            continue
+        carry[d] = max(carry[d], eff)
+        if cls[d] != "flow path" and carry[d] > rank[d]:
+            inv = {v: n for n, v in RANK.items()}
+            src[d] = "below a " + inv[carry[d]]
+            rank[d] = carry[d]
+            cls[d] = inv[carry[d]]
+    return cls, src
+
 
 def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_points=None, write=True, log=print):
-    """Stage A (version 2) on one catchment folder (``catchment.gpkg``); returns the summary (``stage_a.json``)."""
+    """Stage A (version 3, 29 Oct) on one catchment folder (``catchment.gpkg``); returns the summary (``stage_a.json``).
+
+    Additive and refining (Matt, 29 Oct): every OSM waterway and council channel line is represented (redrawn on the
+    LiDAR, burned into the routing, added where the routing misses it, never removed); detected channels (stage B) are
+    added where their evidence reaches the threshold (the channel presence model's, calibrated on the reviews; else
+    hand-set); routing gives connectivity, direction, upstream area, order and the one outlet, and makes no channel of
+    its own: a routed path without evidence is kept only to carry evidence-backed network to the outlet, as a ``flow
+    path``. Heads end where the evidence ends. Every reach gets width and depth (stage B's where it follows a detected
+    reach, else from cross-sections of the 1 m DEM)."""
     import geopandas as gpd
     import pandas as pd
     from rasterio.features import rasterize
+    from shapely import STRtree, points
+    from shapely.ops import substring
 
     from . import guidance as G
-    from .catchment_mode import _layer, _mosaic, assemble, sample_z  # noqa: F401
+    from .catchment_mode import _layer, assemble, sample_z
     P = dict(DEFAULTS, **(params or {}))
     cd = Path(catchment_dir)
     cat = gpd.read_file(cd / "catchment.gpkg", layer="catchment").to_crs(2193)
@@ -820,9 +1011,9 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     R, cores, cross, rivers, roads = assemble(tiles, runs, bundles, band, dict(min_piece_m=0.5))
     prob_files = [Path(runs) / t / "channel_prob.tif" for t in tiles]
     dem_files = [Path(bundles) / t / "dem.tif" for t in tiles]
-    ev = reach_evidence(R, prob_files) if len(R) else np.zeros(0)
-    log(f"{len(tiles)} tiles; {len(R)} stage B pieces ({R.length.sum() / 1000:.1f} km); {len(cross)} crossing candidates")
-    # sea, OSM river areas
+    ev, thr, ev_info = presence_evidence(R, runs, P) if len(R) else (np.zeros(0), P["keep_p"], dict(source="none"))
+    log(f"{len(tiles)} tiles; {len(R)} stage B pieces ({R.length.sum() / 1000:.1f} km); {len(cross)} crossing candidates;"
+        f" evidence {ev_info['source']}, threshold {thr:.3f}")
     sea, areas, wlines, council = [], [], [], []
     for t in tiles:
         g = G.load(Path(bundles) / t / "context.gpkg", tuple(cores[t].buffer(500).bounds))
@@ -830,15 +1021,32 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
             wlines.append(g["lines"][g["lines"].intersects(cores[t])])
         lab = _layer(Path(bundles) / t / "labels.gpkg", "channels")
         if lab is not None and len(lab):
-            council.append(lab[lab.intersects(cores[t])][["geometry"]])
+            keep = [c for c in ("class",) if c in lab]
+            council.append(lab[lab.intersects(cores[t])][keep + ["geometry"]])
         a = g["areas"]
         if len(a) and "water_kind" in a:
             sea += [x for x in a[a.water_kind == "tidal"].geometry if x is not None]
             areas += [x for x in a[a.water_kind == "river_area"].geometry if x is not None]
         sea += [x.buffer(1.0) for x in g["coastline"].geometry if x is not None]
     osm_areas = gpd.GeoDataFrame(geometry=areas, crs=2193)
+    W = gpd.GeoDataFrame(pd.concat(wlines, ignore_index=True), geometry="geometry", crs=2193) if wlines else None
+    CL = gpd.GeoDataFrame(pd.concat(council, ignore_index=True), geometry="geometry", crs=2193) if council else None
+    # 1. the mapped lines, redrawn on the LiDAR (towards detected channels and the bed)
+    Mp = mapped_lines(W, CL, band, P)
+    if len(Mp):
+        Pm = dict(P, refine_corridor_m=P["mapped_corridor_m"])
+        Mp["geometry"] = [refine(g, prob_files, Pm, dem_files, R, ev) for g in Mp.geometry]
+    log(f"mapped lines: {len(Mp)} pieces, {Mp.length.sum() / 1000:.1f} km (OSM "
+        f"{Mp[Mp.mapped_source == 'osm'].length.sum() / 1000 if len(Mp) else 0:.1f}, council "
+        f"{Mp[Mp.mapped_source == 'council'].length.sum() / 1000 if len(Mp) else 0:.1f})")
+    # evidence lines for the DEM, the samples and the redrawing: mapped lines (1) and detected reaches (their evidence)
+    E = gpd.GeoDataFrame(pd.concat([R[["geometry"]], Mp[["geometry"]]], ignore_index=True), geometry="geometry",
+                         crs=2193) if len(Mp) else R[["geometry"]].copy()
+    ev_all = np.r_[ev, np.ones(len(Mp))]
+    ev_burn = np.r_[ev, np.full(len(Mp), P["burn_mapped_m"] / P["burn_max_m"])]
+    # 2. the conditioned coarse DEM, the outlet, the routing
     T5, shape5 = grid_for(catchment, P["res_m"])
-    z5 = coarse_dem(tiles, cores, bundles, R, ev, cross, T5, shape5, P)
+    z5 = coarse_dem(tiles, cores, bundles, E, ev_burn, cross, T5, shape5, P)
     cmask = rasterize([(catchment, 1)], out_shape=shape5, transform=T5, fill=0) > 0
     sea_mask = rasterize([(g, 1) for g in sea], out_shape=shape5, transform=T5, fill=0, all_touched=True) > 0 if sea \
         else np.zeros(shape5, bool)
@@ -846,7 +1054,6 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     if not (z5 != NODATA).any():
         raise RuntimeError("no DEM inside the catchment")
     z5 = breach(z5, P)
-    W = gpd.GeoDataFrame(pd.concat(wlines, ignore_index=True), geometry="geometry", crs=2193) if wlines else None
     oxy, orec = osm_outlet(catchment, W, sea, z5, T5, P)
     outlet, orep = choose_outlet(z5, T5, sea_mask, P, oxy, orec)
     log(f"outlet ({orep['chosen']['method']}) at {orep['chosen']['x']:.0f}, {orep['chosen']['y']:.0f} "
@@ -854,73 +1061,108 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     flw = route(z5, T5, outlet)
     S = segments(flw, T5, cmask, P)
     upa = flw.upstream_area("m2")
-    smp = segment_samples(S, R, ev, prob_files, upa, T5, P) if len(S) else []
-    e = np.array([x[1].mean() if len(x[1]) else 0.0 for x in smp])
-    pc, pa = p_channel(S, e, P) if len(S) else (np.zeros(0), np.zeros(0))
-    keep = prune_heads(S, pc, P) if len(S) else np.zeros(0, bool)
-    S = S.assign(evidence=np.round(e, 3), p_area=np.round(pa, 3), p_channel=np.round(pc, 3))
-    # the kept heads trimmed to where the channel becomes probable
+    # 3. evidence along each segment: a mapped line or a detected reach at or above the threshold within evid_dist
+    Pe = dict(P, keep_p=thr)
+    smp = segment_samples(S, E, np.where(ev_all >= thr, 1.0, 0.0), [], upa, T5, P) if len(S) else []
+    share = np.array([float((x[1] >= 0.5).mean()) if len(x[1]) else 0.0 for x in smp])
+    keep = prune_heads(S, np.where(share >= P["evidence_share"], 1.0, 0.0), dict(P, keep_p=0.5)) if len(S) else \
+        np.zeros(0, bool)
+    S = S.assign(evidence_share=np.round(share, 3))
+    # heads trimmed to where the evidence starts
     has_up = set(int(j) for j, k_ in zip(S.idx_ds, keep) if k_)
-    trimmed = []
     geoms = list(S.geometry)
+    pruned = [S.iloc[np.flatnonzero(~keep)][["geometry"]]] if (~keep).any() else []
     for k in np.flatnonzero(keep):
         if int(S.idx.iloc[k]) in has_up:
-            continue                                           # not a head among the kept
-        g2 = trim_head(geoms[k], smp[k], P)
+            continue
+        d, e, _ = smp[k]
+        g2 = trim_head(geoms[k], (d, e, np.full(len(d), 1.0)), dict(Pe, keep_p=0.5, a50_m2=1e30))
         if g2 is None:
             keep[k] = False
+            pruned.append(gpd.GeoDataFrame(geometry=[geoms[k]], crs=2193))
             continue
         if g2.length < geoms[k].length - 1e-6:
-            from shapely.ops import substring
-            trimmed.append(substring(geoms[k], 0, geoms[k].length - g2.length))
+            pruned.append(gpd.GeoDataFrame(geometry=[substring(geoms[k], 0, geoms[k].length - g2.length)], crs=2193))
+            cut = geoms[k].length - g2.length
+            dd, ee, aa = smp[k]
+            sel = dd >= cut
+            smp[k] = (dd[sel] - cut, ee[sel], aa[sel])
             geoms[k] = g2
     S = S.set_geometry(gpd.GeoSeries(geoms, crs=2193))
-    pruned = S[~keep]
-    if trimmed:
-        pruned = gpd.GeoDataFrame(pd.concat([pruned, gpd.GeoDataFrame(dict(trimmed=[True] * len(trimmed)),
-                                                                     geometry=trimmed, crs=2193)], ignore_index=True),
-                                  geometry="geometry", crs=2193)
+    smp = [smp[k] for k in np.flatnonzero(keep)]
     S = S[keep].reset_index(drop=True)
-    log(f"routed: {len(S) + len(pruned)} segments over {P['a_min_m2'] / 1e4:g} ha; kept {len(S)} "
-        f"({S.length.sum() / 1000:.1f} km), heads pruned {len(pruned)} ({pruned.length.sum() / 1000:.1f} km)")
+    pruned = gpd.GeoDataFrame(pd.concat(pruned, ignore_index=True), geometry="geometry", crs=2193) if pruned else \
+        gpd.GeoDataFrame(geometry=[], crs=2193)
+    # 4. redrawn on the 1 m channels (mapped lines and detected reaches pull, then the bed)
     raw = S[["geometry"]].copy()
-    nodes_xy = snap_nodes(S, prob_files, dem_files, R, ev, P) if len(S) else {}
+    nodes_xy = snap_nodes(S, prob_files, dem_files, E, ev_all, P) if len(S) else {}
     key = lambda c: (round(c[0], 2), round(c[1], 2))
-    S["geometry"] = [refine(g, prob_files, P, dem_files, R, ev, (nodes_xy.get(key(g.coords[0]), g.coords[0]),
-                                                                  nodes_xy.get(key(g.coords[-1]), g.coords[-1])))
+    S["geometry"] = [refine(g, prob_files, P, dem_files, E, ev_all, (nodes_xy.get(key(g.coords[0]), g.coords[0]),
+                                                                    nodes_xy.get(key(g.coords[-1]), g.coords[-1])))
                      for g in S.geometry]
-    CL = gpd.GeoDataFrame(pd.concat(council, ignore_index=True), geometry="geometry", crs=2193) if council else None
-    offsets = dict(stage_b_before=offset_stats(raw, R), stage_b_after=offset_stats(S, R),
-                   council_before=offset_stats(raw, CL), council_after=offset_stats(S, CL))
-    log(f"offset from the stage B channels: median {(offsets['stage_b_before'] or {}).get('median_m')} m -> "
-        f"{(offsets['stage_b_after'] or {}).get('median_m')} m")
-    cls, src = classes(S, R, osm_areas, None, P)
-    S["class_v2"], S["class_source"] = cls, src
-    S["channel_source"] = "routed"
-    # drains joining the routed network
-    from shapely import STRtree
-    joins, attempts, added = [], [], []
-    if len(R):
+    # 5. channel or flow path, piece by piece along each segment
+    rows = []
+    for k, r in enumerate(S.itertuples()):
+        d, e, _ = smp[k]
+        L0 = raw.geometry.iloc[k].length or 1.0
+        g = r.geometry
+        for a_, b_, has in evidence_runs(d, e >= 0.5, P) or [(0.0, L0, False)]:
+            piece = substring(g, a_ / L0 * g.length, b_ / L0 * g.length)
+            if piece.length <= 0.5:
+                continue
+            rows.append(dict(geometry=piece, seg=k, idx=r.idx, idx_ds=r.idx_ds, upa_m2=r.upa_m2, strahler=r.strahler,
+                             evidence_share=r.evidence_share, channel=bool(has)))
+    N = gpd.GeoDataFrame(rows, geometry="geometry", crs=2193) if rows else gpd.GeoDataFrame(geometry=[], crs=2193)
+    # classes from the mapped lines and detected reaches along each piece
+    if len(N):
+        tmp = N.assign(idx=N.idx, idx_ds=N.idx_ds)
+        Rc = R.copy()
+        if len(Mp):
+            Rm = Mp.rename(columns={"mapped_class": "class"})[["geometry", "class"]].assign(osm_waterway=None)
+            Rm.loc[Mp.mapped_source.to_numpy() == "osm", "osm_waterway"] = Mp.waterway[Mp.mapped_source == "osm"].to_numpy()
+            Rc = gpd.GeoDataFrame(pd.concat([Rm, Rc], ignore_index=True), geometry="geometry", crs=2193)
+        base, src = classes(tmp, Rc, osm_areas, None, dict(P, river_min_m2=np.inf), propagate=False)
+        base = [b if ch else "flow path" for b, ch in zip(base, N.channel)]
+        src = [s_ if ch else "no evidence (connects)" for s_, ch in zip(src, N.channel)]
+        N["class_v2"], N["class_source"] = base, src
+        N["channel_source"] = np.where(N.channel, "routed", "flow path")
+    # 6. mapped lines the network misses, added (never removed)
+    added = []
+    if len(Mp) and len(N):
+        nt = STRtree(N.geometry.to_numpy())
+        for r in Mp.itertuples():
+            g = r.geometry
+            n = max(int(g.length // 5.0), 1)
+            ds = np.linspace(0, g.length, n + 1)
+            pts = points([g.interpolate(t).coords[0] for t in ds])
+            j = nt.nearest(pts)
+            far = np.array([N.geometry.iloc[x].distance(q) for x, q in zip(j, pts)]) > P["evid_dist_m"]
+            for a_, b_, f in evidence_runs(ds, far, P):
+                if f and b_ - a_ >= P["split_min_m"]:
+                    added.append(dict(geometry=substring(g, a_, b_), class_v2=r.mapped_class,
+                                      class_source=r.mapped_source, channel_source=r.mapped_source, channel=True,
+                                      name=r.name))
+    # 7. detected reaches the network misses: added where their evidence reaches the threshold and they can join
+    joins, attempts, detected = [], [], []
+    if len(R) and len(N):
+        nt = STRtree(N.geometry.to_numpy())
         near = np.zeros(len(R), bool)
-        st = STRtree(S.geometry.to_numpy()) if len(S) else None
-        if st is not None:
-            for i, g in enumerate(R.geometry):
-                idx = st.query(g, predicate="dwithin", distance=P["evid_dist_m"])
-                if len(idx):
-                    covered = sum(g.intersection(S.geometry.iloc[j].buffer(P["evid_dist_m"])).length for j in idx)
-                    near[i] = covered >= 0.5 * g.length
-        cand = R[~near & R.intersects(catchment)]
-        cand = cand[cand.get("class", pd.Series("drain", index=cand.index)).astype(str).isin(["drain", "link", "stream"])]
+        for i, g in enumerate(R.geometry):
+            idx = nt.query(g, predicate="dwithin", distance=P["evid_dist_m"])
+            if len(idx):
+                cov = sum(g.intersection(N.geometry.iloc[j].buffer(P["evid_dist_m"])).length for j in idx)
+                near[i] = cov >= 0.5 * g.length
+        cand = np.flatnonzero(~near & (ev >= thr) & R.intersects(catchment).to_numpy())
         from .catchment_mode import nodes
         from .connectivity import _UF
-        if len(cand) and len(S):
-            geoms = list(cand.geometry)
+        if len(cand):
+            geoms = [R.geometry.iloc[i] for i in cand]
             ends, xy = nodes(geoms, 0.5)
             uf = _UF(len(xy))
             for a_, b_ in ends:
                 uf.union(a_, b_)
             lab = uf.labels()[ends[:, 0]]
-            targets = list(S.geometry)
+            targets = list(N.geometry) + [x["geometry"] for x in added]
             z = sample_z(xy, tiles, cores, bundles)
             for c in np.unique(lab):
                 mem = np.flatnonzero(lab == c)
@@ -928,38 +1170,110 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
                 if ln < P["min_piece_m"]:
                     continue
                 nn = np.unique(ends[mem].ravel())
-                from shapely import points
                 dn = np.array([min(t.distance(q) for t in targets) for q in points(xy[nn])])
                 zz = np.round(np.where(np.isfinite(z[nn]), z[nn], np.inf), 1)
-                st_ = nn[np.lexsort((zz, dn))[0]]                       # the end nearest the network, lowest
+                st_ = nn[np.lexsort((zz, dn))[0]]
                 line, rec = join_path(xy[st_], z[st_], targets, prob_files, dem_files, roads, cross, P)
                 rec["piece_m"] = round(ln, 1)
                 attempts.append(rec)
                 if line is not None:
-                    joins.append(line)
-                    added.append(cand.iloc[mem].assign(class_v2="drain", class_source="stage B drain",
-                                                       channel_source="joined drain"))
-    parts = [S]
-    if added:
-        parts += added
-    if joins:
-        parts.append(gpd.GeoDataFrame(dict(class_v2=["drain"] * len(joins), class_source=["join"] * len(joins),
-                                           channel_source=["join"] * len(joins)), geometry=joins, crs=2193))
+                    joins.append(dict(geometry=line, class_v2="flow path", class_source="join", channel_source="join",
+                                      channel=False))
+                    sub = R.iloc[cand[mem]]
+                    for g, cl in zip(sub.geometry, sub.get("class", pd.Series(["drain"] * len(sub))).astype(str)):
+                        detected.append(dict(geometry=g, class_v2="stream" if cl == "stream" else "drain",
+                                             class_source="detected", channel_source="detected", channel=True))
+    parts = [N] + [gpd.GeoDataFrame(x, geometry="geometry", crs=2193) for x in (added, detected, joins) if x]
     N = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs=2193)
+    # 8. classes consistent downstream (routed pieces, through flow paths)
+    if "seg" in N:
+        idx_of_seg = {}
+        for i_, (sg, a_) in enumerate(zip(N.seg, N.geometry)):
+            if pd.notna(sg):
+                idx_of_seg.setdefault(int(sg), []).append(i_)
+        down = np.full(len(N), -1)
+        first = {int(i): k for k, i in enumerate(S.idx)}
+        for sg, rows_ in idx_of_seg.items():                            # a segment's pieces are in flow order
+            for a_, b_ in zip(rows_[:-1], rows_[1:]):
+                down[a_] = b_
+            d_seg = first.get(int(S.idx_ds.iloc[sg]))
+            if d_seg is not None and d_seg in idx_of_seg:
+                down[rows_[-1]] = idx_of_seg[d_seg][0]
+        N["upa_m2"] = N.get("upa_m2", pd.Series(np.nan, index=N.index))
+        N["class_v2"], N["class_source"] = classes_v3(N, down, P)
+    # 9. width and depth: stage B's where a detected reach runs along, else cross-sections
+    N["width_m"] = np.nan
+    N["depth_m"] = np.nan
+    N["width_source"] = None
+    if len(R) and "width_m" in R:
+        rt = STRtree(R.geometry.to_numpy())
+        for i, g in enumerate(N.geometry):
+            idx = rt.query(g, predicate="dwithin", distance=3.0)
+            if not len(idx):
+                continue
+            ln = np.array([g.intersection(R.geometry.iloc[j].buffer(3.0)).length for j in idx])
+            if ln.sum() >= 0.5 * g.length:
+                w_ = R.width_m.iloc[idx].to_numpy(float)
+                d_ = R.incision_m.iloc[idx].to_numpy(float) if "incision_m" in R else np.full(len(idx), np.nan)
+                ok = np.isfinite(w_)
+                if ok.any():
+                    N.loc[N.index[i], ["width_m", "depth_m", "width_source"]] = [
+                        float(np.average(w_[ok], weights=ln[ok])),
+                        float(np.nanmean(d_)) if np.isfinite(d_).any() else np.nan, "stage B"]
+    rest = np.flatnonzero(N.width_source.isna().to_numpy())
+    if len(rest):
+        wd = cross_sections([N.geometry.iloc[i] for i in rest], tiles, cores, bundles, P)
+        N.loc[N.index[rest], "width_m"] = [w for w, _ in wd]
+        N.loc[N.index[rest], "depth_m"] = [d_ for _, d_ in wd]
+        N.loc[N.index[rest], "width_source"] = "cross-sections"
+    # upstream area for every piece (largest along it)
+    h, w = upa.shape
+    ua = []
+    for g in N.geometry:
+        c = np.array([g.interpolate(t).coords[0] for t in np.linspace(0, g.length, max(int(g.length // 5), 1) + 1)])
+        r = ((T5.f - c[:, 1]) // abs(T5.e)).astype(int).clip(0, h - 1)
+        q = ((c[:, 0] - T5.c) // T5.a).astype(int).clip(0, w - 1)
+        ua.append(float(upa[r, q].max()))
+    N["upa_m2"] = np.where(N.upa_m2.notna(), N.upa_m2, ua) if "upa_m2" in N else ua
     X = network_crossings(N, roads, cross, P)
+    # coverage of the mapped lines, offsets
+    def coverage(M_, net):
+        if not len(M_) or not len(net):
+            return None
+        tt = STRtree(net.geometry.to_numpy())
+        tot = cov = 0.0
+        for g in M_.geometry:
+            n = max(int(g.length // 5.0), 1)
+            pts = points([g.interpolate(t).coords[0] for t in np.linspace(0, g.length, n + 1)])
+            j = tt.nearest(pts)
+            dd = np.array([net.geometry.iloc[x].distance(q) for x, q in zip(j, pts)])
+            tot += g.length
+            cov += g.length * float((dd <= P["evid_dist_m"]).mean())
+        return round(cov / tot, 4) if tot else None
     km = lambda g: round(float(g.length.sum()) / 1000, 3)
-    summary = dict(catchment=str(cat.catchment_id.iloc[0]) if "catchment_id" in cat else cd.name, tiles=len(tiles),
-                   params={k: (list(v) if isinstance(v, tuple) else v) for k, v in P.items()},
-                   outlet=orep, offsets=offsets, routed_km=km(S), pruned_heads_km=km(pruned),
-                   joined=dict(tried=len(attempts), accepted=len(joins),
-                               reasons={k: int(v) for k, v in pd.Series([a.get("reason") or "accepted" for a in attempts])
-                                        .value_counts().items()} if attempts else {}),
-                   drains_joined_km=km(pd.concat(added)) if added else 0.0, network_km=km(N),
-                   class_km={k: km(N[N.class_v2 == k]) for k in ("river", "stream", "drain")},
+    inside = N[N.intersects(catchment)]
+    summary = dict(version=3, catchment=str(cat.catchment_id.iloc[0]) if "catchment_id" in cat else cd.name,
+                   tiles=len(tiles), params={k: (list(v) if isinstance(v, tuple) else v) for k, v in P.items()},
+                   evidence=ev_info, outlet=orep,
+                   offsets=dict(stage_b=offset_stats(N[N.channel_source == "routed"], R),
+                                council=offset_stats(N[N.channel_source == "routed"], CL)),
+                   mapped=dict(pieces=int(len(Mp)), km=km(Mp), covered=coverage(Mp, N),
+                               osm_km=km(Mp[Mp.mapped_source == "osm"]) if len(Mp) else 0.0,
+                               council_km=km(Mp[Mp.mapped_source == "council"]) if len(Mp) else 0.0,
+                               added_km=km(gpd.GeoDataFrame(added, geometry="geometry", crs=2193)) if added else 0.0),
+                   detected=dict(tried=len(attempts), joined=len(joins),
+                                 added_km=km(gpd.GeoDataFrame(detected, geometry="geometry", crs=2193)) if detected else 0.0,
+                                 reasons={k: int(v) for k, v in pd.Series([a.get("reason") or "accepted" for a in attempts])
+                                          .value_counts().items()} if attempts else {}),
+                   pruned_km=km(pruned), network_km=km(N), network_km_in_catchment=km(inside),
+                   class_km={k: km(N[N.class_v2 == k]) for k in ("river", "stream", "drain", "flow path")},
                    class_sources={k: int(v) for k, v in N.class_source.value_counts().items()},
-                   strahler_km={int(k): km(S[S.strahler == k]) for k in sorted(S.strahler.unique())} if len(S) else {},
+                   strahler_km={int(k): km(N[N.strahler == k]) for k in sorted(N.strahler.dropna().unique())}
+                   if "strahler" in N else {},
                    crossings=dict(total=int(len(X)), with_candidate=int((~X.needs_structure).sum()) if len(X) else 0,
-                                  needs_structure=int(X.needs_structure.sum()) if len(X) else 0))
+                                  needs_structure=int(X.needs_structure.sum()) if len(X) else 0,
+                                  needs_structure_on_flow_paths=int((X.needs_structure & (X.cls == "flow path")).sum())
+                                  if len(X) else 0))
     if trace_points:
         summary["trace"] = trace(trace_points, dict(candidates=cross, stage_b=R, network=N, crossings=X), P)
     if write:
@@ -967,6 +1281,8 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
         if f.exists():
             f.unlink()
         N.to_file(f, layer="channels", driver="GPKG")
+        if len(Mp):
+            Mp.to_file(f, layer="mapped", driver="GPKG")
         if len(pruned):
             pruned.to_file(f, layer="pruned", driver="GPKG")
         if len(X):
@@ -976,7 +1292,7 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
             gpd.GeoDataFrame(A_, geometry=gpd.points_from_xy(A_.start_x, A_.start_y), crs=2193).to_file(
                 f, layer="joins", driver="GPKG")
         o = orep["chosen"]
-        gpd.GeoDataFrame([dict(kind="outlet", area_km2=o["area_km2"])], geometry=gpd.points_from_xy([o["x"]], [o["y"]]),
+        gpd.GeoDataFrame([dict(kind="outlet", method=o.get("method"))], geometry=gpd.points_from_xy([o["x"]], [o["y"]]),
                          crs=2193).to_file(f, layer="outlet", driver="GPKG")
         import rasterio
         with rasterio.open(cd / "dem_routed.tif", "w", driver="GTiff", height=shape5[0], width=shape5[1], count=1,

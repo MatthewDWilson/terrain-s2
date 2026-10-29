@@ -71,6 +71,8 @@ def main():
     ap.add_argument("--labels", default="v4", choices=["v4", "v5"],
                     help="v5: labels v5 (ml_channel_labels_v5.tif: OSM positives and the class band; unet_v4)")
     ap.add_argument("--osm-band", action="store_true", help="add the OSM waterway distance as a 24th input (ml_osm.tif)")
+    ap.add_argument("--rgb", action="store_true",
+                    help="add the aerial imagery bands (ml_rgb.tif, from scripts/imagery_rasters.py; tiles without it skipped)")
     ap.add_argument("--class-shares", help="positive chips by class, e.g. river=0.2,stream=0.4,drain=0.4 (labels v5)")
     a = ap.parse_args()
     import pandas as pd
@@ -85,12 +87,18 @@ def main():
         cfg["per_tile"] = a.per_tile
     cfg["label_file"] = "ml_channel_labels_v5.tif" if a.labels == "v5" else "ml_channel_labels.tif"
     cfg["osm_band"] = bool(a.osm_band)
+    cfg["rgb"] = bool(a.rgb)
     if a.class_shares:
         cfg["positive_class_shares"] = {k: float(v) for k, v in (kv.split("=") for kv in a.class_shares.split(","))}
     bands = C.bands_for(cfg)
     m = pd.concat([pd.read_csv(f) for f in a.manifest], ignore_index=True).drop_duplicates("tile_id")
     have = {t: runs / t for t in m.tile_id if (runs / t / "features.tif").exists() and (runs / t / "hydro.tif").exists()}
     labelled = [t for t in have if (have[t] / cfg["label_file"]).exists()]
+    if cfg["rgb"]:
+        no_rgb = [t for t in labelled if not (have[t] / "ml_rgb.tif").exists()]
+        if no_rgb:
+            print(f"no imagery for {len(no_rgb)} tiles (scripts/imagery_rasters.py): skipped, e.g. {no_rgb[:3]}")
+        labelled = [t for t in labelled if t not in set(no_rgb)]
     print(f"{len(m)} tiles: {len(have)} with saved rasters, {len(labelled)} with label rasters")
     redo = set(Path(a.redo).expanduser().read_text().split()) if a.redo else set()
     ways = [(str(have[t]), str(bundles / t), "ways") for t in have if t in redo or not (have[t] / "ml_ways.tif").exists()]

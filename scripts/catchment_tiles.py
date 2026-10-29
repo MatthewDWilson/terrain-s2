@@ -78,7 +78,9 @@ def main():
                      geometry=[c.geometry], crs=2193).to_file(cd / "catchment.gpkg", layer="catchment", driver="GPKG")
     if len(t):
         t.to_file(cd / "catchment.gpkg", layer="tiles", driver="GPKG")
-    print(f"catchment {c.catchment_id} ({c.catchment_name}): {area_km2:,.1f} km2; {len(t)} tiles "
+    idf = c.get("id_field") if hasattr(c, "get") else None
+    print(f"catchment {c.catchment_id}{f' (field {idf})' if idf else ''}, fid {c.get('fid', '?')} ({c.catchment_name}): "
+          f"{area_km2:,.1f} km2; {len(t)} tiles "
           f"({int((~t.overlap_only).sum())} with area inside, {int(t.overlap_only.sum())} in the {a.overlap:g} m band only); "
           f"LiDAR tiles cover {covered:.1%} of it")
     print(f"-> {out}\n-> {cd / 'catchment.gpkg'}")

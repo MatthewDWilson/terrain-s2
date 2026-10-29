@@ -46,6 +46,8 @@ WAY_BAND = "dist_any_way_m"
 BANDS = FEATURE_BANDS + HYDRO_BANDS + (WAY_BAND,)
 OSM_BAND = "dist_osm_waterway_m"
 BANDS_V4 = BANDS + (OSM_BAND,)
+IMG_BANDS = ("img_red", "img_green", "img_blue")      # aerial imagery (the imagery test, stage 2): ml_rgb.tif
+NAN_NODATA = {"ml_rgb.tif"}                           # 8-bit files whose no-data value reads as missing
 WAY_CAP_M = 500.0
 OSM_CAP_M = 500.0
 CLASS_CODES = dict(river=1, stream=2, drain=3)
@@ -58,8 +60,62 @@ DEFAULTS = dict(size=128, per_tile=300, shares=dict(positive=0.5, hard=0.25), ji
 
 
 def bands_for(cfg) -> tuple:
-    """The input bands of a chip configuration: ``BANDS_V4`` with ``osm_band``, else ``BANDS``."""
-    return BANDS_V4 if (cfg or {}).get("osm_band") else BANDS
+    """The input bands of a chip configuration: ``BANDS``, then the OSM band (``osm_band``), then the imagery bands
+    (``rgb``)."""
+    cfg = cfg or {}
+    return BANDS + ((OSM_BAND,) if cfg.get("osm_band") else ()) + (IMG_BANDS if cfg.get("rgb") else ())
+
+
+def imagery_raster(run, bundle, src=None, prefer="lidar", res=1.0, write=True):
+    """``ml_rgb.tif``: aerial imagery (LINZ, ``acquire.imagery``) on the run's grid, 8-bit RGB with 0 as no data;
+    the survey closest to the tile's LiDAR capture (``prefer="lidar"``, what a model would be given) or the newest.
+    Returns the record of the surveys used."""
+    import json as _json
+
+    import rasterio
+
+    from ..acquire import imagery as IM
+    from .channel_labels import _horizontal
+    run, bundle = Path(run), Path(bundle)
+    with rasterio.open(run / "features.tif") as s:
+        T, crs, (h, w) = s.transform, _horizontal(s.crs), (s.height, s.width)
+    bounds = (T.c, T.f + h * T.e, T.c + w * T.a, T.f)
+    cap, regions = None, set()
+    try:
+        site = _json.loads((bundle / "site.json").read_text())
+        for rec in site.get("elevation") or []:
+            if rec.get("product") == "dem" and rec.get("capture"):
+                cap = tuple(rec["capture"])
+            for sv in rec.get("surveys") or []:
+                if sv.get("region") and not sv.get("national"):
+                    regions.add(sv["region"])
+    except (OSError, ValueError):
+        pass
+    src = src or IM.ImagerySource()
+    target = IM.midpoint(cap) if cap else None
+    surveys = src.surveys(bounds, regions=sorted(regions) or None,
+                          prefer="date" if prefer == "lidar" and target is not None else "newest", target=target)
+    if not surveys:
+        return dict(surveys=[], valid=0.0)
+    r = src.read(surveys, bounds, res=res)
+    d = r.data[:3]
+    ok = np.isfinite(d).all(axis=0)
+    q = np.where(ok, np.clip(np.round(d), 1, 255), 0).astype(np.uint8)          # 0 is no data
+    if q.shape[1:] != (h, w):                                                   # the grids agree at 1 m; guard anyway
+        qq = np.zeros((3, h, w), np.uint8)
+        qq[:, :min(h, q.shape[1]), :min(w, q.shape[2])] = q[:, :h, :w]
+        q = qq
+    if write:
+        with rasterio.open(run / "ml_rgb.tif", "w", driver="GTiff", height=h, width=w, count=3, dtype="uint8", crs=crs,
+                           transform=T, nodata=0, compress="deflate", tiled=True, photometric="RGB") as f:
+            f.write(q)
+            for k, n in enumerate(IMG_BANDS):
+                f.set_band_description(k + 1, n)
+    rec = dict(surveys=[x.slug for x in r.surveys], valid=round(float(ok.mean()), 4),
+               lidar_capture=list(cap) if cap else None)
+    if write:
+        (run / "ml_rgb.json").write_text(_json.dumps(rec, indent=1))
+    return rec
 
 
 def osm_distance(shape, transform, lines=None, areas=None, cap_m=OSM_CAP_M):
@@ -152,14 +208,14 @@ class Mosaic:
     (``BANDS`` or ``BANDS_V4``); ``label_file``: the label raster (its ``class`` band read when it has one)."""
 
     INPUTS = (("features.tif", FEATURE_BANDS), ("hydro.tif", HYDRO_BANDS), ("ml_ways.tif", (WAY_BAND,)),
-              ("ml_osm.tif", (OSM_BAND,)))
+              ("ml_osm.tif", (OSM_BAND,)), ("ml_rgb.tif", IMG_BANDS))
 
     def __init__(self, tiles: dict, keep_open=24, bands=BANDS, label_file="ml_channel_labels.tif"):
         import rasterio
         self.bands = tuple(bands)
         inputs = [(f, names) for f, names in self.INPUTS if any(n in self.bands for n in names)]
         if tuple(n for _, names in inputs for n in names) != self.bands:
-            raise ValueError(f"bands {self.bands} are not features, hydrology, ways[, osm] in that order")
+            raise ValueError(f"bands {self.bands} are not features, hydrology, ways[, osm][, imagery] in that order")
         self.inputs = tuple(inputs)
         self.FILES = self.inputs + ((label_file, ("label", "weight", "class")), ("hydro.tif", ("channel_mask",)))
         self.runs, self.bounds = {}, {}
@@ -233,6 +289,8 @@ class Mosaic:
                 got = [b for b in bands if b]
                 if got:
                     a = ds.read(got, window=win, boundless=True, fill_value=np.nan, out_dtype="float32")
+                    if fname in NAN_NODATA and ds.nodata is not None:
+                        a[a == ds.nodata] = np.nan
                     hh, ww = min(a.shape[1], r1 - r0), min(a.shape[2], c1 - c0)
                     j = 0
                     for i, b in enumerate(bands):

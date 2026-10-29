@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 DEFAULT = Path("reference") / "sea_draining_catchments.gpkg"
-ID_FIELDS = ("catchment_id", "catch_id", "CatchID", "CATCH_ID", "nzsegment", "NZREACH", "OBJECTID", "id", "ID")
+ID_FIELDS = ("catchment_id", "catch_id", "catchid", "nzsegment", "nzreach", "objectid", "id")   # matched ignoring case
 NAME_FIELDS = ("catchment_name", "Name", "NAME", "name", "CatchName", "CATCH_NAME", "River", "RIVER")
 
 
@@ -41,21 +41,30 @@ def load(path=None, bbox=None):
     if bbox is not None:
         from shapely.geometry import box
         g = g[g.intersects(box(*bbox))]
-    idf = next((f for f in ID_FIELDS if f in g.columns), None)
-    nmf = next((f for f in NAME_FIELDS if f in g.columns), None)
+    low = {c.lower(): c for c in g.columns if c != "geometry"}
+    idf = next((low[f.lower()] for f in ID_FIELDS if f.lower() in low), None)
+    if idf is None:                                   # any field named like a catchment id (catch_id, CatchID_2, ...)
+        idf = next((c for lc, c in low.items() if "catch" in lc and "id" in lc), None)
+    nmf = next((low[f.lower()] for f in NAME_FIELDS if f.lower() in low), None)
     g = g.copy()
     g["catchment_id"] = g[idf].astype(str) if idf else [str(i) for i in g.index]
     g["catchment_name"] = g[nmf].astype(str) if nmf else None
+    g.attrs["id_field"] = idf or "(row number)"
     return g
 
 
 def by_id(value, path=None, field=None):
     """The catchment row whose ``field`` (default ``catchment_id``, i.e. the layer's id field such as ``catch_id``;
-    or ``fid``) equals ``value``, or None."""
+    or ``fid``) equals ``value``, or None; ``id_field`` on the row says which field that was."""
     g = load(path)
     f = field or "catchment_id"
+    idf = g.attrs.get("id_field")
     g = g[g[f].astype(str) == str(value)]
-    return g.iloc[0] if len(g) else None
+    if not len(g):
+        return None
+    r = g.iloc[0].copy()
+    r["id_field"] = "fid" if field == "fid" else idf
+    return r
 
 
 def at(point, path=None):

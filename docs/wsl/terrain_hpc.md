@@ -180,3 +180,23 @@ VHDX in Windows while WSL uses it.
 - The patch CNN (ML-1b) needs PyTorch: `bash ~/terrain/terrain_hpc.sh torch` installs the CUDA 12.8 build (the
   RTX PRO 6000, a Blackwell GPU, needs 12.8 or later). On Windows: `python -m pip install torch --index-url
   https://download.pytorch.org/whl/cu128` in the conda environment.
+
+## Unattended plans (pipeline)
+
+A plan is a list of long steps run one after another without you: a weekend's batches, chip sets and trainings
+(`scripts/pipeline.py`; plans in `ml/pipelines/`). It runs detached, like `start`: Windows is kept awake, the file
+cache is emptied every minute, and closing the terminal does not stop it.
+
+```bash
+bash ~/terrain/terrain_hpc.sh update
+bash ~/terrain/terrain_hpc.sh pipeline ml/pipelines/weekend_2026_10_31.yml   # prints the commands, then starts
+bash ~/terrain/terrain_hpc.sh pipeline-status                                # each step's status, the current log
+bash ~/terrain/terrain_hpc.sh pipeline-stop
+```
+
+Each step logs to `~/terrain_data/pipelines/<plan>/<step>.log`. A step that finished is not run again when the plan
+is started again (after a stop, a crash or a reboot): it carries on from where it was (`--from STEP` runs a step and
+the ones after it again; `--only STEP` just that one). A failed step does not stop the plan: the steps that need it are
+skipped, the others go on. At the end `summary.md` in the same folder lists every step with the last lines of its log,
+and `reports/` holds copies of the reports the plan names. A plan will not start while a batch or another plan runs,
+nor when the data disk has less free space than the plan asks for (`min_free_gb`).

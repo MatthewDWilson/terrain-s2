@@ -1,0 +1,81 @@
+# The weekend run of 31 Oct - 2 Nov 2026 (step 5 of the agreed order; design note, 28-29 Oct): unattended, resumable
+# (scripts/pipeline.py; started with: bash ~/terrain/terrain_hpc.sh pipeline ml/pipelines/weekend_2026_10_31.yml).
+# The network-related steps come first (they feed Monday's review), the U-Net comparisons after.
+name: weekend_2026_10_31
+min_free_gb: 350
+manifests:
+  waves123: [ml/manifests/wave1.csv, ml/manifests/wave2.csv, ml/manifests/wave3.csv]
+  waves12: [ml/manifests/wave1.csv, ml/manifests/wave2.csv]
+vars:
+  M: ml/manifests/wave1.csv ml/manifests/wave2.csv ml/manifests/wave3.csv
+  M_w12: ml/manifests/wave1.csv ml/manifests/wave2.csv
+steps:
+  # 1. stage C on the 569 training tiles with the prototype set (rivers from the physics mask, OSM guidance, stored
+  #    outputs), each tile with unet_v2's held-out fold (as the ML-3c tests): the scorer and the channel presence model
+  #    train on these
+  - name: batch_c3
+    run: python scripts/run_tiles.py --manifest {manifest_waves123} --partition {partition} --runs {data}/runs_c3 --param model_set=c_proto --param channel_model={data}/models/unet_v2 {sizing}
+    retries: 3
+  - name: check_c3
+    after: [batch_c3]
+    run: python scripts/check_runs.py --manifest {M} --runs {data}/runs_c3
+    reports: ["{data}/runs_c3/check_batch.csv"]
+  # 2. stage B on them; the channel presence model (labels: council lines and OSM; threshold from the reviews)
+  - name: stage_b_c3
+    after: [batch_c3]
+    run: python scripts/stage_b.py --manifest {M} --runs {data}/runs_c3 --workers 8
+    reports: ["{data}/runs_c3/stage_b.csv"]
+  - name: presence
+    after: [stage_b_c3]
+    run: python scripts/train_channel_presence.py --manifest {M} --runs {data}/runs_c3 --out {data}/models/channel_presence --workers 8
+    reports: ["{data}/models/channel_presence/report.json"]
+  # 3. the scorer retrained on the new network's candidates (waves 1 + 2), tested on wave 3 against scorer_waves12_r
+  - name: dataset_c3
+    after: [batch_c3]
+    run: python scripts/build_dataset.py --manifest {M_w12} --name waves12_c3 --runs {data}/runs_c3 --channel-probs {data}/runs
+    reports: ["{data}/datasets/waves12_c3/card.md"]
+  - name: scorer_c3
+    after: [dataset_c3]
+    run: python scripts/train_scorer.py --dataset {data}/datasets/waves12_c3 --name scorer_waves12_c3
+    reports: ["{data}/models/scorer_waves12_c3/report.md"]
+  - name: compare_scorer_c3
+    after: [scorer_c3]
+    run: python scripts/compare_ml3c.py --manifest ml/manifests/wave3.csv --runs-b {data}/runs_c3 --scorer {data}/models/scorer_waves12_r --scorer-b {data}/models/scorer_waves12_c3 --out {data}/runs_c3/compare_scorer_c3.csv
+    reports: ["{data}/runs_c3/compare_scorer_c3.csv"]
+  # 4. stage A (version 3, with the presence model) on SH12 and catchment 655, into new folders (Monday's review)
+  - name: stage_a_sh12
+    after: [presence]
+    run: mkdir -p {data}/catchments/sh12_v3 && cp {data}/catchments/sh12/catchment.gpkg {data}/catchments/sh12_v3/ && python scripts/stage_a.py --catchment {data}/catchments/sh12_v3 --runs {data}/runs_c2 --trace 1642255.6,6075854.7
+    reports: ["{data}/catchments/sh12_v3/stage_a.json"]
+  - name: stage_a_655
+    after: [presence]
+    run: mkdir -p {data}/catchments/ashley_655_v3 && cp {data}/catchments/ashley_655/catchment.gpkg {data}/catchments/ashley_655_v3/ && python scripts/stage_a.py --catchment {data}/catchments/ashley_655_v3 --runs {data}/runs_c2
+    reports: ["{data}/catchments/ashley_655_v3/stage_a.json"]
+  # 5. unet_v5: labels v5 and the class head, no OSM band
+  - name: chips_v5n
+    run: python scripts/build_chips.py --name ml3_waves123_v5n --manifest {M} --workers 8 --labels v5 --class-shares river=0.2,stream=0.4,drain=0.4
+    done_if: "{data}/datasets/ml3_waves123_v5n/card.json"
+  - name: unet_v5
+    after: [chips_v5n]
+    run: python scripts/train_unet.py --dataset ml3_waves123_v5n --name unet_v5 --config ml/config/unet_v5.yml
+    done_if: "{data}/models/unet_v5/report.md"
+    reports: ["{data}/models/unet_v5/report.md"]
+  # 6. the aerial imagery test, stage 2: imagery on every run's grid, chips with RGB on the labels unet_v3 used
+  #    (labels v4), the U-Net with unet_v3's settings, fold 1 + holdout
+  - name: imagery
+    run: python scripts/imagery_rasters.py --manifest {M} --workers 8
+  - name: chips_rgb
+    after: [imagery]
+    run: python scripts/build_chips.py --name ml3_waves123_rgb --manifest {M} --workers 8 --rgb
+    done_if: "{data}/datasets/ml3_waves123_rgb/card.json"
+  - name: unet_rgb
+    after: [chips_rgb]
+    run: python scripts/train_unet.py --dataset ml3_waves123_rgb --name unet_rgb --config ml/config/unet_v2.yml
+    done_if: "{data}/models/unet_rgb/report.md"
+    reports: ["{data}/models/unet_rgb/report.md"]
+  # 7. every U-Net on the same fold 1 test tiles and council labels (unet_v3 is unet_rgb's control: same labels and
+  #    settings, no imagery); OSM band dropped for unet_v4 as well
+  - name: compare_unets
+    after: [unet_v5, unet_rgb]
+    run: python scripts/compare_channel_models.py --dataset ml3_waves123_v5n --fold blocks:1/5 --models {data}/models/unet_v2/blocks_1of5 {data}/models/unet_v3/blocks_1of5 {data}/models/unet_v4/blocks_1of5 {data}/models/unet_v5/blocks_1of5 {data}/models/unet_rgb/blocks_1of5 --drop-osm --out {work}/compare_unets.csv
+    reports: ["{work}/compare_unets.csv"]

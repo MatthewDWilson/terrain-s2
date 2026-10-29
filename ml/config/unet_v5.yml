@@ -1,0 +1,28 @@
+# ML-3b, unet_v5 (28 Oct 2026): unet_v4 (labels v5: OSM river extents and waterways as positives, the class head)
+# without the OSM input band (chips ml3_waves123_v5n: built with --labels v5 and no --osm-band). Matt: not convinced
+# leaving OSM out is right, but worth the comparison: blanking unet_v4's OSM band improved it on the council labels.
+base: 32
+depth: 4
+epochs: 30
+batch: 128
+lr: 0.0015
+weight_decay: 0.0001
+cldice: 0.5
+cldice_iter: 5
+council_balance: 0.5
+val_share: 0.1
+patience: 6
+tolerance_m: 3.0
+folds: [blocks, council, holdout]
+block_folds: 5
+workers: 12
+amp: true
+seed: 0
+max_val_chips: 4000
+off_physics_weight: 3.0
+off_physics_sampling: 1.0
+threshold_objective: off_physics
+precision_floor: 0.7
+n_classes: 3
+class_weight: 0.5
+osm_dropout: 0.0

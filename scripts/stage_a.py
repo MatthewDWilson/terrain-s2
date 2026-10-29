@@ -1,6 +1,7 @@
 #!/usr/bin/env python
-"""Stage A of channel network v2 on one catchment's tiles: the network routed from one outlet
-(``routed_network.run_catchment``, version 2, 27 Oct), or the first version (``--v1``: ``catchment_mode``).
+"""Stage A of channel network v2 on one catchment's tiles (``routed_network.run_catchment``, version 3, 29 Oct:
+mapped lines always represented, detected channels added by evidence, routed paths without evidence only as flow
+paths, one outlet), or the first version (``--v1``: ``catchment_mode``).
 
     python scripts/stage_a.py --catchment sh12 --runs ~/terrain_data/runs_c --trace 1642255.6,6075854.7
     python scripts/stage_a.py --catchment sh12 --runs ~/terrain_data/runs_c --param a50_m2=50000 --param res_m=10
@@ -53,8 +54,8 @@ def main():
         from terrain_s2 import routed_network as RN
         pts = [tuple(float(v) for v in t.split(",")) for t in a.trace]
         s = RN.run_catchment(cd, a.runs, a.bundles or data / "tiles", params=params, trace_points=pts)
-        keys = ("outlet", "routed_km", "pruned_heads_km", "joined", "drains_joined_km", "network_km", "class_km",
-                "class_sources", "strahler_km", "crossings", "trace")
+        keys = ("evidence", "outlet", "offsets", "mapped", "detected", "pruned_km", "network_km", "network_km_in_catchment",
+                "class_km", "class_sources", "strahler_km", "crossings", "trace")
     print("\n" + "\n".join(f"{k}: {s.get(k)}" for k in keys))
     print(f"\n-> {cd / 'network_a.gpkg'}\n-> {cd / 'stage_a.json'}")
 

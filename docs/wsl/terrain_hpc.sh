@@ -29,6 +29,11 @@
 #   check-runs <manifest...> [--stage S]    completeness and data issues of bundles and runs
 #   dataset <manifest...> --name N
 #                     build_labels + build_dataset for the manifest(s)
+#   pipeline <plan.yml> [--from STEP | --only STEP]
+#                     a plan of long steps (scripts/pipeline.py; e.g. ml/pipelines/weekend_2026_10_31.yml), detached,
+#                     resumable, keeping Windows awake and the file cache emptied; 'pipeline-status', 'pipeline-stop'
+#   pipeline-status   where the plan stands: each step's status, the running step's last log lines
+#   pipeline-stop     stop the plan (a finished step stays done; start it again to carry on)
 #
 # Windows side, once (PowerShell, as yourself; section 1 of docs/wsl/terrain_hpc.md):
 #   wsl --install -d Ubuntu-24.04 --name terrain        # or: wsl --install Ubuntu-24.04, then rename
@@ -470,6 +475,75 @@ chips() {  # ML-3a step 5: training chips from the saved rasters and label raste
     (cd "$TS2" && in_env python scripts/build_chips.py --name "$name" --manifest "${manifests[@]}" "${opts[@]}")
 }
 
+pipeline() {  # a plan of long steps, detached (scripts/pipeline.py)
+    load_env
+    local plan="${1:-}"; shift || true
+    [ -n "$plan" ] || die "usage: pipeline <plan.yml> [--from STEP | --only STEP]"
+    case "$plan" in /*) ;; *) plan="$TS2/$plan" ;; esac
+    [ -f "$plan" ] || die "no plan at $plan"
+    mkdir -p "$RUN"
+    for f in batch.pid pipeline.pid; do
+        if [ -f "$RUN/$f" ] && kill -0 "$(cat "$RUN/$f")" 2>/dev/null; then
+            die "already running ($f: pid $(cat "$RUN/$f")): 'status', 'pipeline-status', 'stop' or 'pipeline-stop'"
+        fi
+    done
+    host_memory_check
+    printf '%s\n' "$plan" "$@" > "$RUN/pipeline.args"
+    (cd "$TS2" && in_env python scripts/pipeline.py --plan "$plan" --dry-run) | sed 's/^/  /' | head -60
+    setsid nohup bash "$0" _pipeline >> "$RUN/pipeline.log" 2>&1 < /dev/null &
+    echo $! > "$RUN/pipeline.pid"
+    cache_guard "$(cat "$RUN/pipeline.pid")"
+    say "Started the plan (pid $(cat "$RUN/pipeline.pid")): $plan $*"
+    note "detached: closing this terminal does not stop it. 'pipeline-status' for progress, 'pipeline-stop' to end it."
+    note "log: $RUN/pipeline.log; each step's log and the summary: $TERRAIN_DATA_DIR/pipelines/<plan name>/"
+}
+
+_pipeline() {  # (internal) run the plan
+    load_env
+    local args; mapfile -t args < "$RUN/pipeline.args"
+    keep_awake
+    echo "$(date '+%F %T') plan ${args[*]}"
+    (cd "$TS2" && in_env python scripts/pipeline.py --plan "${args[0]}" "${args[@]:1}")
+    echo "$(date '+%F %T') plan ended: exit $?"
+    [ -f "$RUN/awake.pid" ] && kill "$(cat "$RUN/awake.pid")" 2>/dev/null
+    rm -f "$RUN/pipeline.pid" "$RUN/awake.pid"
+}
+
+pipeline_status() {
+    load_env
+    local plan name st
+    plan=$(head -1 "$RUN/pipeline.args" 2>/dev/null) || die "no plan has been started"
+    name=$(awk '/^name:/ {print $2; exit}' "$plan")
+    st="$TERRAIN_DATA_DIR/pipelines/$name/status.json"
+    if [ -f "$RUN/pipeline.pid" ] && kill -0 "$(cat "$RUN/pipeline.pid")" 2>/dev/null; then
+        say "Plan $name: running (pid $(cat "$RUN/pipeline.pid"))"
+    else
+        say "Plan $name: not running"
+    fi
+    [ -f "$st" ] || { note "no status yet"; return; }
+    in_env python - "$st" << 'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+print(f"  updated {s['updated']}; {s.get('free_gb')} GB free; running: {s.get('current') or '-'}")
+for n, v in s["steps"].items():
+    print(f"  {n:22s} {v.get('status'):12s} {v.get('minutes', '') or ''} {v.get('reason', '') or ''}")
+cur = s.get("current")
+if cur:
+    lines = open(s["steps"][cur]["log"], errors="replace").read().splitlines()[-8:]
+    print("\n  last lines of " + cur + ":\n    " + "\n    ".join(lines))
+PY
+}
+
+pipeline_stop() {
+    load_env
+    [ -f "$RUN/pipeline.pid" ] || die "no plan is running"
+    local pid; pid=$(cat "$RUN/pipeline.pid")
+    pkill -TERM -s "$pid" 2>/dev/null || kill "$pid" 2>/dev/null
+    [ -f "$RUN/awake.pid" ] && kill "$(cat "$RUN/awake.pid")" 2>/dev/null
+    rm -f "$RUN/pipeline.pid" "$RUN/awake.pid"
+    say "Stopped the plan (pid $pid); finished steps stay done: 'pipeline' with the same plan carries on"
+}
+
 labels() {
     load_env
     local src="${1:-}"
@@ -507,5 +581,9 @@ case "$mode" in
     check-runs) check_runs "$@" ;;
     labels) labels "$@" ;;
     partition) partition ;;
+    pipeline) pipeline "$@" ;;
+    _pipeline) _pipeline ;;
+    pipeline-status) pipeline_status ;;
+    pipeline-stop) pipeline_stop ;;
     *) die "unknown mode '$mode' (setup | update | check | labels | partition | batch | start | status | stop | torch | dataset)" ;;
 esac

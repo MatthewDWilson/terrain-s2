@@ -2431,6 +2431,50 @@ labels `channels`), before and after the redrawing; the synthetic test's median 
 `catchments.by_id` and `catchment_tiles.py --id / --fid` (MfE's id field is `catch_id`, now recognised: the "1373"
 printed for SH12 was the row number).
 
+**Stage A version 3, the channel presence model, and the weekend pipeline** (29 Oct). Matt on version 2 (SH12 and
+catchment 655, the right one by fid; `--id 1589` had matched the feature id because the id field was not
+recognised): the outlet is right by the OSM rule; both problem crossings on SH12 are captured; but spurious streams
+remain (surface flow paths on hillslopes at SH12; flow paths across the floodplain at 655, where 1,023 of 4,309 kept
+segments had no stage B channel along them, kept by the area prior alone), and the main river at 655 left its course
+across a field while OSM maps it. New rule (Matt): the network is additive and refining, not subtractive: OSM and
+council lines are always represented (their position corrected, attributes added); detected channels missing from them
+are added where the evidence supports them; routing makes no channel of its own. Paths without evidence that connect
+evidence-backed network to the outlet are kept as a `flow path` class (for later post-processing). Deferred to a later
+phase: LiDAR-derived catchments with a defined coastline (the tidal-zone outlet at SH12, drains likely flowing north out
+of the catchment; coastal-strip "catchments" such as the Kaikoura one, whose streams reach the sea separately).
+
+Version 3 (`routed_network.run_catchment`): (1) OSM waterways (river, stream, canal, drain, ditch) and council channel
+lines in the band, cut into 400 m pieces and redrawn through a 20 m corridor over `cost_window` (towards detected
+channels and the bed); (2) the coarse DEM burned 5 m along them and by evidence along stage B reaches (2 m x
+evidence), crossing cutlines carved by p_structure, breached, routed from the OSM outlet; (3) evidence along each
+routed segment: a mapped line, or a stage B reach whose evidence reaches the threshold (the channel presence model's
+probability and calibrated threshold, else the hand-set evidence and 0.5), within 6 m; no area prior; heads pruned
+where less than half a segment has evidence and trimmed to where it starts; (4) redrawn on the 1 m channels as before;
+(5) each segment split into channel and flow-path pieces by its evidence (runs under 20 m merged); classes from the
+mapped lines' tags (OSM river / stream; canal, drain, ditch as drain; council stream or drain), OSM river areas, the
+U-Net's class, the stage B class; (6) the mapped lines the network misses (over 20 m) added; (7) stage B reaches the
+network misses and whose evidence reaches the threshold added where they join by probability (the join itself a flow
+path); (8) classes consistent downstream through flow paths; (9) width and depth on every piece: stage B's where a
+detected reach runs along, else median cross-sections of the 1 m DEM every 20 m (depth = the lower bank's top above
+the bed, width = between the half-depth points); upstream area on every piece. Summary: mapped lines' coverage (to be
+~1), what was added, class lengths with flow paths, road crossings on flow paths. `catchments` id field matched ignoring
+case (and any field named like a catchment id), printed. `_mosaic` opens only the files meeting a window.
+
+Channel presence model (`ml/channel_presence.py`, `scripts/train_channel_presence.py`): per stage B reach, width,
+depth, length, bendiness, straightness, corners, slope, roadside share, U-Net probability along it, physics or U-Net
+only, stream probability, the U-Net's class; label: council or OSM lines along it (positive-unlabelled: it learns
+P(recorded)); cross-validated by council; threshold set on the channel reviews (the lowest probability whose reviewed
+precision reaches 0.7). Stage A uses `<data>/models/channel_presence/model.pkl` when it exists.
+
+The weekend pipeline (`scripts/pipeline.py`, `terrain_hpc.sh pipeline | pipeline-status | pipeline-stop`, plan
+`ml/pipelines/weekend_2026_10_31.yml`): unattended, resumable, steps with dependencies, retries, reports and a summary.
+Steps: stage C on the 569 training tiles with `c_proto` and unet_v2's held-out folds (`runs_c3`), check, stage B, the
+channel presence model, the scorer dataset and scorer on the new network's candidates (waves 1 + 2) and its wave 3 test
+against `scorer_waves12_r`, stage A v3 on SH12 and 655 (new folders), chips `ml3_waves123_v5n` and unet_v5 (labels v5
+and the class head, no OSM band), the imagery test's stage 2 (`imagery_rasters.py`: 8-bit RGB on every run's grid
+from the survey closest to the LiDAR; chips `ml3_waves123_rgb` with 26 bands on labels v4; unet_rgb with unet_v3's
+settings, unet_v3 its control), and every U-Net on the same fold 1 tiles and council labels.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

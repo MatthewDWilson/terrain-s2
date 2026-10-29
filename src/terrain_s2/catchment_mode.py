@@ -303,14 +303,33 @@ def order_and_upstream(ends, lengths, dist, pred):
 
 # ---------------------------------------------------------------- connecting what is left
 
+_BOUNDS = {}
+
+
+def _file_bounds(f):
+    """A raster's bounds, read once per process (stage A reads small windows many times)."""
+    import rasterio
+    k = str(f)
+    if k not in _BOUNDS:
+        with rasterio.open(f) as d:
+            _BOUNDS[k] = tuple(d.bounds)
+    return _BOUNDS[k]
+
+
 def _mosaic(files, bounds, res=1.0, nodata=np.nan):
-    """A window over the rasters that cover it (first wins), float32, with its transform."""
+    """A window over the rasters that cover it (first wins), float32, with its transform. Only the files whose
+    extent meets the window are opened."""
     import rasterio
     from rasterio.merge import merge
-    ds = [rasterio.open(f) for f in files if Path(f).exists()]
+    hit = []
+    for f in files:
+        if not Path(f).exists():
+            continue
+        b = _file_bounds(f)
+        if not (b[2] <= bounds[0] or b[0] >= bounds[2] or b[3] <= bounds[1] or b[1] >= bounds[3]):
+            hit.append(f)
+    ds = [rasterio.open(f) for f in hit]
     try:
-        ds = [d for d in ds if not (d.bounds.right <= bounds[0] or d.bounds.left >= bounds[2] or
-                                    d.bounds.top <= bounds[1] or d.bounds.bottom >= bounds[3])]
         if not ds:
             return None, None
         arr, T = merge(ds, bounds=bounds, res=res, nodata=ds[0].nodata if ds[0].nodata is not None else nodata,

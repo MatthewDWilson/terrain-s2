@@ -1,5 +1,6 @@
-"""Stage A version 2 (routed_network): one outlet at the coast, the network routed from it on a conditioned coarse DEM,
-heads by probability, drains joined by probability, classes in order, crossings."""
+"""Stage A (routed_network, version 3): one outlet where the main OSM waterway leaves the catchment, the network routed
+from it on a conditioned coarse DEM; mapped lines always represented; detected reaches added by evidence; routed paths
+without evidence only as flow paths; heads where the evidence ends; classes in order; crossings; widths and depths."""
 import json
 
 import geopandas as gpd
@@ -82,7 +83,7 @@ def test_stage_a_v2_routes_one_network_to_the_coast(tmp_path):
     o = s["outlet"]["chosen"]
     assert o["method"] == "osm" and o["waterway"] == "Test River" and o["x"] > 1950 and abs(o["y"] - 500) < 10
     off = s["offsets"]
-    assert off["stage_b_after"]["median_m"] < off["stage_b_before"]["median_m"] and off["stage_b_after"]["median_m"] < 1.0
+    assert off["stage_b"]["median_m"] < 1.0 and s["mapped"]["covered"] > 0.97 and s["version"] == 3
     N = gpd.read_file(cd / "network_a.gpkg", layer="channels")
     routed = N[N.channel_source == "routed"]
     from shapely import union_all
@@ -97,7 +98,8 @@ def test_stage_a_v2_routes_one_network_to_the_coast(tmp_path):
     at_road = X[(X.geometry.x - 700).abs() < 10]
     assert len(at_culvert) >= 1 and at_culvert.p_structure.max() == pytest.approx(0.9)
     assert len(at_road) >= 1 and at_road.needs_structure.all()                   # no candidate explains it
-    assert s["joined"]["accepted"] >= 1 and (N.channel_source == "joined drain").any()
+    assert s["detected"]["joined"] >= 1 and (N.channel_source == "detected").any() and (N.channel_source == "join").any()
+    assert N.width_m.notna().all() and set(N.width_source) <= {"stage B", "cross-sections"}
     J = gpd.read_file(cd / "network_a.gpkg", layer="joins")
     assert (J.reason == "no_network_near").any() and (J.p_join.max() >= 0.5)
     tr = s["trace"]
@@ -152,3 +154,31 @@ def test_catchment_by_id(tmp_path):
     assert catchments.by_id(1589, f).geometry.bounds[0] == 10
     assert catchments.by_id(1, f, field="fid").catchment_id == "1373"          # GeoPackage feature ids start at 1
     assert catchments.by_id(9999, f) is None
+
+
+def test_flow_paths_heads_and_mapped_lines(tmp_path):
+    """No OSM river: detected channel from x 300 to 600 and from 1200 to the coast; between them the routed path has
+    no evidence (a flow path); above 300 the head is trimmed; an OSM drain on the slope is always represented."""
+    t1 = [_reach(L([(300, 500), (600, 500)]))]
+    t2 = [_reach(L([(1200, 500), (1985, 500)]))]
+    drain = gpd.GeoDataFrame(dict(waterway=["drain"], name=[None]), geometry=[L([(1300, 900), (1300, 760)])], crs=2193)
+    _tile(tmp_path, "T1", 0, t1)
+    _tile(tmp_path, "T2", 1000, t2, coast=L([(1990, 0), (1990, 1000)]), waterways=drain)
+    cd = _catchment(tmp_path)
+    s = RN.run_catchment(cd, tmp_path / "runs", tmp_path / "tiles", log=lambda m: None)
+    N = gpd.read_file(cd / "network_a.gpkg", layer="channels")
+    fp = N[N.class_v2 == "flow path"]
+    assert len(fp) and all(abs(g.centroid.y - 500) < 10 and 550 < g.centroid.x < 1250 for g in fp.geometry)
+    ch = N[(N.class_v2 != "flow path") & N.geometry.apply(lambda g: abs(g.centroid.y - 500) < 10)]
+    assert ch.geometry.bounds.minx.min() > 250                                   # the head ends near the evidence
+    assert s["mapped"]["covered"] > 0.97 and s["class_km"]["flow path"] > 0.4
+    from shapely import union_all
+    assert union_all(N.geometry.to_numpy()).distance(L([(1300, 880), (1300, 780)])) < 6     # the OSM drain is there
+
+
+def test_catchment_id_field_ignores_case(tmp_path):
+    from terrain_s2 import catchments
+    f = tmp_path / "c.gpkg"
+    gpd.GeoDataFrame(dict(Catch_ID=[1589, 1373]), geometry=[box(0, 0, 10, 10), box(10, 0, 20, 10)], crs=2193).to_file(f)
+    r = catchments.by_id(1589, f)
+    assert r.geometry.bounds[0] == 0 and r.id_field == "Catch_ID" and catchments.by_id(2, f, field="fid").catchment_id == "1373"
