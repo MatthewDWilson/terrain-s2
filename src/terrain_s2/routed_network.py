@@ -958,6 +958,41 @@ def cross_sections(lines, tiles, cores, bundles, P):
     return out
 
 
+def widths_from_reaches(lines, R, dist_m=3.0):
+    """(width, depth) per line from the stage B reaches along it: weighted by the length of each reach with a known
+    width within ``dist_m`` of the line, when those cover at least half the line; NaN otherwise (a reach that only
+    touches the line has no length along it, and reaches without a width do not count: the SH12-655 run of 30 Oct
+    stopped on weights summing to zero)."""
+    from shapely import STRtree
+    w_out = np.full(len(lines), np.nan)
+    d_out = np.full(len(lines), np.nan)
+    if R is None or not len(R) or "width_m" not in R:
+        return w_out, d_out
+    rt = STRtree(R.geometry.to_numpy())
+    wr = R.width_m.to_numpy(float)
+    dr = R.incision_m.to_numpy(float) if "incision_m" in R else np.full(len(R), np.nan)
+    for i, g in enumerate(lines):
+        if g is None or g.is_empty or g.length <= 0:
+            continue
+        idx = rt.query(g, predicate="dwithin", distance=dist_m)
+        if not len(idx):
+            continue
+        idx = idx[np.isfinite(wr[idx])]
+        if not len(idx):
+            continue
+        buf = g.buffer(dist_m)
+        ln = np.array([R.geometry.iloc[j].intersection(buf).length for j in idx])
+        keep = ln > 0
+        if not keep.any() or ln[keep].sum() < 0.5 * g.length:
+            continue
+        idx, ln = idx[keep], ln[keep]
+        w_out[i] = float(np.average(wr[idx], weights=ln))
+        dd = dr[idx]
+        okd = np.isfinite(dd)
+        d_out[i] = float(np.average(dd[okd], weights=ln[okd])) if okd.any() else np.nan
+    return w_out, d_out
+
+
 def classes_v3(N, seg_down, P):
     """Classes made consistent downstream, through flow paths: a channel is at least the highest channel class that
     flows into it, directly or through flow paths; flow paths keep their class. ``seg_down``: index of each row's
@@ -1206,20 +1241,11 @@ def run_catchment(catchment_dir, runs, bundles, tiles=None, params=None, trace_p
     N["depth_m"] = np.nan
     N["width_source"] = None
     if len(R) and "width_m" in R:
-        rt = STRtree(R.geometry.to_numpy())
-        for i, g in enumerate(N.geometry):
-            idx = rt.query(g, predicate="dwithin", distance=3.0)
-            if not len(idx):
-                continue
-            ln = np.array([g.intersection(R.geometry.iloc[j].buffer(3.0)).length for j in idx])
-            if ln.sum() >= 0.5 * g.length:
-                w_ = R.width_m.iloc[idx].to_numpy(float)
-                d_ = R.incision_m.iloc[idx].to_numpy(float) if "incision_m" in R else np.full(len(idx), np.nan)
-                ok = np.isfinite(w_)
-                if ok.any():
-                    N.loc[N.index[i], ["width_m", "depth_m", "width_source"]] = [
-                        float(np.average(w_[ok], weights=ln[ok])),
-                        float(np.nanmean(d_)) if np.isfinite(d_).any() else np.nan, "stage B"]
+        w_b, d_b = widths_from_reaches(N.geometry, R)
+        ok = np.isfinite(w_b)
+        N.loc[N.index[ok], "width_m"] = w_b[ok]
+        N.loc[N.index[ok], "depth_m"] = d_b[ok]
+        N.loc[N.index[ok], "width_source"] = "stage B"
     rest = np.flatnonzero(N.width_source.isna().to_numpy())
     if len(rest):
         wd = cross_sections([N.geometry.iloc[i] for i in rest], tiles, cores, bundles, P)

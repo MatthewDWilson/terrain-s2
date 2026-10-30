@@ -2487,6 +2487,12 @@ the limit 1,800 s. (4-5) The pipeline tests: plans run their steps with bash, so
 (the runner is for WSL), and the dry-run test no longer assumes forward slashes. pyflwdir 0.5.12's pending deprecation
 (transforms composed with `*`) is silenced as rasterio's is.
 
+**Stage A version 3 on catchment 655, first try** (30 Oct): 11,766 stage B pieces (595 km), 349 mapped pieces (125 km:
+OSM 70, council 55), the outlet on Stony Creek; then stopped on weights summing to zero where widths were transferred
+from stage B: a piece could pass the half-length test on reaches without a width while the ones with a width only
+touched it. `widths_from_reaches`: only reaches with a width and some length along the piece count; tested, with a
+whole synthetic run on reaches lacking widths.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

@@ -182,3 +182,31 @@ def test_catchment_id_field_ignores_case(tmp_path):
     gpd.GeoDataFrame(dict(Catch_ID=[1589, 1373]), geometry=[box(0, 0, 10, 10), box(10, 0, 20, 10)], crs=2193).to_file(f)
     r = catchments.by_id(1589, f)
     assert r.geometry.bounds[0] == 0 and r.id_field == "Catch_ID" and catchments.by_id(2, f, field="fid").catchment_id == "1373"
+
+
+def test_widths_from_reaches_edge_cases():
+    """Reaches without a width, or only touching the line, carry no weight (the 655 run of 30 Oct stopped on weights
+    summing to zero)."""
+    line = L([(0, 0), (100, 0)])
+    R = gpd.GeoDataFrame(dict(width_m=[np.nan, 4.0, 2.0], incision_m=[0.5, np.nan, 0.6]),
+                         geometry=[L([(0, 1), (100, 1)]),          # along it, width unknown
+                                   L([(100, 0), (100, 50)]),       # touches its end only: no length along it
+                                   L([(0, -1), (60, -1)])],        # along 60 % of it
+                         crs=2193)
+    w, d = RN.widths_from_reaches([line, L([(0, 500), (10, 500)])], R)
+    assert w[0] == pytest.approx(2.0, abs=0.15) and d[0] == pytest.approx(0.6) and np.isnan(w[1])   # 3 m of the end one
+    w2, _ = RN.widths_from_reaches([line], R.iloc[:2])                # only the unknown and the touching one
+    assert np.isnan(w2[0])
+
+
+def test_stage_a_with_missing_widths(tmp_path):
+    """The whole of stage A when stage B's reaches lack widths (cross-sections take over)."""
+    t1 = [dict(_reach(L([(300, 500), (1000, 500)])), width_m=np.nan, incision_m=np.nan)]
+    t2 = [dict(_reach(L([(1000, 500), (1985, 500)])), width_m=np.nan)]
+    _tile(tmp_path, "T1", 0, t1)
+    _tile(tmp_path, "T2", 1000, t2, coast=L([(1990, 0), (1990, 1000)]))
+    cd = _catchment(tmp_path)
+    s = RN.run_catchment(cd, tmp_path / "runs", tmp_path / "tiles", log=lambda m: None)
+    N = gpd.read_file(cd / "network_a.gpkg", layer="channels")
+    assert (N.width_source == "cross-sections").all() and s["network_km"] > 1.0
+    assert N.depth_m.dropna().between(0, 5).all()
