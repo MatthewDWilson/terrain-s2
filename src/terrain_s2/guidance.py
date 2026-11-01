@@ -118,12 +118,17 @@ def snap_waterways(lines, bands, T, kinds=LINE_KINDS, river_mask=None, params=No
     import pandas as pd
 
     from .ml import snap
+    # an empty result keeps the columns, so callers need no special case (a tile without OSM waterways of these kinds
+    # failed the 31 Oct batch: 38 tiles, "'GeoDataFrame' object has no attribute 'waterway'")
+    empty = gpd.GeoDataFrame(dict(waterway=pd.Series([], dtype=object), snapped=pd.Series([], dtype=bool),
+                                  bed_frac=pd.Series([], dtype=float), offset_med_m=pd.Series([], dtype=float)),
+                             geometry=gpd.GeoSeries([], crs=2193), crs=2193)
     if lines is None or not len(lines) or "waterway" not in lines:
-        return gpd.GeoDataFrame(geometry=[], crs=2193)
+        return empty
     L = lines[lines.waterway.isin(kinds)].copy()
     L = L[L.geometry.notna() & ~L.geometry.is_empty]
     if not len(L):
-        return gpd.GeoDataFrame(geometry=[], crs=2193)
+        return empty
     L = L.explode(index_parts=False).reset_index(drop=True)
     depth, bed = snap.bed_depth(bands)
     parts = []
@@ -139,7 +144,7 @@ def snap_waterways(lines, bands, T, kinds=LINE_KINDS, river_mask=None, params=No
             u = union_all(rp)
             S["geometry"] = S.geometry.difference(u)
             S = S[~S.geometry.is_empty].explode(index_parts=False).reset_index(drop=True)
-    return S
+    return S if len(S) else empty
 
 
 def _polys(mask, T):

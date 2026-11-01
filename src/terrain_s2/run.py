@@ -123,7 +123,7 @@ def _osm_guidance(a, w, res, riv, rpolys, sk, fp_buf):
         S = S[S.snapped.astype(bool)]
     path = np.zeros(sk.shape, bool)
     kind = np.zeros(sk.shape, np.uint8)
-    for geom, ww in zip(S.geometry, S.waterway):
+    for geom, ww in zip(S.geometry, S["waterway"] if "waterway" in S else [None] * len(S)):
         for part in getattr(geom, "geoms", [geom]):
             if part.geom_type != "LineString" or part.length <= 0:
                 continue
@@ -141,7 +141,7 @@ def _osm_guidance(a, w, res, riv, rpolys, sk, fp_buf):
                 river_extent_km2=round(float(rx.sum()) * cs * cs / 1e6, 4), river_cells_dem=n_dem,
                 river_cells=int(riv.sum()), waterway_lines=n_lines, snapped=int(len(S)),
                 snapped_km=round(float(S.length.sum()) / 1000, 2) if len(S) else 0.0,
-                by_kind={k: int(v) for k, v in S.waterway.value_counts().items()} if len(S) else {})
+                by_kind={k: int(v) for k, v in S["waterway"].value_counts().items()} if len(S) and "waterway" in S else {})
     return rpolys, riv, sk, path, kind, info
 
 

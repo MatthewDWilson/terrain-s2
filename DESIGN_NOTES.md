@@ -2501,6 +2501,12 @@ a handful of failing tiles made the whole batch step fail, through its retries. 
 --max-failed-share` (exit 0 when at most that share of all the manifest's tiles lacks a finished run; the plan uses
 0.02, as the dataset build allows); `pipeline.py` steps may say `needs_gb` and fail at once ("no space") with less free;
 the plan removes a chip set's cache once its U-Net is trained, and gives every heavy step its space.
+The batch's failing tiles (1 Nov): 38 tiles (CG11, CF15 and others) failed in stage C with "'GeoDataFrame' object has no
+attribute 'waterway'": a tile with no OSM river, stream, canal or drain lines got an empty table without columns from
+`guidance.snap_waterways`, which `run._osm_guidance` read unconditionally. The empty result now keeps its columns
+(waterway, snapped, bed_frac, offset_med_m) and the run guards it; tested on a tile with only a weir and one with no
+waterways layer (the test fails as the batch did without the fix). 38 of 569 is 6.7 %, over the plan's 2 %: the
+restarted plan reruns just them.
 
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 

@@ -106,3 +106,22 @@ def test_run_with_osm_guidance_and_c_outputs(tmp_path):
     base = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "base", buffer=50.0, rasters="none",
                    device="cpu")
     assert "guidance" not in base.info and "osm_share" not in base.layers["channels"]
+
+
+def test_run_with_osm_guidance_and_no_osm_waterways(tmp_path):
+    """A tile whose OSM has no river, stream, canal or drain lines (38 tiles of the 31 Oct batch failed on it), or no
+    waterways layer at all, runs with OSM guidance all the same."""
+    sc = make_scene(nx=NX, ny=NY)
+    empty = G.snap_waterways(gpd.GeoDataFrame({"waterway": ["weir"]}, geometry=[_lines(sc, "stream")], crs=2193),
+                             None, sc.transform)
+    assert len(empty) == 0 and {"waterway", "snapped", "bed_frac", "offset_med_m"} <= set(empty.columns)
+    assert len(G.snap_waterways(None, None, sc.transform)) == 0
+    for case, layer in (("weir", "osm_waterways"), ("none", None)):
+        (tmp_path / case).mkdir()
+        d = _write(tmp_path / case)
+        if layer:
+            gpd.GeoDataFrame({"waterway": ["weir"]}, geometry=[_lines(sc, "stream")], crs=2193).to_file(
+                d / "context.gpkg", layer=layer, driver="GPKG")
+        res = network(d / "dem.tif", d / "dsm.tif", d / "aoi.geojson", out=d / "c", buffer=50.0, rasters="none",
+                      device="cpu", osm_guidance=True, c_outputs=True)
+        assert res.info["guidance"]["snapped"] == 0 and res.info["guidance"]["by_kind"] == {}
