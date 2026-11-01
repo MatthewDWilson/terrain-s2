@@ -2493,6 +2493,15 @@ from stage B: a piece could pass the half-length test on reaches without a width
 touched it. `widths_from_reaches`: only reaches with a width and some length along the piece count; tested, with a
 whole synthetic run on reaches lacking widths.
 
+**The first weekend run** (31 Oct - 1 Nov). After growing the data disk by ~600 GB: chips_v5n, unet_v5, imagery and
+chips_rgb done; batch_c3 failed after 350 min (all that needed it skipped); unet_rgb failed after 2 min with the disk at
+0 GB free. Causes: the U-Nets' unpacked chip caches (`datasets/<name>/cache`, ~135-145 GB a chip set, kept after
+training; earlier trainings had left theirs) filled the disk; `run_tiles.py` exits with an error when any tile fails, so
+a handful of failing tiles made the whole batch step fail, through its retries. Fixes: `run_tiles.py
+--max-failed-share` (exit 0 when at most that share of all the manifest's tiles lacks a finished run; the plan uses
+0.02, as the dataset build allows); `pipeline.py` steps may say `needs_gb` and fail at once ("no space") with less free;
+the plan removes a chip set's cache once its U-Net is trained, and gives every heavy step its space.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

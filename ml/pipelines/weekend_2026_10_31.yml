@@ -1,6 +1,9 @@
 # The weekend run of 31 Oct - 2 Nov 2026 (step 5 of the agreed order; design note, 28-29 Oct): unattended, resumable
 # (scripts/pipeline.py; started with: bash ~/terrain/terrain_hpc.sh pipeline ml/pipelines/weekend_2026_10_31.yml).
 # The network-related steps come first (they feed Monday's review), the U-Net comparisons after.
+# 1 Nov: the first run ended at 0 GB free (the U-Nets' unpacked chip caches, ~135-145 GB a chip set) with batch_c3
+# failed on a few tiles; now the batch passes with up to 2 % of tiles unfinished, a chip set's cache is removed once its
+# training is done, and steps check their space first (needs_gb).
 name: weekend_2026_10_31
 min_free_gb: 350
 manifests:
@@ -14,8 +17,9 @@ steps:
   #    outputs), each tile with unet_v2's held-out fold (as the ML-3c tests): the scorer and the channel presence model
   #    train on these
   - name: batch_c3
-    run: python scripts/run_tiles.py --manifest {manifest_waves123} --partition {partition} --runs {data}/runs_c3 --param model_set=c_proto --param channel_model={data}/models/unet_v2 {sizing}
-    retries: 3
+    run: python scripts/run_tiles.py --manifest {manifest_waves123} --partition {partition} --runs {data}/runs_c3 --param model_set=c_proto --param channel_model={data}/models/unet_v2 --max-failed-share 0.02 {sizing}
+    retries: 2
+    needs_gb: 200
   - name: check_c3
     after: [batch_c3]
     run: python scripts/check_runs.py --manifest {M} --runs {data}/runs_c3
@@ -25,6 +29,7 @@ steps:
     after: [batch_c3]
     run: python scripts/stage_b.py --manifest {M} --runs {data}/runs_c3 --workers 8
     reports: ["{data}/runs_c3/stage_b.csv"]
+    needs_gb: 20
   - name: presence
     after: [stage_b_c3]
     run: python scripts/train_channel_presence.py --manifest {M} --runs {data}/runs_c3 --out {data}/models/channel_presence --workers 8
@@ -55,24 +60,29 @@ steps:
   - name: chips_v5n
     run: python scripts/build_chips.py --name ml3_waves123_v5n --manifest {M} --workers 8 --labels v5 --class-shares river=0.2,stream=0.4,drain=0.4
     done_if: "{data}/datasets/ml3_waves123_v5n/card.json"
+    needs_gb: 80
   - name: unet_v5
     after: [chips_v5n]
-    run: python scripts/train_unet.py --dataset ml3_waves123_v5n --name unet_v5 --config ml/config/unet_v5.yml
+    run: python scripts/train_unet.py --dataset ml3_waves123_v5n --name unet_v5 --config ml/config/unet_v5.yml && rm -rf {data}/datasets/ml3_waves123_v5n/cache
     done_if: "{data}/models/unet_v5/report.md"
     reports: ["{data}/models/unet_v5/report.md"]
+    needs_gb: 170
   # 6. the aerial imagery test, stage 2: imagery on every run's grid, chips with RGB on the labels unet_v3 used
   #    (labels v4), the U-Net with unet_v3's settings, fold 1 + holdout
   - name: imagery
     run: python scripts/imagery_rasters.py --manifest {M} --workers 8
+    needs_gb: 40
   - name: chips_rgb
     after: [imagery]
     run: python scripts/build_chips.py --name ml3_waves123_rgb --manifest {M} --workers 8 --rgb
     done_if: "{data}/datasets/ml3_waves123_rgb/card.json"
+    needs_gb: 80
   - name: unet_rgb
     after: [chips_rgb]
-    run: python scripts/train_unet.py --dataset ml3_waves123_rgb --name unet_rgb --config ml/config/unet_v2.yml
+    run: python scripts/train_unet.py --dataset ml3_waves123_rgb --name unet_rgb --config ml/config/unet_v2.yml && rm -rf {data}/datasets/ml3_waves123_rgb/cache
     done_if: "{data}/models/unet_rgb/report.md"
     reports: ["{data}/models/unet_rgb/report.md"]
+    needs_gb: 180
   # 7. every U-Net on the same fold 1 test tiles and council labels (unet_v3 is unet_rgb's control: same labels and
   #    settings, no imagery); OSM band dropped for unet_v4 as well
   - name: compare_unets

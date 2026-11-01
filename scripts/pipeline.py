@@ -11,8 +11,9 @@ TERRAIN_DATA_DIR, ``{ts2}`` = the repository, ``{partition}``, ``{work}`` = ``<d
 ``manifests`` ({name: [csv, ...]}: merged into ``{work}/<name>.csv`` first); ``min_free_gb`` (stop before starting when
 the data disk has less); ``steps``, each with ``name``, ``run`` (a shell command, run in the repository with the
 environment's python), optionally ``after`` (steps it needs: if one failed, it is skipped), ``done_if`` (a path: when it
-exists the step counts as done), ``retries`` (extra attempts, e.g. for a batch, which resumes) and ``reports`` (paths
-copied to ``{work}/reports`` when it succeeds).
+exists the step counts as done), ``retries`` (extra attempts, e.g. for a batch, which resumes), ``reports`` (paths
+copied to ``{work}/reports`` when it succeeds) and ``needs_gb`` (the free space it needs on the data disk: with less,
+it fails at once, ``no space``, rather than filling the disk; the weekend run of 31 Oct ended at 0 GB free).
 
 Each step logs to ``{work}/<step>.log``; ``{work}/status.json`` says where it stands; a step that succeeded leaves
 ``{work}/<step>.done`` and is skipped next time. A failed step does not stop the plan: the steps that do not need it
@@ -125,6 +126,14 @@ def main():
             continue
         cmd = fill(s["run"], values)
         log = work / f"{n}.log"
+        free_now = shutil.disk_usage(data).free / 1e9
+        if s.get("needs_gb") and free_now < float(s["needs_gb"]):
+            status[n] = dict(status="failed", reason=f"no space: {free_now:.0f} GB free, needs {s['needs_gb']} GB",
+                             log=str(log))
+            with open(log, "a") as f:
+                f.write(f"\n==== {time.strftime('%F %T')} not started: {status[n]['reason']}\n")
+            save()
+            continue
         t0 = time.time()
         rc = None
         for attempt in range(1 + int(s.get("retries", 0))):

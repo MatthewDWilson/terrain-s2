@@ -75,3 +75,15 @@ def test_the_weekend_plan_fills():
             if w in s["run"]:
                 script = s["run"].split("python ")[-1].split()[0]
                 assert (ROOT / script).exists(), script
+
+
+@pytest.mark.skipif(os.name == "nt", reason="plans run their steps with bash, in WSL (terrain_hpc.sh pipeline)")
+def test_a_step_without_space_fails_at_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("TERRAIN_DATA_DIR", str(tmp_path / "data"))
+    out = tmp_path / "o.txt"
+    plan = _plan(tmp_path, [dict(name="big", run=f"echo ran >> {out}", needs_gb=10 ** 9),
+                            dict(name="after", after=["big"], run=f"echo after >> {out}")])
+    _run(monkeypatch, plan)
+    st = json.loads((tmp_path / "data" / "pipelines" / "t" / "status.json").read_text())["steps"]
+    assert st["big"]["status"] == "failed" and "no space" in st["big"]["reason"] and st["after"]["status"] == "skipped"
+    assert not out.exists()

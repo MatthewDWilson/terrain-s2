@@ -45,6 +45,9 @@ def main():
     ap.add_argument("--no-build", action="store_true", help="never build bundles (they must exist)")
     ap.add_argument("--no-mirror", action="store_true")
     ap.add_argument("--no-features", action="store_true", help="skip step 4 (features and patches)")
+    ap.add_argument("--max-failed-share", type=float, default=0.0,
+                    help="exit 0 when at most this share of all the tiles has no finished run (e.g. 0.02 in an unattended "
+                         "plan, where a handful of tiles failing should not stop what follows); default 0: any failure")
     a = ap.parse_args()
     from terrain_s2.acquire.elevation import default_data_dir
     data = default_data_dir()
@@ -72,6 +75,12 @@ def main():
                       for r in recs]).to_csv(f, index=False)
         bad = [r for r in recs if not r.get("ok")]
         print(f"{len(recs) - len(bad)} ok, {len(bad)} failed -> {f}")
+        if bad and a.max_failed_share > 0:
+            done = sum((Path(cfg.runs) / t / "done.json").exists() for t in tiles)
+            share = 1 - done / max(len(tiles), 1)
+            print(f"{done} of {len(tiles)} tiles finished ({share:.1%} not; allowed {a.max_failed_share:.1%}): "
+                  f"{', '.join(r.get('tile_id', '?') for r in bad[:10])}")
+            sys.exit(0 if share <= a.max_failed_share else 1)
         sys.exit(1 if bad else 0)
 
 
