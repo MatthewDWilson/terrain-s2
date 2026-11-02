@@ -91,6 +91,25 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
 CHANNEL_RADIUS_M = 5.0
 
 
+def bool_float(s):
+    """A true/false column as 1.0 / 0.0 / NaN, whether stored as booleans, numbers or text: a column with gaps (the
+    scorer adds recorded structures without the value) is written to the GeoPackage as text, "True" / "False" (the
+    runs_c3 dataset build, 2 Nov 2026: "could not convert string to float: 'False'")."""
+    import pandas as pd
+    m = {"true": 1.0, "false": 0.0, "1": 1.0, "0": 0.0, "1.0": 1.0, "0.0": 0.0}
+    out = []
+    for v in pd.Series(s).astype(object).to_numpy():
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            out.append(np.nan)
+        elif isinstance(v, (bool, np.bool_)):
+            out.append(1.0 if v else 0.0)
+        elif isinstance(v, (int, float, np.integer, np.floating)):
+            out.append(float(v))
+        else:
+            out.append(m.get(str(v).strip().lower(), np.nan))
+    return np.asarray(out, float)
+
+
 def channel_features(run_dir, D, channel_probs=None, prob=None, transform=None, crossings=None):
     """The channel model's evidence at each candidate (ML-3c), for a scorer trained on runs with it:
 
@@ -123,7 +142,7 @@ def channel_features(run_dir, D, channel_probs=None, prob=None, transform=None, 
     if c is not None and len(D):
         if "ml_channel" in c and len(c):
             d, i = cKDTree(np.column_stack([c.geometry.x, c.geometry.y])).query(xy)
-            D["ml_channel"] = np.where(d <= 0.5, c.ml_channel.to_numpy(float)[i], np.nan)
+            D["ml_channel"] = np.where(d <= 0.5, bool_float(c.ml_channel)[i], np.nan)
     D["ml_prob_max"] = np.nan
     D["ml_sharp_max"] = np.nan
     T = transform

@@ -2508,6 +2508,12 @@ attribute 'waterway'": a tile with no OSM river, stream, canal or drain lines go
 waterways layer (the test fails as the batch did without the fix). 38 of 569 is 6.7 %, over the plan's 2 %: the
 restarted plan reruns just them.
 
+The weekend run completed (2 Nov) except `dataset_c3` (so the scorer and its wave 3 test were skipped): the crossings
+layer of the `c_proto` runs held `ml_channel` as text ("True" / "False"), since the scorer adds recorded structures
+without the value and pyogrio writes such a column as a string; `dataset.channel_features` read it as numbers.
+`dataset.bool_float` reads it whatever its stored type (booleans, numbers, text, gaps), and the run now writes it as
+1 / 0 / NaN; `runs_c3` needs no rerun (the test reproduces the batch's error without the fix).
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

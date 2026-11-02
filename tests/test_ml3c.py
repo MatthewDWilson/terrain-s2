@@ -145,3 +145,22 @@ def test_channel_features_for_the_scorer(tmp_path):
     assert out.ml_channel.tolist() == [1.0, 0.0]
     assert out.ml_prob_max.iloc[0] == np.float32(0.9) and out.ml_prob_max.iloc[1] == 0.0
     assert out.ml_sharp_max.iloc[0] > 0.5 > out.ml_sharp_max.iloc[1]
+
+
+def test_ml_channel_read_whatever_its_stored_type(tmp_path):
+    """A crossings layer whose ml_channel was written as text (runs_c3, 2 Nov) is read as 1 / 0 / NaN."""
+    import geopandas as gpd
+    import numpy as np
+    import pandas as pd
+    from shapely.geometry import Point
+
+    from terrain_s2.ml import dataset as DS
+    run = tmp_path / "T"
+    run.mkdir()
+    gpd.GeoDataFrame(dict(ml_channel=["True", "False", None]), geometry=[Point(0, 0), Point(10, 0), Point(20, 0)],
+                     crs=2193).to_file(run / "network.gpkg", layer="crossings", driver="GPKG")
+    D = pd.DataFrame(dict(x=[0.0, 10.0, 20.0, 50.0], y=[0.0, 0.0, 0.0, 0.0]))
+    out = DS.channel_features(run, D)
+    assert out.ml_channel.iloc[:2].tolist() == [1.0, 0.0] and out.ml_channel.iloc[2:].isna().all()
+    v = DS.bool_float([True, False, None, 1, "0", "yes?"])
+    assert v[0] == 1 and v[1] == 0 and np.isnan(v[2]) and v[3] == 1 and v[4] == 0 and np.isnan(v[5])

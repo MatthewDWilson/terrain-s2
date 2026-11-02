@@ -601,6 +601,9 @@ def network(dem, dsm=None, aoi=None, roads=None, params=None, out=None, **option
             c = _lc(lc if lc.exists() else None)
             rs = list(c.get("council_sources") or []) + list(c.get("asset_sources") or [])
         scored = score_run(tmp, opts["crossing_model"], Path(a.dem[0]).parent, rs)
+        if "ml_channel" in scored:                  # keep it numeric: with the recorded structures' gaps it would
+            from .ml.dataset import bool_float      # be written as text ("True" / "False", runs_c3, 2 Nov)
+            scored["ml_channel"] = bool_float(scored["ml_channel"])
         scored.to_file(gpkg, layer="crossings", driver="GPKG")
         written["crossings"] = scored
         info["scored"] = dict(model=scored["model_version"].iloc[0] if len(scored) else None,
