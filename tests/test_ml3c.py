@@ -164,3 +164,37 @@ def test_ml_channel_read_whatever_its_stored_type(tmp_path):
     assert out.ml_channel.iloc[:2].tolist() == [1.0, 0.0] and out.ml_channel.iloc[2:].isna().all()
     v = DS.bool_float([True, False, None, 1, "0", "yes?"])
     assert v[0] == 1 and v[1] == 0 and np.isnan(v[2]) and v[3] == 1 and v[4] == 0 and np.isnan(v[5])
+
+
+def test_added_records_are_not_candidates(tmp_path):
+    """The scorer's added records (tier "recorded") stay in the scored layer but out of training and evaluation (the
+    council and asset labels "found" themselves in runs_c3, 3 Nov)."""
+    import geopandas as gpd
+    import numpy as np
+    import pandas as pd
+    from shapely.geometry import Point
+
+    from terrain_s2.ml import features as FE
+    run = tmp_path / "T"
+    run.mkdir()
+    g = gpd.GeoDataFrame(dict(tier=["high", "recorded", "low"]), geometry=[Point(0, 0), Point(5, 5), Point(9, 9)],
+                         crs=2193)
+    g.to_file(run / "network.gpkg", layer="crossings", driver="GPKG")
+    assert FE.added_records(run, 3).tolist() == [False, True, False]
+    assert not FE.added_records(run, 2).any()                       # a features file of another length: left alone
+    gpd.GeoDataFrame(dict(source=["dem"]), geometry=[Point(0, 0)], crs=2193).to_file(run / "network.gpkg",
+                                                                                      layer="crossings", driver="GPKG")
+    assert FE.added_records(run).tolist() == [False]                  # a run made before: no tier, nothing added
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("cm", Path(__file__).resolve().parents[1] / "scripts" / "compare_ml3c.py")
+    cm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cm)
+    g.to_file(run / "network.gpkg", layer="crossings", driver="GPKG")
+    pd.DataFrame(dict(x=[0.0, 5.0, 9.0], y=[0.0, 5.0, 9.0], a=[1.0, 2.0, 3.0])).to_parquet(run / "ml_features.parquet")
+
+    class _M:
+        def predict_proba(self, X):
+            return np.c_[1 - X[:, 0] / 10, X[:, 0] / 10]
+    t = cm.score_table(run / "ml_features.parquet", tmp_path, dict(features=["a"], structure=_M()))
+    assert t.x.tolist() == [0.0, 9.0]

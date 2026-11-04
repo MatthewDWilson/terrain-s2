@@ -2514,6 +2514,43 @@ without the value and pyogrio writes such a column as a string; `dataset.channel
 `dataset.bool_float` reads it whatever its stored type (booleans, numbers, text, gaps), and the run now writes it as
 1 / 0 / NaN; `runs_c3` needs no rerun (the test reproduces the batch's error without the fix).
 
+**The weekend run's results** (2-3 Nov). All steps done after the fixes (`runs_c3`: all 569 tiles; 38 stale failure
+records, 22 mostly-sea DEMs, 3 DSM gaps). Stage B over the 569 tiles: 119,630 -> 114,039 km; components per tile 1,035
+-> 341; isolated share 35.5 % -> 16.2 %; 324,571 links accepted (24,088 across a barrier at a crossing candidate);
+minor drains 3,455 km and fragments 4,206 km removed.
+
+U-Nets on the same fold 1 tiles and council labels (29 tiles), at precision ~0.30: unet_v2 recall 0.945 (off physics
+0.710); unet_v4 with its OSM band dropped 0.934 (0.652); unet_v3 0.930 (0.625); unet_v5 0.926 (0.606); unet_v4 0.917
+(0.577); unet_rgb 0.908 (0.506). unet_v2 stays the channel model. The imagery test's stage 2 is negative: unet_rgb is
+below its control unet_v3 (same labels and settings) at every threshold, on top of stage 1's weak result; imagery is
+not pursued as U-Net input. unet_v5 (no OSM band) is below unet_v4 with the band dropped, and its class head weaker
+(fold 1 stream recall 0.52 against 0.83): the OSM band helps training more than inference. Classes stay with stage A
+(OSM and council tags, network context).
+
+Channel presence model: 1,785,812 reaches, 11.1 % recorded; held out by council AUC 0.861, AP 0.504 (councils 0.82-0.91);
+the U-Net class features constant (unet_v2 has no class head) and left out. Calibration failed in effect: only 19 of the
+268 reviewed reaches matched a stage B reach of `runs_c3` (the reviews came from other runs, and most reviewed false
+detections are gone after the ML-3c filter), giving a threshold of 0.0072, which passes nearly every detected reach;
+stage A's SH12 and 655 runs used it. Now: the report gives also the out-of-fold threshold that best separates recorded
+reaches (`threshold_f1_recorded`), and stage A takes `presence_threshold`.
+
+Stage A v3: SH12: outlet on the Whirinaki River (by OSM; in the tidal zone, as the catchment layer puts it); OSM 51.9 km
+mapped (no council lines), 99.7 % covered, 18.9 km added; 328 detected pieces joined (22.4 km); network 187 km (river
+22, stream 137, drain 9, flow path 19); 86 road crossings, 82 with a candidate. But the SH12 culvert: its candidate is
+4 m away (p_structure 0.65), the network 16 m away, its nearest network crossing 107 m away: to look at. 655: OSM 70 +
+council 55 km mapped, 99.1 % covered, 42.5 km added; 578 detected pieces joined (57.7 km); network 447 km (river 27,
+stream 300, drain 65, flow path 56); 439 crossings, 57 needing a structure (41 on flow paths); offsets: stage B median
+0.86 m, council 3.72 m (council lines misaligned). Stream against drain at 655 (a plains catchment) looks too
+stream-heavy: to look at.
+
+Scorer on the new network (`scorer_waves12_c3`): its council and asset figures are not valid. With a crossing model,
+the run adds every recorded structure without a candidate as a row of its own (`tier = recorded`, wanted in the
+output), and those rows reached `ml_features.parquet`, the labels, the dataset (asset and council misses 0; positives
+asset 1,062 and council 1,139 against 834 and 763 before) and the wave 3 test (asset and council found 100 %). The fair
+kinds on wave 3: implied 0.703 -> 0.747 and bridge 0.754 -> 0.764 (the ML-3c set: 0.753, 0.760). `features.added_records`
+now marks those rows; the labels (`label_run`), the dataset rows and `compare_ml3c.score_table` leave them out; the
+plan's dataset step relabels (`--relabel always`): rerun with `--from dataset_c3`.
+
 ## Tested versions (pip, sandbox, 30 Sep 2026; scikit-image 0.26.0 added 1 Oct 2026)
 
 Python 3.12.3; numpy 2.4.4; scipy 1.17.1; numba 0.67.0; pyflwdir 0.5.12; rasterio 1.5.1;

@@ -207,6 +207,26 @@ def patches(cands, bands, T, sk, cs, size=64, step_m=1.0, chunk=256):
     return out
 
 
+def added_records(run_dir, n=None):
+    """Bool per row of the run's crossings layer (and so of its ``ml_features.parquet``, written from the same
+    frame): a recorded structure the scorer added as a row of its own (``tier = recorded``, ``ml.apply``). Such rows are
+    output, not candidates: kept in the scored layer, left out of training and evaluation (with them the council and
+    asset labels "found" themselves: runs_c3, 3 Nov 2026). ``n``: the length expected (all False when the layer's
+    differs, as for a run made before)."""
+    import pyogrio
+    gpkg = Path(run_dir) / "network.gpkg"
+    if not gpkg.exists() or "crossings" not in {k for k, _ in pyogrio.list_layers(gpkg)}:
+        return np.zeros(n or 0, bool)
+    info = pyogrio.read_info(gpkg, layer="crossings")
+    if "tier" not in list(info["fields"]):
+        return np.zeros(n if n is not None else int(info["features"]), bool)
+    t = pyogrio.read_dataframe(gpkg, layer="crossings", columns=["tier"], read_geometry=False)["tier"]
+    m = (t.astype(str) == "recorded").to_numpy()
+    if n is not None and len(m) != n:
+        return np.zeros(n, bool)
+    return m
+
+
 def extract(res, out_dir, size=64, write=True, with_patches=True):
     """Features and patches for the run's written candidates (``res`` from run.network(..., keep=True)).
     ``with_patches=False``: the table only (scoring inside a run)."""

@@ -4,6 +4,9 @@
 # 1 Nov: the first run ended at 0 GB free (the U-Nets' unpacked chip caches, ~135-145 GB a chip set) with batch_c3
 # failed on a few tiles; now the batch passes with up to 2 % of tiles unfinished, a chip set's cache is removed once its
 # training is done, and steps check their space first (needs_gb).
+# 3 Nov: the scorer's added records (recorded structures without a candidate, tier "recorded") were in the dataset and
+# the wave 3 test; they are now left out of both (relabel always, so the labels match the candidates without them):
+# rerun with --from dataset_c3.
 name: weekend_2026_10_31
 min_free_gb: 350
 manifests:
@@ -37,7 +40,7 @@ steps:
   # 3. the scorer retrained on the new network's candidates (waves 1 + 2), tested on wave 3 against scorer_waves12_r
   - name: dataset_c3
     after: [batch_c3]
-    run: python scripts/build_dataset.py --manifest {M_w12} --name waves12_c3 --runs {data}/runs_c3 --channel-probs {data}/runs
+    run: python scripts/build_dataset.py --manifest {M_w12} --name waves12_c3 --runs {data}/runs_c3 --channel-probs {data}/runs --relabel always
     reports: ["{data}/datasets/waves12_c3/card.md"]
   - name: scorer_c3
     after: [dataset_c3]

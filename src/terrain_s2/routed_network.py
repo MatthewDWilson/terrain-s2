@@ -60,7 +60,7 @@ DEFAULTS = dict(res_m=5.0, burn_max_m=2.0, carve_max_m=5.0, breach_max_m=200.0, 
                 outlet_xy=None, waterway_rank=dict(river=3.0, canal=2.0, stream=1.0),
                 burn_mapped_m=5.0, mapped_corridor_m=20.0, mapped_piece_m=400.0,
                 mapped_kinds=("river", "stream", "canal", "drain", "ditch"), evidence_share=0.5, split_min_m=20.0,
-                presence_model=None, xs_step_m=20.0, xs_half_m=15.0,
+                presence_model=None, presence_threshold=None, xs_step_m=20.0, xs_half_m=15.0,
                 road_prior=0.05, join_max_m=60.0, min_piece_m=20.0, river_min_m2=5.0e7, tier_p=dict(high=0.8,
                 medium=0.5, low=0.2), crossing_search_m=25.0, overlap_m=500.0, max_outlets=1)
 NODATA = -9999.0
@@ -845,8 +845,8 @@ def mapped_lines(W, council, catchment_band, P):
 
 def presence_evidence(R, runs, P, log=print):
     """Evidence per stage B reach and the threshold it is judged against: the channel presence model's probability
-    (``presence_model``, else ``<data>/models/channel_presence/model.pkl`` when it exists) and its calibrated threshold;
-    else the hand-set evidence (``reach_evidence``) and ``keep_p``."""
+    (``presence_model``, else ``<data>/models/channel_presence/model.pkl`` when it exists) and its calibrated threshold
+    (or ``presence_threshold``, given); else the hand-set evidence (``reach_evidence``) and ``keep_p``."""
     import pickle
     from .acquire.elevation import default_data_dir
     f = Path(P["presence_model"]) if P.get("presence_model") else default_data_dir() / "models" / "channel_presence" / \
@@ -861,7 +861,8 @@ def presence_evidence(R, runs, P, log=print):
             sub = R.loc[idx]
             X = CPm.features(sub, Path(runs) / str(t) / "channel_prob.tif" if t is not None else None)
             p[R.index.get_indexer(idx)] = CPm.predict(M, X)
-        return p, float(M.get("threshold", 0.5)), dict(source="model", model=str(f), threshold=M.get("threshold"))
+        thr = float(P["presence_threshold"]) if P.get("presence_threshold") is not None else float(M.get("threshold", 0.5))
+        return p, thr, dict(source="model", model=str(f), threshold=thr, model_threshold=M.get("threshold"))
     return reach_evidence(R, prob_files), P["keep_p"], dict(source="hand-set", threshold=P["keep_p"])
 
 

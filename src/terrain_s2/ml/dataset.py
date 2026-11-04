@@ -59,8 +59,9 @@ def tile_rows(tile, run_dir: Path, bundle_dir: Path, manual, label_cfg, relabel=
     elif stale:
         rec["status"] = "labels older than the run (relabel='never')"
         return None, None, rec
-    from .features import normalise_source_flags
+    from .features import added_records, normalise_source_flags
     F = normalise_source_flags(pd.read_parquet(feats))           # features v1 and v2 give the same columns
+    F = F[~added_records(run_dir, len(F))].reset_index(drop=True)   # the scorer's added records: not candidates
     C = gpd.read_file(lab, layer="candidates")
     if len(F) != len(C) or not (np.allclose(F.x, C.x) and np.allclose(F.y, C.y)):
         rec["status"] = f"features ({len(F)}) and labels ({len(C)}) do not match: rebuild the tile"

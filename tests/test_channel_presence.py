@@ -56,6 +56,9 @@ def test_stage_a_uses_the_model(tmp_path, monkeypatch):
         pickle.dump(M, h)
     ev, thr, info = RN.presence_evidence(R.assign(tile="T"), tmp_path, dict(RN.DEFAULTS, presence_model=str(f)))
     assert info["source"] == "model" and thr == 0.42 and ev[real].mean() > ev[~real].mean()
+    _, thr3, info3 = RN.presence_evidence(R.assign(tile="T"), tmp_path, dict(RN.DEFAULTS, presence_model=str(f),
+                                                                             presence_threshold=0.3))
+    assert thr3 == 0.3 and info3["model_threshold"] == 0.42
     ev2, thr2, info2 = RN.presence_evidence(R.assign(tile="T"), tmp_path, dict(RN.DEFAULTS,
                                                                                 presence_model=str(tmp_path / "none.pkl")))
     assert info2["source"] == "hand-set" and thr2 == RN.DEFAULTS["keep_p"]

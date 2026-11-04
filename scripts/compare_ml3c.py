@@ -47,6 +47,7 @@ def score_table(features_path, bundle, model, channel_probs=None):
     import pandas as pd
     from terrain_s2.ml import dataset, features, train
     tab = pd.read_parquet(features_path)
+    tab = tab[~features.added_records(Path(features_path).parent, len(tab))].reset_index(drop=True)  # not candidates
     if not len(tab):
         return tab.assign(p=[])
     t = features.normalise_source_flags(tab.copy())

@@ -140,6 +140,8 @@ def label_run(run_dir, bundle_dir, manual=None, config=None, aoi=None, write=Tru
     run_dir, bundle_dir = Path(run_dir), Path(bundle_dir)
     gpkg = run_dir / "network.gpkg"
     C = gpd.read_file(gpkg, layer="crossings")
+    if "tier" in C:                     # recorded structures the scorer added are output, not candidates
+        C = C[C.tier.astype(str) != "recorded"].reset_index(drop=True)
     crs = C.crs
     core = (gpd.read_file(aoi).to_crs(crs) if aoi else gpd.read_file(bundle_dir / "aoi.geojson").to_crs(crs)).union_all()
     have = {n for n, _ in pyogrio.list_layers(gpkg)}

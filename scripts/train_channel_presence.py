@@ -7,7 +7,9 @@
 Each run needs stage B's ``network_b.gpkg`` (``stage_b.py``) and stage C's ``channel_prob.tif``; labels come from the
 bundle's council lines and OSM waterways. Cross-validated by council (``held_out``, per council in ``folds``), then a
 final model on all tiles. The threshold: the lowest probability at which the reviewed reaches
-(``<data>/labels/manual/review_*.gpkg``, matched to the reaches of their tiles) reach ``--precision`` (default 0.7).
+(``<data>/labels/manual/review_*.gpkg``, matched to the reaches of their tiles) reach ``--precision`` (default 0.7);
+the report also gives the out-of-fold threshold that best separates recorded reaches (``threshold_f1_recorded``), for
+when too few reviews match (stage A's ``presence_threshold`` chooses one).
 Writes ``model.pkl``, ``report.json`` and ``rows.parquet`` (the table, with the out-of-fold probability) to ``--out``.
 """
 import argparse
@@ -80,6 +82,20 @@ def main():
                 mm.append(hit)
         rev = pd.concat(mm, ignore_index=True) if mm else None
     cal = CP.calibrate(M, rev, dict(precision_target=a.precision))
+    # the alternative: the out-of-fold probability that best separates recorded reaches (F1), which understates real
+    # channels but does not rest on a handful of reviews (19 matched on 3 Nov, giving 0.0072)
+    ok = np.isfinite(oof)
+    if ok.any():
+        yy, pp = T.recorded.to_numpy(bool)[ok], oof[ok]
+        best = (0.0, 0.5)
+        for th in np.unique(np.round(pp, 3)):
+            k = pp >= th
+            tp = (k & yy).sum()
+            if tp:
+                f1 = 2 * tp / (k.sum() + yy.sum())
+                if f1 > best[0]:
+                    best = (float(f1), float(th))
+        rep["threshold_f1_recorded"] = dict(threshold=round(best[1], 4), f1=round(best[0], 4))
     rep.update(calibration=cal, failed=[t for t, _ in bad], features=list(CP.FEATURES))
     with open(out / "model.pkl", "wb") as f:
         pickle.dump(M, f)
